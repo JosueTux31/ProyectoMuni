@@ -1,139 +1,147 @@
-# models.py
 from django.db import models
-from apps.catalogos.models import (
-    RolUsuario, TipoAutenticacion, TipoIdentificacion, Departamento,
-    TipoTelefono, TipoCorreo
-)
+
+# Create your models here.
+"""Usuarios y sus tablas de detalle. managed = False: el esquema vive en MariaDB.
+
+Las tablas de detalle tienen llave compuesta (id_usuario, num_linea),
+declarada con models.CompositePrimaryKey (Django 5.2+).
+"""
+from django.db import models
+
 from apps.geografia.models import Distrito
 
+
 class Usuario(models.Model):
-    # Llave principal
     id = models.AutoField(primary_key=True)
-    
-    # Clasificación y documentos
-    cod_rol = models.ForeignKey(
-        RolUsuario, on_delete=models.RESTRICT, db_column='cod_rol', verbose_name="Rol de Usuario"
-    )
-    cod_tipo_auth = models.ForeignKey(
-        TipoAutenticacion, on_delete=models.RESTRICT, db_column='cod_tipo_auth', verbose_name="Tipo de Autenticación"
-    )
-    cod_tipo_identificacion = models.ForeignKey(
-        TipoIdentificacion, on_delete=models.RESTRICT, db_column='cod_tipo_identificacion', verbose_name="Tipo Identificación"
-    )
-    dni = models.CharField(max_length=30, verbose_name="DNI / Cédula")
-    
-    # Datos personales
-    nombre = models.CharField(max_length=150, verbose_name="Nombre")
-    apellido1 = models.CharField(max_length=100, blank=True, null=True, verbose_name="Primer Apellido")
-    apellido2 = models.CharField(max_length=100, blank=True, null=True, verbose_name="Segundo Apellido")
-    
-    # Ubicación geográfica
+
+    rol = models.ForeignKey("catalogos.RolUsuario", on_delete=models.DO_NOTHING,
+                            db_column="cod_rol", related_name="usuarios")
+    tipo_auth = models.ForeignKey("catalogos.TipoAutenticacion", on_delete=models.DO_NOTHING,
+                                  db_column="cod_tipo_auth", related_name="usuarios")
+    tipo_identificacion = models.ForeignKey("catalogos.TipoIdentificacion", on_delete=models.DO_NOTHING,
+                                            db_column="cod_tipo_identificacion", related_name="usuarios")
+    dni = models.CharField(max_length=30)
+
+    nombre = models.CharField(max_length=150)
+    apellido1 = models.CharField(max_length=100, null=True, blank=True)
+    apellido2 = models.CharField(max_length=100, null=True, blank=True)
+
+    # La FK compuesta hacia geo_distritos existe en la base de datos;
+    # en Django se maneja con los códigos y la propiedad `distrito`.
     cod_pais = models.CharField(max_length=10)
     cod_provincia = models.CharField(max_length=10)
     cod_canton = models.CharField(max_length=10)
-    cod_distrito = models.ForeignKey(
-        Distrito, on_delete=models.RESTRICT, db_column='cod_distrito', verbose_name="Distrito"
-    )
-    otras_senas = models.TextField(blank=True, null=True, verbose_name="Otras Señas")
-    imagen_path = models.CharField(max_length=255, blank=True, null=True)
-    
-    # Colaborador / Sistema
-    cod_departamento = models.ForeignKey(
-        Departamento, on_delete=models.SET_NULL, null=True, blank=True, db_column='cod_departamento'
-    )
-    usuario_red = models.CharField(max_length=50, unique=True, blank=True, null=True)
-    password_hash = models.CharField(max_length=255, blank=True, null=True)
-    
-    # Datos de auditoría
+    cod_distrito = models.CharField(max_length=10)
+    otras_senas = models.TextField(null=True, blank=True)
+    imagen_path = models.CharField(max_length=255, null=True, blank=True)
+
+    departamento = models.ForeignKey("catalogos.Departamento", on_delete=models.DO_NOTHING,
+                                     db_column="cod_departamento", null=True, blank=True,
+                                     related_name="usuarios")
+    usuario_red = models.CharField(max_length=50, null=True, blank=True, unique=True)
+    password_hash = models.CharField(max_length=255, null=True, blank=True)
+
     activo = models.BooleanField(default=True)
-    creado_en = models.DateTimeField(auto_now_add=True)
-    actualizado_en = models.DateTimeField(auto_now=True)
+    creado_en = models.DateTimeField(editable=False)
+    actualizado_en = models.DateTimeField(editable=False)
 
-    # Metadatos del modelo
     class Meta:
-        db_table = 'usr_usuarios'
-        unique_together = (('cod_tipo_identificacion', 'dni'),)
-        verbose_name = 'Usuario'
-        verbose_name_plural = 'Usuarios'
+        managed = False
+        db_table = "usr_usuarios"
+        verbose_name = "usuario"
+        verbose_name_plural = "usuarios"
+        ordering = ["nombre", "apellido1", "apellido2"]
+        constraints = [
+            models.UniqueConstraint(fields=["tipo_identificacion", "dni"], name="uk_usr_documento"),
+        ]
 
-    # Representación en texto
     def __str__(self):
-        return f"{self.dni} - {self.nombre} {self.apellido1 or ''}".strip()
+        return self.nombre_completo
+
+    @property
+    def nombre_completo(self):
+        return " ".join(p for p in (self.nombre, self.apellido1, self.apellido2) if p)
+
+    @property
+    def distrito(self):
+        return Distrito.objects.filter(pais_id=self.cod_pais, cod_provincia=self.cod_provincia,
+                                       cod_canton=self.cod_canton,
+                                       cod_distrito=self.cod_distrito).first()
 
 
-# -- Tablas hijas de contacto e historial --
-
-class UsuarioTelefono(models.Model):
-    # Relación y orden
-    id_usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, db_column='id_usuario', related_name='telefonos')
+class Telefono(models.Model):
+    pk = models.CompositePrimaryKey("usuario_id", "num_linea")
+    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, db_column="id_usuario",
+                                related_name="telefonos")
     num_linea = models.IntegerField()
-    
-    # Datos de contacto
-    cod_telefono = models.ForeignKey(TipoTelefono, on_delete=models.RESTRICT, db_column='cod_telefono')
+    tipo_telefono = models.ForeignKey("catalogos.TipoTelefono", on_delete=models.DO_NOTHING,
+                                      db_column="cod_telefono", related_name="+")
     telefono = models.CharField(max_length=25)
     es_whatsapp = models.BooleanField(default=False)
 
-    # Metadatos del modelo
     class Meta:
-        db_table = 'usr_telefonos'
-        unique_together = (('id_usuario', 'num_linea'),)
-        verbose_name = 'Teléfono de Usuario'
-        verbose_name_plural = 'Teléfonos de Usuarios'
+        managed = False
+        db_table = "usr_telefonos"
+        verbose_name = "teléfono"
+        verbose_name_plural = "teléfonos"
+        ordering = ["usuario_id", "num_linea"]
 
-    # Representación en texto
     def __str__(self):
-        return f"{self.telefono} ({self.id_usuario})"
+        return self.telefono
 
 
-class UsuarioCorreo(models.Model):
-    # Relación y orden
-    id_usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, db_column='id_usuario', related_name='correos')
+class Correo(models.Model):
+    pk = models.CompositePrimaryKey("usuario_id", "num_linea")
+    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, db_column="id_usuario",
+                                related_name="correos")
     num_linea = models.IntegerField()
-    
-    # Datos de contacto
-    cod_correo = models.ForeignKey(TipoCorreo, on_delete=models.RESTRICT, db_column='cod_correo')
-    correo = models.EmailField(max_length=150)
+    tipo_correo = models.ForeignKey("catalogos.TipoCorreo", on_delete=models.DO_NOTHING,
+                                    db_column="cod_correo", related_name="+")
+    correo = models.CharField(max_length=150)
 
-    # Metadatos del modelo
     class Meta:
-        db_table = 'usr_correos'
-        unique_together = (('id_usuario', 'num_linea'),)
-        verbose_name = 'Correo de Usuario'
-        verbose_name_plural = 'Correos de Usuarios'
+        managed = False
+        db_table = "usr_correos"
+        verbose_name = "correo"
+        verbose_name_plural = "correos"
+        ordering = ["usuario_id", "num_linea"]
 
-    # Representación en texto
     def __str__(self):
-        return f"{self.correo} ({self.id_usuario})"
+        return self.correo
 
 
-class UsuarioPaginaWeb(models.Model):
-    # Relación y orden
-    id_usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, db_column='id_usuario', related_name='paginas_web')
+class PaginaWeb(models.Model):
+    pk = models.CompositePrimaryKey("usuario_id", "num_linea")
+    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, db_column="id_usuario",
+                                related_name="paginas_webs")
     num_linea = models.IntegerField()
-    
-    # Datos del enlace
-    url_web = models.URLField(max_length=255)
+    url_web = models.CharField(max_length=255)
 
-    # Metadatos del modelo
     class Meta:
-        db_table = 'usr_paginas_web'
-        unique_together = (('id_usuario', 'num_linea'),)
-        verbose_name = 'Página Web'
-        verbose_name_plural = 'Páginas Web'
+        managed = False
+        db_table = "usr_paginas_webs"
+        verbose_name = "página web"
+        verbose_name_plural = "páginas web"
+        ordering = ["usuario_id", "num_linea"]
+
+    def __str__(self):
+        return self.url_web
 
 
-class UsuarioHistorialClave(models.Model):
-    # Relación y orden
-    id_usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, db_column='id_usuario', related_name='historial_claves')
+class HistorialClave(models.Model):
+    pk = models.CompositePrimaryKey("usuario_id", "num_linea")
+    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, db_column="id_usuario",
+                                related_name="historial_claves")
     num_linea = models.IntegerField()
-    
-    # Datos de seguridad y auditoría
     password_hash = models.CharField(max_length=255)
-    fecha_registro = models.DateTimeField(auto_now_add=True)
+    fecha_registro = models.DateTimeField(editable=False)
 
-    # Metadatos del modelo
     class Meta:
-        db_table = 'usr_historiales_claves'
-        unique_together = (('id_usuario', 'num_linea'),)
-        verbose_name = 'Historial de Clave'
-        verbose_name_plural = 'Historiales de Claves'
+        managed = False
+        db_table = "usr_historiales_claves"
+        verbose_name = "historial de clave"
+        verbose_name_plural = "historial de claves"
+        ordering = ["usuario_id", "-num_linea"]
+
+    def __str__(self):
+        return f"{self.usuario_id} #{self.num_linea}"

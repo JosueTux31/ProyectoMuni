@@ -1,132 +1,30 @@
 """
 URL configuration for muni_backend project.
+
+The `urlpatterns` list routes URLs to views. For more information please see:
+    https://docs.djangoproject.com/en/5.2/topics/http/urls/
+Examples:
+Function views
+    1. Add an import:  from my_app import views
+    2. Add a URL to urlpatterns:  path('', views.home, name='home')
+Class-based views
+    1. Add an import:  from other_app.views import Home
+    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
+Including another URLconf
+    1. Import the include() function: from django.urls import include, path
+    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-
 from django.contrib import admin
+from django.urls import path
 from django.urls import include, path
-from rest_framework.routers import DefaultRouter
-from .views import home
-
-from apps.catalogos.views import (
-    TipoIdentificacionViewSet,
-    RolUsuarioViewSet,
-    TipoAutenticacionViewSet,
-    DepartamentoViewSet,
-    TipoTelefonoViewSet,
-    TipoCorreoViewSet,
-)
-
-from apps.geografia.views import (
-    PaisViewSet,
-    ProvinciaViewSet,
-    CantonViewSet,
-    DistritoViewSet,
-)
-
-from apps.usuarios.views import (
-    UsuarioViewSet,
-    UsuarioTelefonoViewSet,
-    UsuarioCorreoViewSet,
-    UsuarioPaginaWebViewSet,
-)
-
-
-# Enrutador principal de la API
-router = DefaultRouter()
-
-
-# Catálogos
-router.register(
-    r"tipos-identificacion",
-    TipoIdentificacionViewSet,
-    basename="tipo-identificacion",
-)
-
-router.register(
-    r"roles-usuarios",
-    RolUsuarioViewSet,
-    basename="rol-usuario",
-)
-
-router.register(
-    r"tipos-autenticacion",
-    TipoAutenticacionViewSet,
-    basename="tipo-autenticacion",
-)
-
-router.register(
-    r"departamentos",
-    DepartamentoViewSet,
-    basename="departamento",
-)
-
-router.register(
-    r"tipos-telefonos",
-    TipoTelefonoViewSet,
-    basename="tipo-telefono",
-)
-
-router.register(
-    r"tipos-correos",
-    TipoCorreoViewSet,
-    basename="tipo-correo",
-)
-
-
-# Geografía
-router.register(
-    r"paises",
-    PaisViewSet,
-    basename="pais",
-)
-
-router.register(
-    r"provincias",
-    ProvinciaViewSet,
-    basename="provincia",
-)
-
-router.register(
-    r"cantones",
-    CantonViewSet,
-    basename="canton",
-)
-
-router.register(
-    r"distritos",
-    DistritoViewSet,
-    basename="distrito",
-)
-
-
-# Usuarios
-router.register(
-    r"usuarios",
-    UsuarioViewSet,
-    basename="usuario",
-)
-
-router.register(
-    r"usuarios-telefonos",
-    UsuarioTelefonoViewSet,
-    basename="usuario-telefono",
-)
-
-router.register(
-    r"usuarios-correos",
-    UsuarioCorreoViewSet,
-    basename="usuario-correo",
-)
-
-router.register(
-    r"usuarios-webs",
-    UsuarioPaginaWebViewSet,
-    basename="usuario-web",
-)
-
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 urlpatterns = [
-    path("", home, name="home"),
-    path("admin/", admin.site.urls),
-    path("api/", include(router.urls)),
+    path("api/geografia/", include("apps.geografia.urls")),
+    path("api/catalogos/", include("apps.catalogos.urls")),
+    path("api/usuarios/", include("apps.usuarios.urls")),
+
+    # Documentación interactiva (Swagger) para probar todas las APIs
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
 ]

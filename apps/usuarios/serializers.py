@@ -1,43 +1,84 @@
-# serializers.py
 from rest_framework import serializers
-from .models import Usuario, UsuarioTelefono, UsuarioCorreo, UsuarioPaginaWeb, UsuarioHistorialClave
 
-class UsuarioTelefonoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = UsuarioTelefono
-        fields = ['id_usuario', 'num_linea', 'cod_telefono', 'telefono', 'es_whatsapp']
-        read_only_fields = ['id_usuario', 'num_linea']
+OPCIONAL = {"required": False, "allow_null": True}
+TEXTO_OPCIONAL = {"required": False, "allow_null": True, "allow_blank": True}
 
-class UsuarioCorreoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = UsuarioCorreo
-        fields = ['id_usuario', 'num_linea', 'cod_correo', 'correo']
-        read_only_fields = ['id_usuario', 'num_linea']
 
-class UsuarioPaginaWebSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = UsuarioPaginaWeb
-        fields = ['id_usuario', 'num_linea', 'url_web']
-        read_only_fields = ['id_usuario', 'num_linea']
+# -------------------------------------------------------------- Usuarios
+class UsuarioBaseSerializer(serializers.Serializer):
+    cod_rol = serializers.IntegerField()
+    cod_tipo_auth = serializers.IntegerField()
+    cod_tipo_identificacion = serializers.IntegerField()
+    dni = serializers.CharField(max_length=30)
 
-class UsuarioHistorialClaveSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = UsuarioHistorialClave
-        fields = ['id_usuario', 'num_linea', 'password_hash', 'fecha_registro']
-        read_only_fields = ['id_usuario', 'num_linea', 'fecha_registro']
+    nombre = serializers.CharField(max_length=150)
+    apellido1 = serializers.CharField(max_length=100, **TEXTO_OPCIONAL)
+    apellido2 = serializers.CharField(max_length=100, **TEXTO_OPCIONAL)
 
-class UsuarioSerializer(serializers.ModelSerializer):
-    telefonos = UsuarioTelefonoSerializer(many=True, required=False)
-    correos = UsuarioCorreoSerializer(many=True, required=False)
-    paginas_web = UsuarioPaginaWebSerializer(many=True, required=False)
-    
-    class Meta:
-        model = Usuario
-        fields = [
-            'id', 'cod_rol', 'cod_tipo_auth', 'cod_tipo_identificacion', 'dni',
-            'nombre', 'apellido1', 'apellido2', 'cod_pais', 'cod_provincia',
-            'cod_canton', 'cod_distrito', 'otras_senas', 'imagen_path',
-            'cod_departamento', 'usuario_red', 'password_hash', 'activo',
-            'creado_en', 'actualizado_en', 'telefonos', 'correos', 'paginas_web'
-        ]
-        read_only_fields = ['id', 'creado_en', 'actualizado_en']
+    cod_pais = serializers.CharField(max_length=10)
+    cod_provincia = serializers.CharField(max_length=10)
+    cod_canton = serializers.CharField(max_length=10)
+    cod_distrito = serializers.CharField(max_length=10)
+    otras_senas = serializers.CharField(**TEXTO_OPCIONAL)
+    imagen_path = serializers.CharField(max_length=255, **TEXTO_OPCIONAL)
+
+    cod_departamento = serializers.IntegerField(**OPCIONAL)
+    # Sin allow_blank: la columna es UNIQUE y dos '' chocarían; use null.
+    usuario_red = serializers.CharField(max_length=50, **OPCIONAL)
+
+
+class UsuarioCrearSerializer(UsuarioBaseSerializer):
+    # Se recibe la clave en texto plano y el servidor guarda el hash.
+    # Omitirla (o null) para usuarios que se autentican por Active Directory.
+    password = serializers.CharField(write_only=True, min_length=8, max_length=128,
+                                     trim_whitespace=False, style={"input_type": "password"},
+                                     **OPCIONAL)
+
+
+class UsuarioActualizarSerializer(UsuarioBaseSerializer):
+    activo = serializers.BooleanField(default=None, **OPCIONAL)
+
+
+class UsuarioFiltrosSerializer(serializers.Serializer):
+    activo = serializers.BooleanField(default=None, **OPCIONAL)
+    cod_rol = serializers.IntegerField(**OPCIONAL)
+    cod_departamento = serializers.IntegerField(**OPCIONAL)
+    buscar = serializers.CharField(max_length=150, **TEXTO_OPCIONAL)
+
+
+class CambiarClaveSerializer(serializers.Serializer):
+    password = serializers.CharField(min_length=8, max_length=128, trim_whitespace=False,
+                                     style={"input_type": "password"})
+    # Cuántas claves anteriores no se pueden reutilizar (0 = sin validar)
+    historial_bloqueo = serializers.IntegerField(min_value=0, max_value=50, default=5)
+
+
+class CredencialesSerializer(serializers.Serializer):
+    usuario_red = serializers.CharField(max_length=50)
+    password = serializers.CharField(max_length=128, trim_whitespace=False,
+                                     style={"input_type": "password"})
+
+
+# ------------------------------------------------------------- Detalles
+class TelefonoSerializer(serializers.Serializer):
+    cod_telefono = serializers.IntegerField()
+    telefono = serializers.CharField(max_length=25)
+    es_whatsapp = serializers.BooleanField(required=False, default=False)
+
+
+class CorreoSerializer(serializers.Serializer):
+    cod_correo = serializers.IntegerField()
+    correo = serializers.EmailField(max_length=150)
+
+
+class PaginaWebSerializer(serializers.Serializer):
+    url_web = serializers.URLField(max_length=255)
+
+
+class HistorialClaveSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True, min_length=8, max_length=128,
+                                     trim_whitespace=False, style={"input_type": "password"})
+
+
+class HistorialClaveFiltrosSerializer(serializers.Serializer):
+    limite = serializers.IntegerField(min_value=1, **OPCIONAL)

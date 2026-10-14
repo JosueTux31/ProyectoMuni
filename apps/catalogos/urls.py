@@ -1,23 +1,16 @@
-# urls.py
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import (
-    TipoIdentificacionViewSet,
-    RolUsuarioViewSet,
-    TipoAutenticacionViewSet,
-    DepartamentoViewSet,
-    TipoTelefonoViewSet,
-    TipoCorreoViewSet,
-)
+from apps.core.rutas import rutas_crud
 
-router = DefaultRouter()
-router.register(r'tipos-identificacion', TipoIdentificacionViewSet, basename='tipo-identificacion')
-router.register(r'roles-usuarios', RolUsuarioViewSet, basename='rol-usuario')
-router.register(r'tipos-autenticacion', TipoAutenticacionViewSet, basename='tipo-autenticacion')
-router.register(r'departamentos', DepartamentoViewSet, basename='departamento')
-router.register(r'tipos-telefonos', TipoTelefonoViewSet, basename='tipo-telefono')
-router.register(r'tipos-correos', TipoCorreoViewSet, basename='tipo-correo')
+from . import views as v
+
+app_name = "catalogos"
 
 urlpatterns = [
-    path('', include(router.urls)),
+    *rutas_crud("tipos-identificaciones/", "<int:cod_tipo_identificacion>/",
+                v.TipoIdentificacionViewSet, "tipos-identificaciones"),
+    *rutas_crud("roles/", "<int:cod_rol>/", v.RolUsuarioViewSet, "roles"),
+    *rutas_crud("tipos-autenticaciones/", "<int:cod_tipo_auth>/",
+                v.TipoAutenticacionViewSet, "tipos-autenticaciones"),
+    *rutas_crud("departamentos/", "<int:cod_departamento>/", v.DepartamentoViewSet, "departamentos"),
+    *rutas_crud("tipos-telefonos/", "<int:cod_telefono>/", v.TipoTelefonoViewSet, "tipos-telefonos"),
+    *rutas_crud("tipos-correos/", "<int:cod_correo>/", v.TipoCorreoViewSet, "tipos-correos"),
 ]

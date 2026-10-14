@@ -1,243 +1,145 @@
-# views.py
-from rest_framework import viewsets, status
+from django.contrib.auth.hashers import check_password, make_password
+from rest_framework import status
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied, ValidationError
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from django.db import connection, DatabaseError
-from .models import Usuario, UsuarioTelefono, UsuarioCorreo, UsuarioPaginaWeb
-from .serializers import (
-    UsuarioSerializer, UsuarioTelefonoSerializer, UsuarioCorreoSerializer, UsuarioPaginaWebSerializer
+
+from apps.core.db import llamar_sp
+from apps.core.viewsets import SPViewSet
+
+from . import serializers as s
+
+CAMPOS_USUARIO = (
+    "cod_rol", "cod_tipo_auth", "cod_tipo_identificacion", "dni",
+    "nombre", "apellido1", "apellido2",
+    "cod_pais", "cod_provincia", "cod_canton", "cod_distrito",
+    "otras_senas", "imagen_path", "cod_departamento", "usuario_red",
 )
 
-class UsuarioViewSet(viewsets.ModelViewSet):
-    queryset = Usuario.objects.all()
-    serializer_class = UsuarioSerializer
 
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
+class UsuarioViewSet(SPViewSet):
+    """CRUD de usuarios (sp_usr_usuarios_*).
 
-        try:
-            with connection.cursor() as cursor:
-                # 1. Insertar el Usuario
-                cursor.execute("""
-                    CALL sp_usr_insert_usuario(
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, @p_id_usuario
-                    );
-                """, [
-                    data.get('cod_rol').pk,
-                    data.get('cod_tipo_auth').pk,
-                    data.get('cod_tipo_identificacion').pk,
-                    data.get('dni'),
-                    data.get('nombre'),
-                    data.get('apellido1'),
-                    data.get('apellido2'),
-                    data.get('cod_pais'),
-                    data.get('cod_provincia'),
-                    data.get('cod_canton'),
-                    data.get('cod_distrito').pk,
-                    data.get('otras_senas'),
-                    data.get('imagen_path'),
-                    data.get('cod_departamento').pk if data.get('cod_departamento') else None,
-                    data.get('usuario_red'),
-                    data.get('password_hash')
-                ])
+    - DELETE desactiva (eliminación lógica). Para borrar de verdad use
+      DELETE /usuarios/<id>/eliminar-fisico/.
+    - La clave se recibe en texto plano y se guarda como hash de Django.
+    """
+    sp = "sp_usr_usuarios"
+    campos_pk = ("id",)
+    campos_insertar = CAMPOS_USUARIO + ("password_hash",)
+    campos_actualizar = CAMPOS_USUARIO + ("activo",)
+    filtros_listar = ("activo", "cod_rol", "cod_departamento", "buscar")
+    insertar_devuelve_codigo = True
+    campos_bool = ("activo",)
 
-                # Obtener el ID generado
-                cursor.execute("SELECT @p_id_usuario;")
-                usuario_id = cursor.fetchone()[0]
+    serializer_class = s.UsuarioCrearSerializer
+    serializer_actualizar_class = s.UsuarioActualizarSerializer
+    serializer_filtros_class = s.UsuarioFiltrosSerializer
 
-                # 2. Insertar Teléfonos (si vienen)
-                telefonos_data = request.data.get('telefonos', [])
-                for tel in telefonos_data:
-                    cursor.execute("""
-                        CALL sp_usr_insert_telefono(%s, %s, %s, %s, @p_num_linea);
-                    """, [
-                        usuario_id, 
-                        tel.get('cod_telefono'), 
-                        tel.get('telefono'), 
-                        tel.get('es_whatsapp', False)
-                    ])
+    def get_serializer_class(self):
+        if self.action == "cambiar_clave":
+            return s.CambiarClaveSerializer
+        if self.action == "validar_credenciales":
+            return s.CredencialesSerializer
+        return super().get_serializer_class()
 
-                # 3. Insertar Correos (si vienen)
-                correos_data = request.data.get('correos', [])
-                for cor in correos_data:
-                    cursor.execute("""
-                        CALL sp_usr_insert_correo(%s, %s, %s, @p_num_linea);
-                    """, [
-                        usuario_id,
-                        cor.get('cod_correo'),
-                        cor.get('correo')
-                    ])
-                    
-                # 4. Insertar Páginas Web (si vienen)
-                webs_data = request.data.get('paginas_web', [])
-                for web in webs_data:
-                    cursor.execute("""
-                        CALL sp_usr_insert_pagina_web(%s, %s, @p_num_linea);
-                    """, [
-                        usuario_id,
-                        web.get('url_web')
-                    ])
+    def get_permissions(self):
+        if self.action == "validar_credenciales":
+            return [AllowAny()]
+        return super().get_permissions()
 
-                # Si venía password, insertamos en el historial
-                if data.get('password_hash'):
-                     cursor.execute("""
-                        CALL sp_usr_insert_historial_clave(%s, %s, @p_num_linea);
-                    """, [
-                        usuario_id,
-                        data.get('password_hash')
-                    ])
+    def preparar_datos(self, datos, accion):
+        if accion == "insertar":
+            password = datos.pop("password", None)
+            datos["password_hash"] = make_password(password) if password else None
+        return datos
 
-            # Retornar los datos insertados (podríamos hacer un refetch para tener las inlines completas)
-            nuevo_usuario = Usuario.objects.get(id=usuario_id)
-            return Response(UsuarioSerializer(nuevo_usuario).data, status=status.HTTP_201_CREATED)
+    # POST /usuarios/<id>/activar/
+    def activar(self, request, id):
+        llamar_sp("sp_usr_usuarios_activar", [id])
+        return Response(self.salida(self._obtener([id])))
 
-        except DatabaseError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    # DELETE /usuarios/<id>/eliminar-fisico/
+    def eliminar_fisico(self, request, id):
+        llamar_sp("sp_usr_usuarios_eliminar_fisico", [id])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
-    def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=kwargs.get('partial', False))
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
+    # POST /usuarios/<id>/cambiar-clave/
+    def cambiar_clave(self, request, id):
+        datos = self._validar(s.CambiarClaveSerializer, request.data)
+        password = datos["password"]
+        self._obtener([id])  # 404 si no existe
 
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("""
-                    CALL sp_usr_update_usuario(
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                    );
-                """, [
-                    instance.id,
-                    data.get('cod_rol', instance.cod_rol).pk,
-                    data.get('cod_tipo_auth', instance.cod_tipo_auth).pk,
-                    data.get('cod_tipo_identificacion', instance.cod_tipo_identificacion).pk,
-                    data.get('dni', instance.dni),
-                    data.get('nombre', instance.nombre),
-                    data.get('apellido1', instance.apellido1),
-                    data.get('apellido2', instance.apellido2),
-                    data.get('cod_pais', instance.cod_pais),
-                    data.get('cod_provincia', instance.cod_provincia),
-                    data.get('cod_canton', instance.cod_canton),
-                    data.get('cod_distrito', instance.cod_distrito).pk,
-                    data.get('otras_senas', instance.otras_senas),
-                    data.get('imagen_path', instance.imagen_path),
-                    data.get('cod_departamento', instance.cod_departamento).pk if data.get('cod_departamento') else None,
-                    data.get('usuario_red', instance.usuario_red),
-                    data.get('password_hash', instance.password_hash)
-                ])
+        # Los hashes de Django llevan sal aleatoria, así que la comparación
+        # contra el historial se hace aquí y no dentro del procedimiento.
+        if datos["historial_bloqueo"]:
+            previas, _ = llamar_sp("sp_usr_historiales_claves_listar", [id, datos["historial_bloqueo"]])
+            if any(check_password(password, f["password_hash"]) for f in previas):
+                raise ValidationError({"password": ["La clave ya fue utilizada recientemente."]})
 
-            actualizado = Usuario.objects.get(id=instance.id)
-            return Response(UsuarioSerializer(actualizado).data)
+        llamar_sp("sp_usr_usuarios_cambiar_clave", [id, make_password(password), 0])
+        return Response({"detail": "Clave actualizada."})
 
-        except DatabaseError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    # POST /usuarios/validar-credenciales/
+    def validar_credenciales(self, request):
+        datos = self._validar(s.CredencialesSerializer, request.data)
+        filas, _ = llamar_sp("sp_usr_usuarios_obtener_por_login", [datos["usuario_red"]])
 
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        try:
-            with connection.cursor() as cursor:
-                # Usar sp_usr_delete_usuario_fisico para eliminación real o sp_usr_desactivar_usuario para lógica
-                cursor.execute("CALL sp_usr_delete_usuario_fisico(%s);", [instance.id])
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except DatabaseError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        if not filas:
+            make_password(datos["password"])  # mismo tiempo de respuesta exista o no el usuario
+            raise AuthenticationFailed("Usuario o clave incorrectos.")
 
-class UsuarioTelefonoViewSet(viewsets.ModelViewSet):
-    queryset = UsuarioTelefono.objects.all()
-    serializer_class = UsuarioTelefonoSerializer
+        usuario = filas[0]
+        if not usuario["password_hash"]:
+            raise ValidationError({"detail": "Este usuario se autentica por Active Directory."})
+        if not check_password(datos["password"], usuario["password_hash"]):
+            raise AuthenticationFailed("Usuario o clave incorrectos.")
+        if not usuario["activo"]:
+            raise PermissionDenied("El usuario está inactivo.")
 
-    def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=kwargs.get('partial', False))
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        
-        try:
-             with connection.cursor() as cursor:
-                 cursor.execute("""
-                     CALL sp_usr_update_telefono(%s, %s, %s, %s, %s);
-                 """, [
-                     instance.id_usuario_id,
-                     instance.num_linea,
-                     data.get('cod_telefono', instance.cod_telefono).pk,
-                     data.get('telefono', instance.telefono),
-                     data.get('es_whatsapp', instance.es_whatsapp)
-                 ])
-             return Response(serializer.data)
-        except DatabaseError as e:
-             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-             
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("CALL sp_usr_delete_telefono(%s, %s);", [instance.id_usuario_id, instance.num_linea])
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except DatabaseError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.salida(usuario))
 
-class UsuarioCorreoViewSet(viewsets.ModelViewSet):
-    queryset = UsuarioCorreo.objects.all()
-    serializer_class = UsuarioCorreoSerializer
 
-    def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=kwargs.get('partial', False))
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        
-        try:
-             with connection.cursor() as cursor:
-                 cursor.execute("""
-                     CALL sp_usr_update_correo(%s, %s, %s, %s);
-                 """, [
-                     instance.id_usuario_id,
-                     instance.num_linea,
-                     data.get('cod_correo', instance.cod_correo).pk,
-                     data.get('correo', instance.correo)
-                 ])
-             return Response(serializer.data)
-        except DatabaseError as e:
-             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-             
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("CALL sp_usr_delete_correo(%s, %s);", [instance.id_usuario_id, instance.num_linea])
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except DatabaseError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+class DetalleUsuarioViewSet(SPViewSet):
+    """Base de las tablas de detalle: llave (id_usuario, num_linea);
+    num_linea lo genera el procedimiento _insertar."""
+    campos_pk = ("id_usuario", "num_linea")
+    campos_padre = ("id_usuario",)
+    insertar_devuelve_codigo = True
 
-class UsuarioPaginaWebViewSet(viewsets.ModelViewSet):
-    queryset = UsuarioPaginaWeb.objects.all()
-    serializer_class = UsuarioPaginaWebSerializer
 
-    def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=kwargs.get('partial', False))
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        
-        try:
-             with connection.cursor() as cursor:
-                 cursor.execute("""
-                     CALL sp_usr_update_pagina_web(%s, %s, %s);
-                 """, [
-                     instance.id_usuario_id,
-                     instance.num_linea,
-                     data.get('url_web', instance.url_web)
-                 ])
-             return Response(serializer.data)
-        except DatabaseError as e:
-             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-             
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("CALL sp_usr_delete_pagina_web(%s, %s);", [instance.id_usuario_id, instance.num_linea])
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except DatabaseError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+class TelefonoViewSet(DetalleUsuarioViewSet):
+    sp = "sp_usr_telefonos"
+    campos_insertar = ("cod_telefono", "telefono", "es_whatsapp")
+    campos_actualizar = ("cod_telefono", "telefono", "es_whatsapp")
+    campos_bool = ("es_whatsapp",)
+    serializer_class = s.TelefonoSerializer
+
+
+class CorreoViewSet(DetalleUsuarioViewSet):
+    sp = "sp_usr_correos"
+    campos_insertar = ("cod_correo", "correo")
+    campos_actualizar = ("cod_correo", "correo")
+    serializer_class = s.CorreoSerializer
+
+
+class PaginaWebViewSet(DetalleUsuarioViewSet):
+    sp = "sp_usr_paginas_webs"
+    campos_insertar = ("url_web",)
+    campos_actualizar = ("url_web",)
+    serializer_class = s.PaginaWebSerializer
+
+
+class HistorialClaveViewSet(DetalleUsuarioViewSet):
+    """El hash nunca sale en la respuesta. Para cambiar la clave de un usuario
+    use /usuarios/<id>/cambiar-clave/; esto es para mantenimiento del historial."""
+    sp = "sp_usr_historiales_claves"
+    campos_insertar = ("password_hash",)
+    campos_actualizar = ("password_hash",)
+    filtros_listar = ("limite",)
+    serializer_class = s.HistorialClaveSerializer
+    serializer_filtros_class = s.HistorialClaveFiltrosSerializer
+
+    def preparar_datos(self, datos, accion):
+        datos["password_hash"] = make_password(datos.pop("password"))
+        return datos

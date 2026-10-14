@@ -1,20 +1,14 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import (
-    # ... tus otras vistas ...
-    PaisViewSet, ProvinciaViewSet, CantonViewSet, DistritoViewSet
-)
+from apps.core.rutas import rutas_crud
 
-router = DefaultRouter()
+from .views import CantonViewSet, DistritoViewSet, PaisViewSet, ProvinciaViewSet
 
-# (Tus catálogos anteriores)
-
-# Geografía
-router.register(r'paises', PaisViewSet, basename='pais')
-router.register(r'provincias', ProvinciaViewSet, basename='provincia')
-router.register(r'cantones', CantonViewSet, basename='canton')
-router.register(r'distritos', DistritoViewSet, basename='distrito')
+app_name = "geografia"
 
 urlpatterns = [
-    path('', include(router.urls)),
+    *rutas_crud("paises/", "<str:cod_pais>/", PaisViewSet, "paises"),
+    *rutas_crud("provincias/", "<str:cod_pais>/<str:cod_provincia>/", ProvinciaViewSet, "provincias"),
+    *rutas_crud("cantones/", "<str:cod_pais>/<str:cod_provincia>/<str:cod_canton>/",
+                CantonViewSet, "cantones"),
+    *rutas_crud("distritos/", "<str:cod_pais>/<str:cod_provincia>/<str:cod_canton>/<str:cod_distrito>/",
+                DistritoViewSet, "distritos"),
 ]

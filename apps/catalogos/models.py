@@ -1,92 +1,75 @@
-# models.py
 from django.db import models
 
-class TipoIdentificacion(models.Model):
-    # Datos de identificación
+# Create your models here.
+"""Catálogos del sistema (tablas cat_*). managed = False: el esquema vive en MariaDB."""
+from django.db import models
+
+
+class CatalogoBase(models.Model):
+    def __str__(self):
+        return self.descripcion
+
+    class Meta:
+        abstract = True
+        managed = False
+        ordering = ["descripcion"]
+
+
+class TipoIdentificacion(CatalogoBase):
     cod_tipo_identificacion = models.AutoField(primary_key=True)
     descripcion = models.CharField(max_length=50)
 
-    # Metadatos del modelo
-    class Meta:
-        db_table = 'cat_tipos_identificacion'
-        verbose_name = 'Tipo de Identificación'
-        verbose_name_plural = 'Tipos de Identificación'
+    class Meta(CatalogoBase.Meta):
+        db_table = "cat_tipos_identificaciones"
+        verbose_name = "tipo de identificación"
+        verbose_name_plural = "tipos de identificaciones"
 
-    # Representación en texto
-    def __str__(self):
-        return self.descripcion
 
-class RolUsuario(models.Model):
-    # Datos de clasificación
+class RolUsuario(CatalogoBase):
     cod_rol = models.AutoField(primary_key=True)
     descripcion = models.CharField(max_length=50)
 
-    # Metadatos del modelo
-    class Meta:
-        db_table = 'cat_roles_usuarios'
-        verbose_name = 'Rol de Usuario'
-        verbose_name_plural = 'Roles de Usuario'
+    class Meta(CatalogoBase.Meta):
+        db_table = "cat_roles_usuarios"
+        verbose_name = "rol de usuario"
+        verbose_name_plural = "roles de usuarios"
 
-    # Representación en texto
-    def __str__(self):
-        return self.descripcion
 
-class TipoAutenticacion(models.Model):
-    # Datos de clasificación
+class TipoAutenticacion(CatalogoBase):
     cod_tipo_auth = models.AutoField(primary_key=True)
     descripcion = models.CharField(max_length=80)
 
-    # Metadatos del modelo
-    class Meta:
-        db_table = 'cat_tipos_autenticacion'
-        verbose_name = 'Tipo de Autenticación'
-        verbose_name_plural = 'Tipos de Autenticación'
+    class Meta(CatalogoBase.Meta):
+        db_table = "cat_tipos_autenticaciones"
+        verbose_name = "tipo de autenticación"
+        verbose_name_plural = "tipos de autenticaciones"
 
-    # Representación en texto
-    def __str__(self):
-        return self.descripcion
 
-class Departamento(models.Model):
-    # Datos del departamento
+class Departamento(CatalogoBase):
     cod_departamento = models.AutoField(primary_key=True)
     descripcion = models.CharField(max_length=120)
 
-    # Metadatos del modelo
-    class Meta:
-        db_table = 'cat_departamentos'
-        verbose_name = 'Departamento'
-        verbose_name_plural = 'Departamentos'
+    class Meta(CatalogoBase.Meta):
+        db_table = "cat_departamentos"
+        verbose_name = "departamento"
+        verbose_name_plural = "departamentos"
 
-    # Representación en texto
-    def __str__(self):
-        return self.descripcion
 
-class TipoTelefono(models.Model):
-    # Datos del tipo
+class TipoTelefono(CatalogoBase):
     cod_telefono = models.AutoField(primary_key=True)
     descripcion = models.CharField(max_length=50)
 
-    # Metadatos del modelo
-    class Meta:
-        db_table = 'cat_tipos_telefonos'
-        verbose_name = 'Tipo de Teléfono'
-        verbose_name_plural = 'Tipos de Teléfonos'
+    class Meta(CatalogoBase.Meta):
+        db_table = "cat_tipos_telefonos"
+        verbose_name = "tipo de teléfono"
+        verbose_name_plural = "tipos de teléfonos"
 
-    # Representación en texto
-    def __str__(self):
-        return self.descripcion
 
-class TipoCorreo(models.Model):
-    # Datos del tipo
+class TipoCorreo(CatalogoBase):
     cod_correo = models.AutoField(primary_key=True)
     descripcion = models.CharField(max_length=50)
 
-    # Metadatos del modelo
-    class Meta:
-        db_table = 'cat_tipos_correos'
-        verbose_name = 'Tipo de Correo'
-        verbose_name_plural = 'Tipos de Correos'
-
-    # Representación en texto
-    def __str__(self):
-        return self.descripcion
+    class Meta(CatalogoBase.Meta):
+        db_table = "cat_tipos_correos"
+        verbose_name = "tipo de correo"
+        verbose_name_plural = "tipos de correos"
