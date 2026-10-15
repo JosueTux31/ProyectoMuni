@@ -47,6 +47,9 @@ class UsuarioFiltrosSerializer(serializers.Serializer):
 
 
 class CambiarClaveSerializer(serializers.Serializer):
+    # Obligatoria cuando el usuario cambia su propia clave
+    password_actual = serializers.CharField(max_length=128, trim_whitespace=False,
+                                            style={"input_type": "password"}, **TEXTO_OPCIONAL)
     password = serializers.CharField(min_length=8, max_length=128, trim_whitespace=False,
                                      style={"input_type": "password"})
     # Cuántas claves anteriores no se pueden reutilizar (0 = sin validar)

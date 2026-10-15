@@ -109,20 +109,33 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'apps.core.excepciones.manejador_excepciones',
     # Genera la documentación Swagger en /api/docs/
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-    # DESARROLLO: APIs abiertas, sin login ni candados en Swagger.
-    # Antes de producción: poner autenticación real (p. ej. JWT) y
-    # cambiar AllowAny por IsAuthenticated.
-    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    # Sesión con los usuarios de usr_usuarios (token de POST /api/usuarios/login/)
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'apps.core.autenticacion.TokenMuniAutenticacion',
+    ],
+    # Con sesión: todos pueden consultar; solo administradores modifican.
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+        'apps.core.permisos.EsAdminOSoloLectura',
     ],
 }
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'API Gestión Municipal',
-    'DESCRIPTION': 'CRUD sobre procedimientos almacenados de MariaDB.',
+    'DESCRIPTION': (
+        'CRUD sobre procedimientos almacenados de MariaDB. '
+        'Haga login en POST /api/usuarios/login/ y pegue el token en Authorize.'
+    ),
     'VERSION': '1.0.0',
 }
+
+# Roles (descripción en cat_roles_usuarios) que pueden modificar todo.
+MUNI_ROLES_ADMIN = ['Administrador']
+
+# Horas que dura una sesión antes de pedir login de nuevo.
+MUNI_TOKEN_HORAS = 8
+
+# Carpeta de la página web (se sirve en /app/)
+FRONTEND_DIR = BASE_DIR / 'frontend'
 
 
 # Password validation

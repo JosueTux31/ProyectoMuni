@@ -9,9 +9,13 @@ app_name = "usuarios"
 DETALLE = "<int:id_usuario>/"
 
 urlpatterns = [
+    # Sesión
+    path("login/", v.UsuarioViewSet.as_view({"post": "login"}), name="login"),
+    path("validar-credenciales/", v.UsuarioViewSet.as_view({"post": "login"}),
+         name="validar-credenciales"),
+    path("yo/", v.UsuarioViewSet.as_view({"get": "yo"}), name="yo"),
+
     # Acciones especiales de usuarios
-    path("validar-credenciales/",
-         v.UsuarioViewSet.as_view({"post": "validar_credenciales"}), name="validar-credenciales"),
     path("<int:id>/activar/",
          v.UsuarioViewSet.as_view({"post": "activar"}), name="usuarios-activar"),
     path("<int:id>/cambiar-clave/",

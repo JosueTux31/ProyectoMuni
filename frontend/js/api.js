@@ -1,0 +1,124 @@
+// Cliente de las APIs de Django: agrega el token de sesión y traduce errores.
+import { CONFIG } from "./config.js";
+
+const CLAVE_SESION = "muni.sesion";
+
+export const sesion = {
+  leer() {
+    try { return JSON.parse(sessionStorage.getItem(CLAVE_SESION)); } catch { return null; }
+  },
+  guardar(datos) {
+    try { sessionStorage.setItem(CLAVE_SESION, JSON.stringify(datos)); } catch { /* sin almacenamiento */ }
+  },
+  borrar() {
+    try { sessionStorage.removeItem(CLAVE_SESION); } catch { /* sin almacenamiento */ }
+  },
+};
+
+export class ErrorApi extends Error {
+  constructor(mensaje, estado = 0, campos = {}) {
+    super(mensaje);
+    this.estado = estado;
+    this.campos = campos; // { nombre_campo: "mensaje" }
+  }
+}
+
+let alExpirarSesion = () => {};
+export function cuandoExpireSesion(fn) { alExpirarSesion = fn; }
+
+const ETIQUETAS = {
+  descripcion: "Descripción", dni: "Identificación", usuario_red: "Usuario de red",
+  password: "Clave", password_actual: "Clave actual", correo: "Correo", url_web: "Página web",
+  telefono: "Teléfono", cod_rol: "Rol", activo: "Estado",
+};
+
+function textoDe(valor) {
+  if (Array.isArray(valor)) return valor.map(textoDe).join(" ");
+  if (valor && typeof valor === "object") return Object.values(valor).map(textoDe).join(" ");
+  return String(valor ?? "");
+}
+
+function interpretarError(cuerpo, estado) {
+  const campos = {};
+  let mensaje = "";
+
+  if (cuerpo && typeof cuerpo === "object" && !Array.isArray(cuerpo)) {
+    for (const [clave, valor] of Object.entries(cuerpo)) {
+      if (clave === "detail" || clave === "non_field_errors") mensaje = textoDe(valor);
+      else if (clave !== "db") campos[clave] = textoDe(valor);
+    }
+    if (!mensaje && Object.keys(campos).length) {
+      const [clave, texto] = Object.entries(campos)[0];
+      mensaje = `${ETIQUETAS[clave] || clave}: ${texto}`;
+    }
+  }
+
+  if (!mensaje) {
+    mensaje = {
+      400: "Los datos enviados no son válidos.",
+      401: "Su sesión no es válida. Inicie sesión de nuevo.",
+      403: "No tiene permiso para hacer esto.",
+      404: "El registro no existe.",
+      409: "La operación entra en conflicto con otros datos.",
+    }[estado] || `El servidor respondió con un error (${estado}). Revise la consola de Django.`;
+  }
+  const error = new ErrorApi(mensaje, estado, campos);
+  error.db = cuerpo?.db || "";
+  return error;
+}
+
+/**
+ * Llama a /api/<ruta>.
+ *   api("catalogos/roles/")
+ *   api("usuarios/", { query: { activo: true } })
+ *   api("usuarios/5/", { metodo: "PUT", datos: {...} })
+ */
+export async function api(ruta, { metodo = "GET", datos, query } = {}) {
+  let url = `${CONFIG.API_BASE}/api/${ruta.replace(/^\/+/, "")}`;
+
+  if (query) {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(query)) {
+      if (v !== null && v !== undefined && v !== "") params.append(k, v);
+    }
+    const qs = params.toString();
+    if (qs) url += `?${qs}`;
+  }
+
+  const headers = { Accept: "application/json" };
+  const actual = sesion.leer();
+  const esLogin = ruta.startsWith("usuarios/login");
+  if (actual?.token && !esLogin) headers.Authorization = `Bearer ${actual.token}`;
+  if (datos !== undefined) headers["Content-Type"] = "application/json";
+
+  let respuesta;
+  try {
+    respuesta = await fetch(url, {
+      method: metodo,
+      headers,
+      body: datos !== undefined ? JSON.stringify(datos) : undefined,
+    });
+  } catch {
+    throw new ErrorApi("No hay conexión con el servidor. Verifique que Django esté corriendo.", 0);
+  }
+
+  if (respuesta.status === 204) return null;
+
+  let cuerpo = null;
+  const texto = await respuesta.text();
+  if (texto) {
+    try { cuerpo = JSON.parse(texto); } catch { cuerpo = null; }
+  }
+
+  if (!respuesta.ok) {
+    const error = interpretarError(cuerpo, respuesta.status);
+    if (respuesta.status === 401 && !esLogin) alExpirarSesion(error.message);
+    throw error;
+  }
+  return cuerpo;
+}
+
+/** Arma una ruta escapando cada segmento: ruta("geografia/provincias", "CR", "2") */
+export function ruta(base, ...partes) {
+  return [base.replace(/\/+$/, ""), ...partes.map((p) => encodeURIComponent(p))].join("/") + "/";
+}
