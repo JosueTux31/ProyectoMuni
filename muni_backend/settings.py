@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'apps.geografia',
     'apps.catalogos',
     'apps.usuarios',
+    'apps.proveedores',
 ]
 
 MIDDLEWARE = [
@@ -136,6 +137,14 @@ MUNI_TOKEN_HORAS = 8
 
 # Carpeta de la página web (se sirve en /app/)
 FRONTEND_DIR = BASE_DIR / 'frontend'
+
+# Archivos subidos (imágenes y catálogos de servicios de proveedores).
+# No se publican directamente: se descargan por la API con sesión iniciada.
+MEDIA_ROOT = BASE_DIR / 'archivos'
+
+# Tamaño máximo de cada archivo subido, en MB
+MUNI_MAX_MB_CATALOGO = 20
+MUNI_MAX_MB_IMAGEN = 5
 
 
 # Password validation

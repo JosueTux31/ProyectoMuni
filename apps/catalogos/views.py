@@ -1,6 +1,8 @@
 from apps.core.viewsets import SPViewSet
 
-from .serializers import Descripcion50Serializer, Descripcion80Serializer, Descripcion120Serializer
+from .serializers import (
+    Descripcion50Serializer, Descripcion80Serializer, Descripcion120Serializer, Descripcion150Serializer,
+)
 
 
 class CatalogoViewSet(SPViewSet):
@@ -42,3 +44,9 @@ class TipoTelefonoViewSet(CatalogoViewSet):
 class TipoCorreoViewSet(CatalogoViewSet):
     sp = "sp_cat_tipos_correos"
     campos_pk = ("cod_correo",)
+
+
+class CategoriaProveedorViewSet(CatalogoViewSet):
+    sp = "sp_cat_categorias_proveedores"
+    campos_pk = ("cod_categoria",)
+    serializer_class = Descripcion150Serializer

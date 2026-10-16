@@ -28,6 +28,7 @@ export function cuandoExpireSesion(fn) { alExpirarSesion = fn; }
 
 const ETIQUETAS = {
   descripcion: "Descripción", dni: "Identificación", usuario_red: "Usuario de red",
+  cod_categoria: "Categoría", mapa: "Ubicación en el mapa", archivo: "Archivo",
   password: "Clave", password_actual: "Clave actual", correo: "Correo", url_web: "Página web",
   telefono: "Teléfono", cod_rol: "Rol", activo: "Estado",
 };
@@ -73,7 +74,7 @@ function interpretarError(cuerpo, estado) {
  *   api("usuarios/", { query: { activo: true } })
  *   api("usuarios/5/", { metodo: "PUT", datos: {...} })
  */
-export async function api(ruta, { metodo = "GET", datos, query } = {}) {
+export async function api(ruta, { metodo = "GET", datos, query, formulario, comoArchivo = false } = {}) {
   let url = `${CONFIG.API_BASE}/api/${ruta.replace(/^\/+/, "")}`;
 
   if (query) {
@@ -85,24 +86,23 @@ export async function api(ruta, { metodo = "GET", datos, query } = {}) {
     if (qs) url += `?${qs}`;
   }
 
-  const headers = { Accept: "application/json" };
+  const headers = { Accept: comoArchivo ? "*/*" : "application/json" };
   const actual = sesion.leer();
   const esLogin = ruta.startsWith("usuarios/login");
   if (actual?.token && !esLogin) headers.Authorization = `Bearer ${actual.token}`;
   if (datos !== undefined) headers["Content-Type"] = "application/json";
+  // Con FormData (subida de archivos) el navegador pone el Content-Type solo.
+  const cuerpoPeticion = formulario ?? (datos !== undefined ? JSON.stringify(datos) : undefined);
 
   let respuesta;
   try {
-    respuesta = await fetch(url, {
-      method: metodo,
-      headers,
-      body: datos !== undefined ? JSON.stringify(datos) : undefined,
-    });
+    respuesta = await fetch(url, { method: metodo, headers, body: cuerpoPeticion });
   } catch {
     throw new ErrorApi("No hay conexión con el servidor. Verifique que Django esté corriendo.", 0);
   }
 
   if (respuesta.status === 204) return null;
+  if (comoArchivo && respuesta.ok) return respuesta.blob();
 
   let cuerpo = null;
   const texto = await respuesta.text();
@@ -111,6 +111,7 @@ export async function api(ruta, { metodo = "GET", datos, query } = {}) {
   }
 
   if (!respuesta.ok) {
+    if (respuesta.status === 413) throw new ErrorApi("El archivo es demasiado grande para el servidor.", 413);
     const error = interpretarError(cuerpo, respuesta.status);
     if (respuesta.status === 401 && !esLogin) alExpirarSesion(error.message);
     throw error;

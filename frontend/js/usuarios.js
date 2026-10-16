@@ -111,7 +111,7 @@ export async function vistaUsuarios(cont, _params, ctx) {
   await cargar();
 }
 
-const pastillaEstado = (activo) =>
+export const pastillaEstado = (activo) =>
   activo ? `<span class="pastilla pastilla--activo">Activo</span>` : `<span class="pastilla pastilla--inactivo">Inactivo</span>`;
 
 /* =====================================================================
@@ -163,7 +163,7 @@ async function definicionCampos({ nuevo }) {
   ];
 }
 
-function seccionesHTML(secciones, valores, soloLectura) {
+export function seccionesHTML(secciones, valores, soloLectura) {
   return secciones.map((s) => `
     <section class="seccion-form">
       <h3>${icono(s.icono)}${esc(s.titulo)}</h3>
@@ -172,18 +172,18 @@ function seccionesHTML(secciones, valores, soloLectura) {
     </section>`).join("");
 }
 
-const todosLosCampos = (secciones) => secciones.flatMap((s) => s.campos);
+export const todosLosCampos = (secciones) => secciones.flatMap((s) => s.campos);
 
 /** Traduce los choques de llaves únicas (409) a errores en el campo correcto. */
-function precisarDuplicado(e) {
+export function precisarDuplicado(e, quien = "usuario") {
   if (e.estado !== 409) return e;
   if (e.db.includes("uk_usr_login")) e.campos = { usuario_red: "Ese usuario de red ya lo tiene otra persona." };
-  else if (e.db.includes("uk_usr_documento")) e.campos = { dni: "Ya existe un usuario con este tipo y número de identificación." };
+  else if (e.db.includes("uk_usr_documento")) e.campos = { dni: `Ya existe un ${quien} con este tipo y número de identificación.` };
   return e;
 }
 
 /* ------------------------------------------------- Contactos repetibles */
-const CONTACTOS = [
+export const CONTACTOS = [
   {
     clave: "telefonos", titulo: "Teléfonos", singular: "teléfono", icono: "telefono", catalogo: "tipos-telefonos",
     fila: (tipos) => `
@@ -203,7 +203,7 @@ const CONTACTOS = [
   },
 ];
 
-async function contactosHTML() {
+export async function contactosHTML(quien = "usuario") {
   const tipos = {};
   for (const c of CONTACTOS) {
     if (!c.catalogo) continue;
@@ -213,7 +213,7 @@ async function contactosHTML() {
   const html = `
     <section class="seccion-form">
       <h3>${icono("telefono")}Contacto</h3>
-      <p>Opcional. También se puede agregar después desde la ficha del usuario.</p>
+      <p>Opcional. También se puede agregar después desde la ficha del ${quien}.</p>
       ${CONTACTOS.map((c) => `
         <div class="repetible" data-repetible="${c.clave}">
           <p class="repetible__titulo">${icono(c.icono, "ic--sm")}${esc(c.titulo)}</p>
@@ -224,7 +224,7 @@ async function contactosHTML() {
   return { html, tipos };
 }
 
-function enlazarContactos(form, tipos) {
+export function enlazarContactos(form, tipos) {
   form.addEventListener("click", (ev) => {
     const agregar = ev.target.closest("[data-agregar-contacto]");
     if (agregar) {
@@ -248,7 +248,7 @@ function enlazarContactos(form, tipos) {
   });
 }
 
-function leerContactos(form) {
+export function leerContactos(form) {
   const salida = {};
   for (const def of CONTACTOS) {
     salida[def.clave] = [...form.querySelectorAll(`[data-repetible="${def.clave}"] .repetible__fila`)].map((fila) => {
@@ -263,6 +263,22 @@ function leerContactos(form) {
     });
   }
   return salida;
+}
+
+/** Guarda los contactos escritos en el formulario de creación.
+ *  Devuelve la lista de los que no se pudieron guardar. */
+export async function guardarContactos(recurso, id, extra) {
+  const fallos = [];
+  for (const def of CONTACTOS) {
+    for (const item of extra[def.clave]) {
+      try {
+        await api(ruta(recurso, id, def.clave), { metodo: "POST", datos: item });
+      } catch (e) {
+        fallos.push(`${def.singular} ${Object.values(item).find((v) => typeof v === "string") || ""}: ${e.message}`);
+      }
+    }
+  }
+  return fallos;
 }
 
 /* =====================================================================
@@ -319,16 +335,7 @@ export async function vistaUsuarioNuevo(cont, _params, ctx) {
       return;
     }
 
-    const fallos = [];
-    for (const def of CONTACTOS) {
-      for (const item of extra[def.clave]) {
-        try {
-          await api(ruta("usuarios", creado.id, def.clave), { metodo: "POST", datos: item });
-        } catch (e) {
-          fallos.push(`${def.singular} ${Object.values(item).find((v) => typeof v === "string") || ""}: ${e.message}`);
-        }
-      }
-    }
+    const fallos = await guardarContactos("usuarios", creado.id, extra);
 
     toast(`Se creó el usuario ${nombreCompleto(creado)}.`);
     if (fallos.length) toast(`No se guardaron algunos contactos. ${fallos.join(" ")}`, "error");
@@ -556,9 +563,9 @@ const SUBRECURSOS = {
   },
 };
 
-async function pestanaContactos(panel, u, clave, ctx) {
+export async function pestanaContactos(panel, u, clave, ctx, recurso = "usuarios") {
   const def = SUBRECURSOS[clave];
-  const base = ruta("usuarios", u.id, clave);
+  const base = ruta(recurso, u.id, clave);
   const admin = ctx.esAdmin;
 
   panel.innerHTML = `
@@ -594,7 +601,7 @@ async function pestanaContactos(panel, u, clave, ctx) {
       campos: await def.campos(),
       valores: fila || {},
       textoGuardar: fila ? "Guardar cambios" : "Agregar",
-      alGuardar: (datos) => api(fila ? ruta("usuarios", u.id, clave, fila.num_linea) : base, {
+      alGuardar: (datos) => api(fila ? ruta(recurso, u.id, clave, fila.num_linea) : base, {
         metodo: fila ? "PUT" : "POST", datos,
       }),
     });
@@ -611,7 +618,7 @@ async function pestanaContactos(panel, u, clave, ctx) {
         titulo: `Eliminar ${def.singular}`,
         mensaje: `Se eliminará ${def.etiqueta(r.fila)} de ${nombreCompleto(u)}.`,
         textoBoton: "Eliminar",
-        accion: () => api(ruta("usuarios", u.id, clave, r.fila.num_linea), { metodo: "DELETE" }),
+        accion: () => api(ruta(recurso, u.id, clave, r.fila.num_linea), { metodo: "DELETE" }),
       });
       if (ok) { toast(`Se eliminó ${def.etiqueta(r.fila)}.`); await cargar(); }
     }

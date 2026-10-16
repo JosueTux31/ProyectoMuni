@@ -13,4 +13,6 @@ urlpatterns = [
     *rutas_crud("departamentos/", "<int:cod_departamento>/", v.DepartamentoViewSet, "departamentos"),
     *rutas_crud("tipos-telefonos/", "<int:cod_telefono>/", v.TipoTelefonoViewSet, "tipos-telefonos"),
     *rutas_crud("tipos-correos/", "<int:cod_correo>/", v.TipoCorreoViewSet, "tipos-correos"),
+    *rutas_crud("categorias-proveedores/", "<int:cod_categoria>/",
+                v.CategoriaProveedorViewSet, "categorias-proveedores"),
 ]

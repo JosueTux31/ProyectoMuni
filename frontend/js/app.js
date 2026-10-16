@@ -8,6 +8,7 @@ import {
 import { filasCatalogo } from "./datos.js";
 import { vistaPerfil, vistaUsuario, vistaUsuarioNuevo, vistaUsuarios } from "./usuarios.js";
 import { vistaCatalogo, vistaGeografia } from "./recursos.js";
+import { vistaProveedor, vistaProveedores, vistaProveedorNuevo } from "./proveedores.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -130,6 +131,9 @@ const RUTAS = [
   { patron: /^usuarios\/nuevo$/, vista: vistaUsuarioNuevo, soloAdmin: true },
   { patron: /^usuarios\/(\d+)(?:\/([\w-]+))?$/, vista: vistaUsuario },
   { patron: /^perfil(?:\/([\w-]+))?$/, vista: vistaPerfil },
+  { patron: /^proveedores$/, vista: vistaProveedores },
+  { patron: /^proveedores\/nuevo$/, vista: vistaProveedorNuevo, soloAdmin: true },
+  { patron: /^proveedores\/(\d+)(?:\/([\w-]+))?$/, vista: vistaProveedor },
   { patron: /^catalogos\/([\w-]+)$/, vista: vistaCatalogo },
   { patron: /^geografia\/([\w-]+)$/, vista: vistaGeografia },
 ];
@@ -242,10 +246,10 @@ async function vistaInicio(cont, _params, ctx) {
       </section>
     </div>`;
 
-  const [usuarios, departamentos, roles] = await Promise.all([
-    api("usuarios/"),
+  const [usuarios, proveedores, departamentos] = await Promise.all([
+    api("usuarios/", { query: { activo: "" } }),
+    api("proveedores/", { query: { activo: true } }),
     filasCatalogo("departamentos"),
-    filasCatalogo("roles"),
   ]);
   if (!ctx.vigente()) return;
 
@@ -254,8 +258,8 @@ async function vistaInicio(cont, _params, ctx) {
     <nav class="resumen" aria-label="Resumen">
       <a href="#/usuarios"><b>${activos}</b><span>Usuarios activos</span></a>
       <a href="#/usuarios"><b>${usuarios.length - activos}</b><span>Usuarios inactivos</span></a>
+      <a href="#/proveedores"><b>${proveedores.length}</b><span>Proveedores activos</span></a>
       <a href="#/catalogos/departamentos"><b>${departamentos.length}</b><span>Departamentos</span></a>
-      <a href="#/catalogos/roles"><b>${roles.length}</b><span>Roles</span></a>
     </nav>`;
 
   const recientes = [...usuarios]
@@ -286,15 +290,16 @@ function atajos(ctx) {
   if (ctx.esAdmin) {
     return [
       item("#/usuarios/nuevo", "usuario-mas", "Crear un usuario", "Datos, acceso, ubicación y contactos"),
-      item("#/catalogos/departamentos", "edificio", "Departamentos", "Dependencias municipales"),
-      item("#/geografia/distritos", "punto", "Distritos", "División territorial"),
+      item("#/proveedores/nuevo", "proveedor", "Registrar un proveedor", "Datos, categoría, contactos y catálogo"),
+      item("#/catalogos/categorias-proveedores", "etiqueta", "Categorías de proveedores", "Bienes y servicios"),
       item("#/perfil/seguridad", "llave", "Cambiar mi clave", "Desde Mi perfil"),
     ];
   }
   return [
+    item("#/proveedores", "proveedor", "Directorio de proveedores", "Contactos y catálogos de servicios"),
+    item("#/usuarios", "usuarios", "Directorio de usuarios", "Consulta de personal"),
     item("#/perfil/seguridad", "llave", "Cambiar mi clave", "Desde Mi perfil"),
     item("#/perfil", "usuario", "Mis datos", "Información de su cuenta"),
-    item("#/usuarios", "usuarios", "Directorio de usuarios", "Consulta de personal"),
   ];
 }
 

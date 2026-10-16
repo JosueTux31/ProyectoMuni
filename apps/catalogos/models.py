@@ -1,6 +1,3 @@
-from django.db import models
-
-# Create your models here.
 """Catálogos del sistema (tablas cat_*). managed = False: el esquema vive en MariaDB."""
 from django.db import models
 
@@ -63,6 +60,17 @@ class TipoTelefono(CatalogoBase):
         db_table = "cat_tipos_telefonos"
         verbose_name = "tipo de teléfono"
         verbose_name_plural = "tipos de teléfonos"
+
+
+class CategoriaProveedor(CatalogoBase):
+    cod_categoria = models.AutoField(primary_key=True)
+    descripcion = models.CharField(max_length=150)
+
+    class Meta(CatalogoBase.Meta):
+        db_table = "cat_categorias_proveedores"
+        verbose_name = "categoría de proveedor"
+        verbose_name_plural = "categorías de proveedores"
+        ordering = ["cod_categoria"]
 
 
 class TipoCorreo(CatalogoBase):

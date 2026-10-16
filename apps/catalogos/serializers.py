@@ -11,3 +11,7 @@ class Descripcion80Serializer(serializers.Serializer):
 
 class Descripcion120Serializer(serializers.Serializer):
     descripcion = serializers.CharField(max_length=120)
+
+
+class Descripcion150Serializer(serializers.Serializer):
+    descripcion = serializers.CharField(max_length=150)

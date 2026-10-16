@@ -28,7 +28,7 @@ class ProvinciaActualizarSerializer(serializers.Serializer):
 class ProvinciaFiltrosSerializer(serializers.Serializer):
     cod_pais = serializers.CharField(required=False, allow_null=True, **CODIGO)
 
-
+00
 # -------------------------------------------------------------- Cantones
 class CantonSerializer(serializers.Serializer):
     cod_pais = serializers.CharField(**CODIGO)

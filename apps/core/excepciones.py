@@ -14,6 +14,7 @@ ERR_DUPLICADO = 1062         # Llave primaria o UNIQUE repetida
 ERR_FK_EN_USO = 1451         # No se puede borrar: hay registros que lo referencian
 ERR_FK_NO_EXISTE = 1452      # Se referencia un código que no existe
 ERR_DATOS_INVALIDOS = {1048, 1406, 1366, 1292}  # NULL, texto muy largo, tipo, fecha
+ERR_CHECK = {4025, 3819}     # Regla CHECK no cumplida (MariaDB, MySQL)
 
 
 def _codigo_y_mensaje(exc):
@@ -40,6 +41,10 @@ def manejador_excepciones(exc, context):
                         status=status.HTTP_409_CONFLICT)
     if codigo == ERR_FK_NO_EXISTE:
         return Response({"detail": "Uno de los códigos referenciados no existe.", "db": mensaje},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if codigo in ERR_CHECK:
+        return Response({"detail": "Los datos no cumplen las reglas del registro "
+                                   "(por ejemplo, un proveedor debe tener categoría).", "db": mensaje},
                         status=status.HTTP_400_BAD_REQUEST)
     if codigo in ERR_DATOS_INVALIDOS:
         return Response({"detail": "Datos inválidos.", "db": mensaje},

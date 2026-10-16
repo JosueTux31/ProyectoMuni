@@ -26,7 +26,11 @@ export const CATALOGOS = {
   },
   "tipos-correos": {
     titulo: "Tipos de correo", singular: "tipo de correo", llave: "cod_correo", max: 50, icono: "correo",
-    descripcion: "Clasificación de los correos electrónicos de los usuarios.",
+    descripcion: "Clasificación de los correos electrónicos de usuarios y proveedores.",
+  },
+  "categorias-proveedores": {
+    titulo: "Categorías de proveedores", singular: "categoría", llave: "cod_categoria", max: 150, icono: "proveedor",
+    descripcion: "Tipo de bien o servicio que ofrece cada proveedor. Cada proveedor tiene una categoría.",
   },
 };
 
