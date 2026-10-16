@@ -2,11 +2,36 @@
 import { CONFIG } from "./config.js";
 import { api, ErrorApi, ruta } from "./api.js";
 import {
-  abrirFormulario, botonCargando, botonesFila, camposHTML, cargandoHTML, confirmar, debounce,
-  errorHTML, esc, eventoFila, fecha, icono, iniciales, leerCampos, limpiarErrores, mostrarErrores,
+  abrirFormulario, avatarHTML, botonCargando, botonesFila, camposHTML, cargandoHTML, confirmar, debounce,
+  errorHTML, esc, eventoFila, fecha, icono, leerCampos, limpiarErrores, mostrarErrores,
   nombreCompleto, tablaHTML, toast, vacioHTML,
 } from "./ui.js";
 import { cascadaGeo, NIVELES_GEO, opcionesCatalogo } from "./datos.js";
+import { elegirFoto } from "./foto.js";
+import { pestanaActividadUsuario } from "./auditoria.js";
+
+/** Sube la foto de un usuario (archivo JPG ya recortado). */
+export function subirFoto(id, archivo) {
+  const datos = new FormData();
+  datos.append("archivo", archivo);
+  return api(ruta("usuarios", id, "foto"), { metodo: "POST", formulario: datos });
+}
+
+/** Campos de ubicación con el código postal que se asigna solo. */
+export const camposUbicacion = (textoSenas) => [
+  ...NIVELES_GEO.map((n) => ({ nombre: n.campo, etiqueta: n.titulo, tipo: "select", requerido: true })),
+  {
+    nombre: "codigo_postal", etiqueta: "Código postal", deshabilitado: true,
+    placeholder: "Se asigna al elegir el distrito", ayuda: "Se asigna solo según el distrito.",
+  },
+  { nombre: "otras_senas", etiqueta: "Otras señas", tipo: "textarea", completo: true, placeholder: textoSenas },
+];
+
+/** Enlaza país → provincia → cantón → distrito y el código postal de un formulario. */
+export const enlazarUbicacion = (form, opciones = {}) => cascadaGeo(
+  NIVELES_GEO.map((n) => form.elements.namedItem(n.campo)),
+  { ...opciones, codigoPostal: form.elements.namedItem("codigo_postal") },
+);
 
 /* =====================================================================
    Lista
@@ -88,7 +113,7 @@ export async function vistaUsuarios(cont, _params, ctx) {
       columnas: [
         {
           titulo: "Usuario",
-          html: (u) => `<div class="persona"><span class="avatar">${esc(iniciales(u.nombre, u.apellido1))}</span><div>
+          html: (u) => `<div class="persona">${avatarHTML(u)}<div>
             <a href="#/usuarios/${u.id}"><strong>${esc(nombreCompleto(u))}</strong></a>
             <span class="secundario">${u.usuario_red ? esc(u.usuario_red) : "Sin usuario de red"}</span></div></div>`,
         },
@@ -149,16 +174,12 @@ async function definicionCampos({ nuevo }) {
           nombre: "password", etiqueta: "Clave inicial", tipo: "password", min: 8, max: 128,
           ayuda: "Mínimo 8 caracteres. Déjela vacía si el usuario entra con Active Directory.",
         }] : []),
-        { nombre: "imagen_path", etiqueta: "Ruta de la fotografía", max: 255, placeholder: "fotos/jperez.jpg", completo: !nuevo },
       ],
     },
     {
       clave: "ubicacion", titulo: "Ubicación", icono: "punto",
       texto: "Dirección de residencia.",
-      campos: [
-        ...NIVELES_GEO.map((n) => ({ nombre: n.campo, etiqueta: n.titulo, tipo: "select", requerido: true })),
-        { nombre: "otras_senas", etiqueta: "Otras señas", tipo: "textarea", completo: true, placeholder: "200 m norte de la iglesia, casa esquinera" },
-      ],
+      campos: camposUbicacion("200 m norte de la iglesia, casa esquinera"),
     },
   ];
 }
@@ -298,6 +319,17 @@ export async function vistaUsuarioNuevo(cont, _params, ctx) {
     <form class="panel" id="form-usuario" novalidate>
       <div class="panel__cuerpo">
         <div data-error hidden style="margin-bottom:18px"></div>
+        <section class="seccion-form">
+          <h3>${icono("camara")}Foto</h3>
+          <p>Opcional. Se muestra junto al nombre de la persona y en todo lo que haga en el sistema.</p>
+          <div class="selector-foto">
+            <span data-foto-vista><span class="avatar avatar--grande">${icono("camara")}</span></span>
+            <div class="selector-foto__acciones">
+              <button type="button" class="btn btn--secundario btn--sm" data-elegir-foto>${icono("camara")}Elegir foto</button>
+              <button type="button" class="btn btn--fantasma btn--sm" data-quitar-foto hidden>Quitar</button>
+            </div>
+          </div>
+        </section>
         ${seccionesHTML(secciones, {}, false)}
         ${contactos.html}
       </div>
@@ -311,7 +343,27 @@ export async function vistaUsuarioNuevo(cont, _params, ctx) {
   const caja = form.querySelector("[data-error]");
   const campos = todosLosCampos(secciones);
   enlazarContactos(form, contactos.tipos);
-  cascadaGeo(NIVELES_GEO.map((n) => form.elements.namedItem(n.campo)));
+  enlazarUbicacion(form);
+
+  // Foto elegida (se sube después de crear el usuario)
+  let foto = null;
+  let urlVista = null;
+  const vista = form.querySelector("[data-foto-vista]");
+  const quitarFoto = form.querySelector("[data-quitar-foto]");
+  form.querySelector("[data-elegir-foto]").addEventListener("click", async () => {
+    const elegida = await elegirFoto({ alError: (m) => toast(m, "error") });
+    if (!elegida) return;
+    foto = elegida;
+    if (urlVista) URL.revokeObjectURL(urlVista);
+    urlVista = URL.createObjectURL(foto);
+    vista.innerHTML = `<span class="avatar avatar--grande con-imagen"><span></span><img src="${urlVista}" alt="Foto elegida"></span>`;
+    quitarFoto.hidden = false;
+  });
+  quitarFoto.addEventListener("click", () => {
+    foto = null;
+    vista.innerHTML = `<span class="avatar avatar--grande">${icono("camara")}</span>`;
+    quitarFoto.hidden = true;
+  });
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -336,6 +388,9 @@ export async function vistaUsuarioNuevo(cont, _params, ctx) {
     }
 
     const fallos = await guardarContactos("usuarios", creado.id, extra);
+    if (foto) {
+      try { await subirFoto(creado.id, foto); } catch (e) { fallos.push(`Foto: ${e.message}`); }
+    }
 
     toast(`Se creó el usuario ${nombreCompleto(creado)}.`);
     if (fallos.length) toast(`No se guardaron algunos contactos. ${fallos.join(" ")}`, "error");
@@ -365,6 +420,7 @@ const PESTANAS = [
   { clave: "correos", titulo: "Correos", icono: "correo" },
   { clave: "paginas-webs", titulo: "Páginas web", icono: "web" },
   { clave: "seguridad", titulo: "Seguridad", icono: "candado" },
+  { clave: "actividad", titulo: "Actividad", icono: "historial" },
 ];
 
 async function ficha(cont, id, pestanaInicial, ctx, perfil) {
@@ -378,13 +434,18 @@ async function ficha(cont, id, pestanaInicial, ctx, perfil) {
 
   const propio = id === ctx.usuario.id;
   const base = perfil ? "#/perfil" : `#/usuarios/${id}`;
-  const pestanas = PESTANAS.filter((p) => p.clave !== "seguridad" || ctx.esAdmin || propio);
+  // Seguridad y actividad: solo administradores o la misma persona
+  const pestanas = PESTANAS.filter((p) => !["seguridad", "actividad"].includes(p.clave) || ctx.esAdmin || propio);
+  const puedeFoto = ctx.esAdmin || propio;
   let actual = pestanas.find((p) => p.clave === pestanaInicial)?.clave || "datos";
 
   cont.innerHTML = `
     ${perfil ? "" : `<a class="volver" href="#/usuarios">${icono("atras")}Volver a usuarios</a>`}
     <div class="ficha">
-      <span class="avatar avatar--grande">${esc(iniciales(u.nombre, u.apellido1))}</span>
+      <div class="ficha__foto">
+        ${avatarHTML(u, { tam: "grande" })}
+        ${puedeFoto ? `<button type="button" class="ficha__camara" data-cambiar-foto title="${u.foto_url ? "Cambiar foto" : "Agregar foto"}" aria-label="${u.foto_url ? "Cambiar foto" : "Agregar foto"}">${icono("camara")}</button>` : ""}
+      </div>
       <div class="ficha__texto">
         <h1>${esc(nombreCompleto(u))}</h1>
         <div class="ficha__datos">
@@ -395,6 +456,7 @@ async function ficha(cont, id, pestanaInicial, ctx, perfil) {
         </div>
       </div>
       <div class="ficha__acciones">
+        ${puedeFoto && u.foto_url ? `<button type="button" class="btn btn--fantasma" data-quitar-foto>${icono("borrar")}Quitar foto</button>` : ""}
         ${ctx.esAdmin && !propio ? (u.activo
           ? `<button type="button" class="btn btn--secundario" data-estado>${icono("encender")}Desactivar</button>`
           : `<button type="button" class="btn btn--primario" data-estado>${icono("encender")}Activar</button>`) : ""}
@@ -410,6 +472,35 @@ async function ficha(cont, id, pestanaInicial, ctx, perfil) {
 
   cont.querySelector("[data-estado]")?.addEventListener("click", () => cambiarEstado(u, () => recargar()));
 
+  // Foto de perfil
+  const fotoCambiada = async (mensaje) => {
+    toast(mensaje);
+    if (propio) await ctx.refrescarSesion();
+    recargar();
+  };
+  cont.querySelector("[data-cambiar-foto]")?.addEventListener("click", async (ev) => {
+    const boton = ev.currentTarget;
+    const archivo = await elegirFoto({ alError: (m) => toast(m, "error") });
+    if (!archivo) return;
+    boton.classList.add("cargando");
+    try {
+      await subirFoto(u.id, archivo);
+      await fotoCambiada(propio ? "Se actualizó su foto." : "Se actualizó la foto.");
+    } catch (e) {
+      boton.classList.remove("cargando");
+      toast(e.message, "error");
+    }
+  });
+  cont.querySelector("[data-quitar-foto]")?.addEventListener("click", async () => {
+    const ok = await confirmar({
+      titulo: "Quitar foto",
+      mensaje: propio ? "Se quitará su foto de perfil." : `Se quitará la foto de ${nombreCompleto(u)}.`,
+      textoBoton: "Quitar foto",
+      accion: () => api(ruta("usuarios", u.id, "foto"), { metodo: "DELETE" }),
+    });
+    if (ok) await fotoCambiada("Se quitó la foto.");
+  });
+
   async function mostrar(clave) {
     actual = clave;
     cont.querySelectorAll("[data-pestana]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.pestana === clave)));
@@ -424,6 +515,7 @@ async function ficha(cont, id, pestanaInicial, ctx, perfil) {
     try {
       if (clave === "datos") await pestanaDatos(caja, u, ctx, propio, recargar);
       else if (clave === "seguridad") await pestanaSeguridad(caja, u, ctx, propio, recargar);
+      else if (clave === "actividad") await pestanaActividadUsuario(caja, u, ctx, propio);
       else await pestanaContactos(caja, u, clave, ctx);
     } catch (e) {
       if (!ctx.vigente()) return;
@@ -495,7 +587,7 @@ async function pestanaDatos(panel, u, ctx, propio, recargar) {
 
   const form = panel.querySelector("form");
   const caja = form.querySelector("[data-error]");
-  cascadaGeo(NIVELES_GEO.map((n) => form.elements.namedItem(n.campo)), { valores: u, bloqueado: soloLectura });
+  enlazarUbicacion(form, { valores: u, bloqueado: soloLectura });
   if (soloLectura) return;
 
   form.addEventListener("submit", async (ev) => {

@@ -66,10 +66,19 @@ export const NIVELES_GEO = [
  *   todos:    true = primera opción "Todos" (para filtros)
  *   bloqueado: true = solo lectura
  *   alCambiar: se llama cuando el usuario cambia cualquier nivel
+ *   codigoPostal: <input> donde se escribe solo el código postal del distrito elegido
  * Devuelve una promesa que termina cuando todo quedó cargado.
  */
-export function cascadaGeo(selects, { valores = {}, todos = false, bloqueado = false, alCambiar } = {}) {
+export function cascadaGeo(selects, { valores = {}, todos = false, bloqueado = false, alCambiar, codigoPostal } = {}) {
   const primera = todos ? "Todos" : "Seleccione…";
+  const selDistrito = selects[3];
+
+  function mostrarCodigoPostal() {
+    if (!codigoPostal) return;
+    const opcion = selDistrito?.selectedOptions[0];
+    codigoPostal.value = opcion?.dataset.cp || "";
+    codigoPostal.placeholder = selDistrito?.value ? "Sin código postal" : "Se asigna al elegir el distrito";
+  }
 
   async function llenar(i, preseleccion) {
     const sel = selects[i];
@@ -79,6 +88,7 @@ export function cascadaGeo(selects, { valores = {}, todos = false, bloqueado = f
       if (!selects[k].value) {
         sel.innerHTML = `<option value="">${primera}</option>`;
         sel.disabled = true;
+        if (sel === selDistrito) mostrarCodigoPostal();
         return;
       }
       query[NIVELES_GEO[k].campo] = selects[k].value;
@@ -94,22 +104,25 @@ export function cascadaGeo(selects, { valores = {}, todos = false, bloqueado = f
       return;
     }
     sel.innerHTML = `<option value="">${primera}</option>` + filas
-      .map((f) => `<option value="${esc(f[nivel.campo])}">${esc(f[nivel.nombre])}</option>`)
+      .map((f) => `<option value="${esc(f[nivel.campo])}"${f.codigo_postal ? ` data-cp="${esc(f.codigo_postal)}"` : ""}>${esc(f[nivel.nombre])}</option>`)
       .join("");
     if (preseleccion && filas.some((f) => f[nivel.campo] === preseleccion)) sel.value = preseleccion;
     else if (filas.length === 1 && i === 0) sel.value = filas[0][nivel.campo]; // un solo país: se elige solo
     sel.disabled = bloqueado;
+    if (sel === selDistrito) mostrarCodigoPostal();
   }
 
   selects.forEach((sel, i) => {
     sel.addEventListener("change", async () => {
       for (let j = i + 1; j < selects.length; j++) await llenar(j, null);
+      if (sel === selDistrito) mostrarCodigoPostal();
       alCambiar?.();
     });
   });
 
   return (async () => {
     for (let i = 0; i < selects.length; i++) await llenar(i, valores[NIVELES_GEO[i].campo]);
+    mostrarCodigoPostal();
   })();
 }
 

@@ -38,11 +38,11 @@ class CantonViewSet(SPViewSet):
 
 
 class DistritoViewSet(SPViewSet):
-    """CRUD de distritos (sp_geo_distritos_*). Filtros: ?cod_pais=&cod_provincia=&cod_canton="""
+    """CRUD de distritos (sp_geo_distritos_*), con su código postal. Filtros: ?cod_pais=&cod_provincia=&cod_canton="""
     sp = "sp_geo_distritos"
     campos_pk = ("cod_pais", "cod_provincia", "cod_canton", "cod_distrito")
-    campos_insertar = ("cod_pais", "cod_provincia", "cod_canton", "cod_distrito", "nombre_distrito")
-    campos_actualizar = ("nombre_distrito",)
+    campos_insertar = ("cod_pais", "cod_provincia", "cod_canton", "cod_distrito", "nombre_distrito", "codigo_postal")
+    campos_actualizar = ("nombre_distrito", "codigo_postal")
     filtros_listar = ("cod_pais", "cod_provincia", "cod_canton")
     serializer_class = s.DistritoSerializer
     serializer_actualizar_class = s.DistritoActualizarSerializer

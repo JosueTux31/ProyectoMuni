@@ -28,7 +28,7 @@ class ProvinciaActualizarSerializer(serializers.Serializer):
 class ProvinciaFiltrosSerializer(serializers.Serializer):
     cod_pais = serializers.CharField(required=False, allow_null=True, **CODIGO)
 
-00
+
 # -------------------------------------------------------------- Cantones
 class CantonSerializer(serializers.Serializer):
     cod_pais = serializers.CharField(**CODIGO)
@@ -53,10 +53,15 @@ class DistritoSerializer(serializers.Serializer):
     cod_canton = serializers.CharField(**CODIGO)
     cod_distrito = serializers.CharField(**CODIGO)
     nombre_distrito = serializers.CharField(**NOMBRE)
+    # Vacío en Costa Rica: se arma solo con provincia + cantón + distrito (p. ej. 20301)
+    codigo_postal = serializers.RegexField(r"^[0-9A-Za-z-]{3,10}$", max_length=10, required=False,
+                                           allow_null=True, allow_blank=True)
 
 
 class DistritoActualizarSerializer(serializers.Serializer):
     nombre_distrito = serializers.CharField(**NOMBRE)
+    codigo_postal = serializers.RegexField(r"^[0-9A-Za-z-]{3,10}$", max_length=10, required=False,
+                                           allow_null=True, allow_blank=True)
 
 
 class DistritoFiltrosSerializer(serializers.Serializer):

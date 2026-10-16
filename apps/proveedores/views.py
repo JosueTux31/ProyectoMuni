@@ -1,17 +1,12 @@
-import mimetypes
-import os
-
-from django.core.exceptions import SuspiciousFileOperation
-from django.http import FileResponse
 from rest_framework import status
 from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 
+from apps.core import archivos
 from apps.core.db import llamar_sp
 from apps.core.viewsets import SPViewSet
 from apps.usuarios.views import CorreoViewSet, PaginaWebViewSet, TelefonoViewSet
 
-from . import archivos
 from . import serializers as s
 
 CAMPOS_PROVEEDOR = (
@@ -21,12 +16,13 @@ CAMPOS_PROVEEDOR = (
 )
 
 
-class ProveedorViewSet(SPViewSet):
+class ProveedorViewSet(archivos.ArchivosMixin, SPViewSet):
     """CRUD de proveedores (sp_prv_proveedores_*).
 
     Los proveedores se guardan en usr_usuarios con es_proveedor = TRUE y
     no pueden iniciar sesión. Consultar: cualquier usuario con sesión.
-    Modificar: solo administradores.
+    Modificar: solo administradores. El código postal lo asigna la base
+    de datos según el distrito.
 
     - DELETE desactiva. DELETE /proveedores/<id>/eliminar-fisico/ lo borra.
     - Imagen y catálogo de servicios: GET (descargar), POST (subir, campo
@@ -45,12 +41,26 @@ class ProveedorViewSet(SPViewSet):
     serializer_actualizar_class = s.ProveedorActualizarSerializer
     serializer_filtros_class = s.ProveedorFiltrosSerializer
 
-    # "imagen" o "catalogo"; lo fija cada ruta de archivos en urls.py
-    tipo_archivo = None
+    recurso_archivos = "proveedores"
+    tipos_archivo = {
+        "imagen": {
+            "nombre": "imagen", "carpeta": "proveedores/imagenes", "campo": "imagen_path",
+            "sp": "sp_prv_proveedores_actualizar_imagen", "extensiones": archivos.EXT_IMAGEN,
+            "ajuste_max_mb": "MUNI_MAX_MB_IMAGEN", "max_mb_defecto": 5,
+            "en_linea": True, "firmable": True,
+        },
+        "catalogo": {
+            "nombre": "catálogo de servicios", "carpeta": "proveedores/catalogos", "campo": "archivo_path",
+            "sp": "sp_prv_proveedores_actualizar_archivo", "extensiones": archivos.EXT_DOCUMENTO,
+            "ajuste_max_mb": "MUNI_MAX_MB_CATALOGO", "max_mb_defecto": 20,
+            "en_linea": False, "firmable": False,
+        },
+    }
 
-    def perform_content_negotiation(self, request, force=False):
-        # Las descargas devuelven el archivo, no JSON: no exigir Accept: application/json
-        return super().perform_content_negotiation(request, force=force or self.action == "descargar")
+    def salida(self, fila):
+        fila = super().salida(fila)
+        fila["imagen_url"] = archivos.url_firmada("proveedores", "imagen", fila.get("id"), fila.get("imagen_path"))
+        return fila
 
     # POST /proveedores/<id>/activar/
     def activar(self, request, id):
@@ -61,52 +71,9 @@ class ProveedorViewSet(SPViewSet):
     def eliminar_fisico(self, request, id):
         proveedor = self._obtener([id])
         llamar_sp("sp_prv_proveedores_eliminar_fisico", [id])
-        for conf in archivos.TIPOS.values():
+        for conf in self.tipos_archivo.values():
             archivos.borrar(proveedor.get(conf["campo"]))
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-    # ---------------------------------------------------- imagen y catálogo
-    def _conf(self):
-        return archivos.TIPOS[self.tipo_archivo]
-
-    def descargar(self, request, id):
-        conf = self._conf()
-        ruta = self._obtener([id]).get(conf["campo"])
-        if not ruta:
-            raise NotFound(f"El proveedor no tiene {conf['nombre']}.")
-        try:
-            archivo = archivos.almacen().open(ruta, "rb")
-        except (FileNotFoundError, SuspiciousFileOperation):
-            raise NotFound(f"No se encontró el archivo del {conf['nombre']} en el servidor.")
-        return FileResponse(
-            archivo,
-            as_attachment=not conf["en_linea"],
-            filename=os.path.basename(ruta),
-            content_type=mimetypes.guess_type(ruta)[0] or "application/octet-stream",
-        )
-
-    def subir(self, request, id):
-        conf = self._conf()
-        archivo = request.FILES.get("archivo")
-        extension = archivos.validar(conf, archivo)
-        anterior = self._obtener([id]).get(conf["campo"])  # 404 si no existe
-
-        ruta = archivos.guardar(conf, id, archivo, extension)
-        try:
-            llamar_sp(conf["sp"], [id, ruta])
-        except Exception:
-            archivos.borrar(ruta)
-            raise
-        if anterior and anterior != ruta:
-            archivos.borrar(anterior)
-        return Response(self.salida(self._obtener([id])), status=status.HTTP_201_CREATED)
-
-    def quitar(self, request, id):
-        conf = self._conf()
-        anterior = self._obtener([id]).get(conf["campo"])
-        llamar_sp(conf["sp"], [id, None])
-        archivos.borrar(anterior)
-        return Response(self.salida(self._obtener([id])))
 
 
 class _SoloDeProveedores:

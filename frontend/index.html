@@ -49,6 +49,9 @@
       <symbol id="i-descargar" viewBox="0 0 24 24"><path d="M12 3.5v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20.5h16"/></symbol>
       <symbol id="i-subir" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 20.5h16"/></symbol>
       <symbol id="i-externo" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+      <symbol id="i-historial" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3 4v4.5h4.5"/><path d="M12 7.5V12l3 2"/></symbol>
+      <symbol id="i-camara" viewBox="0 0 24 24"><path d="M3 8.5a2 2 0 0 1 2-2h2.2l1.6-2.5h6.4l1.6 2.5H19a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.5Z"/><circle cx="12" cy="13" r="3.8"/></symbol>
+      <symbol id="i-entrar" viewBox="0 0 24 24"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M14 16.5 18.5 12 14 7.5"/><path d="M18.5 12H9"/></symbol>
       <symbol id="i-escudo" viewBox="0 0 24 24"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6l-8-3Z"/><path d="M7.5 14.5l2.8-3.6 1.9 2.3 3-4.2 3.3 5.5"/></symbol>
     </defs>
   </svg>
@@ -121,6 +124,9 @@
         <a href="#/catalogos/tipos-correos" data-ruta="catalogos/tipos-correos"><svg class="ic"><use href="#i-correo"/></svg>Tipos de correo</a>
         <a href="#/catalogos/categorias-proveedores" data-ruta="catalogos/categorias-proveedores"><svg class="ic"><use href="#i-etiqueta"/></svg>Categorías de proveedores</a>
 
+        <p class="nav__grupo" data-solo-admin>Control</p>
+        <a href="#/auditoria" data-ruta="auditoria" data-solo-admin><svg class="ic"><use href="#i-historial"/></svg>Auditoría</a>
+
         <p class="nav__grupo">Territorio</p>
         <a href="#/geografia/paises" data-ruta="geografia/paises"><svg class="ic"><use href="#i-bandera"/></svg>Países</a>
         <a href="#/geografia/provincias" data-ruta="geografia/provincias"><svg class="ic"><use href="#i-mapa"/></svg>Provincias</a>
@@ -130,7 +136,7 @@
 
       <div class="lateral__pie">
         <a class="sesion" href="#/perfil" data-ruta="perfil">
-          <span class="avatar avatar--claro" id="sesion-iniciales"></span>
+          <span id="sesion-avatar"></span>
           <span class="sesion__texto">
             <strong id="sesion-nombre"></strong>
             <span id="sesion-rol"></span>

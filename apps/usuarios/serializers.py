@@ -20,7 +20,7 @@ class UsuarioBaseSerializer(serializers.Serializer):
     cod_canton = serializers.CharField(max_length=10)
     cod_distrito = serializers.CharField(max_length=10)
     otras_senas = serializers.CharField(**TEXTO_OPCIONAL)
-    imagen_path = serializers.CharField(max_length=255, **TEXTO_OPCIONAL)
+    # La foto se sube aparte en /usuarios/<id>/foto/
 
     cod_departamento = serializers.IntegerField(**OPCIONAL)
     # Sin allow_blank: la columna es UNIQUE y dos '' chocarían; use null.

@@ -124,7 +124,7 @@ const GEO = {
   paises: { titulo: "Países", singular: "país", descripcion: "Países disponibles para la dirección de los usuarios." },
   provincias: { titulo: "Provincias", singular: "provincia", descripcion: "Provincias de cada país." },
   cantones: { titulo: "Cantones", singular: "cantón", descripcion: "Cantones de cada provincia." },
-  distritos: { titulo: "Distritos", singular: "distrito", descripcion: "Distritos de cada cantón. Es el nivel que se asigna a cada usuario." },
+  distritos: { titulo: "Distritos", singular: "distrito", descripcion: "Distritos de cada cantón con su código postal. Es el nivel que se asigna a cada usuario y proveedor." },
 };
 
 export async function vistaGeografia(cont, [slug], ctx) {
@@ -134,6 +134,7 @@ export async function vistaGeografia(cont, [slug], ctx) {
   const padres = NIVELES_GEO.slice(0, i);
   const padre = padres[padres.length - 1];
   const def = GEO[slug];
+  const esDistrito = slug === "distritos";
   const admin = ctx.esAdmin;
   ctx.migas([{ texto: "Territorio" }, { texto: def.titulo }]);
 
@@ -174,6 +175,7 @@ export async function vistaGeografia(cont, [slug], ctx) {
       { titulo: "Nombre", html: (f) => `<strong>${esc(f[nivel.nombre])}</strong>` },
     ];
     if (padre) columnas.push({ titulo: padre.titulo, html: (f) => esc(f[padre.nombre]) });
+    if (esDistrito) columnas.push({ titulo: "Código postal", clase: "col-codigo", html: (f) => (f.codigo_postal ? esc(f.codigo_postal) : `<span class="secundario">—</span>`) });
     if (admin) columnas.push({ titulo: "", clase: "col-acciones", html: (f) => botonesFila({ etiqueta: f[nivel.nombre] }) });
     lista.innerHTML = tablaHTML({ columnas, filas: visibles });
   }
@@ -195,16 +197,23 @@ export async function vistaGeografia(cont, [slug], ctx) {
 
   async function formulario(fila) {
     const valoresFiltro = Object.fromEntries(filtros.map((s) => [s.dataset.filtro, s.value]));
+    const campoPostal = esDistrito ? [{
+      nombre: "codigo_postal", etiqueta: "Código postal", max: 10, placeholder: "20301",
+      ayuda: fila ? "Si lo cambia, se actualiza en todos los usuarios y proveedores de este distrito."
+        : "Si lo deja vacío se arma con provincia + cantón + distrito.",
+    }] : [];
     const campos = fila
       ? [
         ...padres.map((p) => ({ nombre: p.campo, etiqueta: p.titulo, deshabilitado: true })),
         { nombre: nivel.campo, etiqueta: "Código", deshabilitado: true },
         { nombre: nivel.nombre, etiqueta: "Nombre", requerido: true, max: 100 },
+        ...campoPostal,
       ]
       : [
         ...padres.map((p) => ({ nombre: p.campo, etiqueta: p.titulo, tipo: "select", requerido: true })),
         { nombre: nivel.campo, etiqueta: "Código", requerido: true, max: 10, ayuda: i === 0 ? "Por ejemplo CR." : "Código oficial, por ejemplo 01." },
         { nombre: nivel.nombre, etiqueta: "Nombre", requerido: true, max: 100 },
+        ...campoPostal,
       ];
 
     const r = await abrirFormulario({
@@ -215,7 +224,10 @@ export async function vistaGeografia(cont, [slug], ctx) {
       textoGuardar: fila ? "Guardar cambios" : "Agregar",
       alAbrir: fila || !padres.length ? null : (form) => cascadaGeo(padres.map((p) => form.elements.namedItem(p.campo)), { valores: valoresFiltro }),
       alGuardar: (datos) => (fila
-        ? api(rutaGeo(slug, ...codigosDe(fila)), { metodo: "PUT", datos: { [nivel.nombre]: datos[nivel.nombre] } })
+        ? api(rutaGeo(slug, ...codigosDe(fila)), {
+          metodo: "PUT",
+          datos: { [nivel.nombre]: datos[nivel.nombre], ...(esDistrito ? { codigo_postal: datos.codigo_postal } : {}) },
+        })
         : api(`geografia/${slug}/`, { metodo: "POST", datos })),
     });
     if (r) { toast(fila ? "Se guardaron los cambios." : `Se agregó ${r[nivel.nombre]}.`); await cargar(); }

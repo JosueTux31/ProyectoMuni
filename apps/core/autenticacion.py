@@ -9,6 +9,7 @@ from django.conf import settings
 from django.core import signing
 from rest_framework import authentication, exceptions
 
+from .auditoria import fijar_usuario
 from .db import llamar_sp
 
 SAL_TOKEN = "muni.api.token"
@@ -47,6 +48,10 @@ class UsuarioSesion:
         self.rol = fila.get("rol")
         self.es_admin = es_rol_admin(self.rol)
 
+    @property
+    def nombre_completo(self):
+        return " ".join(p for p in (self.nombre, self.apellido1, self.apellido2) if p)
+
     def __str__(self):
         return self.usuario_red or str(self.id)
 
@@ -71,7 +76,10 @@ class TokenMuniAutenticacion(authentication.BaseAuthentication):
         if not filas or not filas[0]["activo"]:
             raise exceptions.AuthenticationFailed("El usuario no existe o está inactivo.")
 
-        return UsuarioSesion(filas[0]), token
+        usuario = UsuarioSesion(filas[0])
+        # A partir de aquí cada cambio queda auditado a nombre de este usuario
+        fijar_usuario(usuario.id, usuario.nombre_completo)
+        return usuario, token
 
     def authenticate_header(self, request):
         # Hace que DRF responda 401 (no 403) cuando falta la sesión.

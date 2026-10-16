@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'apps.catalogos',
     'apps.usuarios',
     'apps.proveedores',
+    'apps.auditoria',
 ]
 
 MIDDLEWARE = [
@@ -59,6 +60,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Guarda quién hace cada petición y su IP para la auditoría
+    'apps.core.auditoria.ContextoAuditoriaMiddleware',
 ]
 
 ROOT_URLCONF = 'muni_backend.urls'
@@ -145,6 +148,11 @@ MEDIA_ROOT = BASE_DIR / 'archivos'
 # Tamaño máximo de cada archivo subido, en MB
 MUNI_MAX_MB_CATALOGO = 20
 MUNI_MAX_MB_IMAGEN = 5
+MUNI_MAX_MB_FOTO = 5
+
+# Auditoría: True solo si Django está detrás de un proxy (Nginx, Apache) que
+# envía la IP real del cliente en X-Forwarded-For.
+MUNI_PROXY_CONFIABLE = False
 
 
 # Password validation

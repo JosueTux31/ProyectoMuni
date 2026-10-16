@@ -2,14 +2,15 @@
 // Se guardan en la misma tabla que los usuarios, pero no inician sesión.
 import { api, ErrorApi, ruta } from "./api.js";
 import {
-  botonCargando, cargandoHTML, confirmar, debounce, errorHTML, esc, eventoFila, fecha, icono,
-  iniciales, leerCampos, limpiarErrores, mostrarErrores, nombreCompleto, tablaHTML, toast, vacioHTML,
+  avatarHTML, botonCargando, cargandoHTML, confirmar, debounce, errorHTML, esc, eventoFila, fecha, icono,
+  leerCampos, limpiarErrores, mostrarErrores, nombreCompleto, tablaHTML, toast, urlApi, vacioHTML,
 } from "./ui.js";
-import { cascadaGeo, NIVELES_GEO, opcionesCatalogo } from "./datos.js";
+import { opcionesCatalogo } from "./datos.js";
 import {
-  contactosHTML, enlazarContactos, guardarContactos, leerContactos, pastillaEstado, pestanaContactos,
-  precisarDuplicado, seccionesHTML, todosLosCampos,
+  camposUbicacion, contactosHTML, enlazarContactos, enlazarUbicacion, guardarContactos, leerContactos,
+  pastillaEstado, pestanaContactos, precisarDuplicado, seccionesHTML, todosLosCampos,
 } from "./usuarios.js";
+import { pestanaHistorialProveedor } from "./auditoria.js";
 
 const RECURSO = "proveedores";
 
@@ -59,22 +60,6 @@ async function descargarCatalogo(p) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-/** Carga la imagen del proveedor (con la sesión) en un <img>. */
-async function cargarImagen(img, p) {
-  if (!p.imagen_path) return false;
-  try {
-    const blob = await api(ruta(RECURSO, p.id, "imagen"), { comoArchivo: true });
-    if (!img.isConnected) return false;
-    const anterior = img.dataset.url;
-    img.src = URL.createObjectURL(blob);
-    img.dataset.url = img.src;
-    if (anterior) URL.revokeObjectURL(anterior);
-    img.hidden = false;
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /* --------------------------------------------------------- Mapa */
 const PAR = /(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/;
@@ -194,7 +179,7 @@ export async function vistaProveedores(cont, _params, ctx) {
       columnas: [
         {
           titulo: "Proveedor",
-          html: (p) => `<div class="persona"><span class="avatar avatar--logo">${esc(iniciales(p.nombre, p.apellido1))}</span><div>
+          html: (p) => `<div class="persona">${avatarHTML(p, { logo: true })}<div>
             <a href="#/proveedores/${p.id}"><strong>${esc(nombreCompleto(p))}</strong></a>
             <span class="secundario">${esc(p.tipo_identificacion)} ${esc(p.dni)}</span></div></div>`,
         },
@@ -246,8 +231,7 @@ async function definicionCampos() {
       titulo: "Ubicación", icono: "punto",
       texto: "Dirección del proveedor y su punto en el mapa.",
       campos: [
-        ...NIVELES_GEO.map((n) => ({ nombre: n.campo, etiqueta: n.titulo, tipo: "select", requerido: true })),
-        { nombre: "otras_senas", etiqueta: "Otras señas", tipo: "textarea", completo: true, placeholder: "Edificio, local, referencias" },
+        ...camposUbicacion("Edificio, local, referencias"),
         {
           nombre: "mapa", etiqueta: "Ubicación en Google Maps", max: 2000, completo: true, placeholder: "10.0732, -84.3116",
           ayuda: "En Google Maps, haga clic derecho sobre el lugar y elija las coordenadas para copiarlas. También puede pegar el enlace del lugar.",
@@ -312,7 +296,7 @@ export async function vistaProveedorNuevo(cont, _params, ctx) {
   const campos = todosLosCampos(secciones);
   enlazarContactos(form, contactos.tipos);
   enlazarCampoMapa(form);
-  cascadaGeo(NIVELES_GEO.map((n) => form.elements.namedItem(n.campo)));
+  enlazarUbicacion(form);
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -373,6 +357,7 @@ const PESTANAS = [
   { clave: "correos", titulo: "Correos", icono: "correo" },
   { clave: "paginas-webs", titulo: "Páginas web", icono: "web" },
   { clave: "documentos", titulo: "Documentos", icono: "documento" },
+  { clave: "historial", titulo: "Historial", icono: "historial", soloAdmin: true },
 ];
 
 export async function vistaProveedor(cont, [id, pestanaInicial], ctx) {
@@ -384,16 +369,14 @@ export async function vistaProveedor(cont, [id, pestanaInicial], ctx) {
   ctx.migas([{ texto: "Proveedores", href: "#/proveedores" }, { texto: nombreCompleto(p) }]);
 
   const base = `#/proveedores/${p.id}`;
-  let actual = PESTANAS.find((t) => t.clave === pestanaInicial)?.clave || "datos";
+  const pestanas = PESTANAS.filter((t) => !t.soloAdmin || ctx.esAdmin);
+  let actual = pestanas.find((t) => t.clave === pestanaInicial)?.clave || "datos";
   const recargar = (pestana = actual) => vistaProveedor(cont, [String(p.id), pestana], ctx);
 
   cont.innerHTML = `
     <a class="volver" href="#/proveedores">${icono("atras")}Volver a proveedores</a>
     <div class="ficha">
-      <span class="avatar avatar--grande avatar--logo" data-avatar>
-        <span>${esc(iniciales(p.nombre, p.apellido1))}</span>
-        <img alt="" hidden>
-      </span>
+      ${avatarHTML(p, { tam: "grande", logo: true })}
       <div class="ficha__texto">
         <h1>${esc(nombreCompleto(p))}</h1>
         <div class="ficha__datos">
@@ -409,13 +392,9 @@ export async function vistaProveedor(cont, [id, pestanaInicial], ctx) {
       </div>
     </div>
     <div class="pestanas" role="tablist" aria-label="Información del proveedor">
-      ${PESTANAS.map((t) => `<button type="button" role="tab" id="tab-${t.clave}" aria-controls="panel-pestana" data-pestana="${t.clave}" aria-selected="${t.clave === actual}">${icono(t.icono)}${esc(t.titulo)}</button>`).join("")}
+      ${pestanas.map((t) => `<button type="button" role="tab" id="tab-${t.clave}" aria-controls="panel-pestana" data-pestana="${t.clave}" aria-selected="${t.clave === actual}">${icono(t.icono)}${esc(t.titulo)}</button>`).join("")}
     </div>
     <div id="panel-pestana" role="tabpanel"></div>`;
-
-  // Logo o foto en el encabezado
-  const avatar = cont.querySelector("[data-avatar]");
-  cargarImagen(avatar.querySelector("img"), p).then((ok) => { if (ok) avatar.classList.add("con-imagen"); });
 
   cont.querySelector("[data-estado]")?.addEventListener("click", () => cambiarEstado(p, () => recargar()));
 
@@ -431,6 +410,7 @@ export async function vistaProveedor(cont, [id, pestanaInicial], ctx) {
     try {
       if (clave === "datos") await pestanaDatos(caja, p, ctx, recargar);
       else if (clave === "documentos") await pestanaDocumentos(caja, p, ctx, recargar);
+      else if (clave === "historial") await pestanaHistorialProveedor(caja, p);
       else await pestanaContactos(caja, p, clave, ctx, RECURSO);
     } catch (e) {
       if (!ctx.vigente()) return;
@@ -520,7 +500,7 @@ async function pestanaDatos(panel, p, ctx, recargar) {
 
   const form = panel.querySelector("form");
   const caja = form.querySelector("[data-error]");
-  cascadaGeo(NIVELES_GEO.map((n) => form.elements.namedItem(n.campo)), { valores: p, bloqueado: soloLectura });
+  enlazarUbicacion(form, { valores: p, bloqueado: soloLectura });
 
   panel.querySelector("[data-eliminar]")?.addEventListener("click", async () => {
     const nombre = nombreCompleto(p);
@@ -564,7 +544,9 @@ async function pestanaDocumentos(panel, p, ctx, recargar) {
     const rutaGuardada = p[d.campo];
     const nombre = nombreArchivo(rutaGuardada);
     const vista = tipo === "imagen"
-      ? `<div class="documento__vista documento__vista--imagen">${rutaGuardada ? `<img alt="Imagen de ${esc(nombreCompleto(p))}" hidden data-imagen>` : ""}${rutaGuardada ? "" : `${icono("imagen")}<span>${esc(d.vacio)}</span>`}</div>`
+      ? `<div class="documento__vista documento__vista--imagen">${p.imagen_url
+        ? `<img alt="Imagen de ${esc(nombreCompleto(p))}" src="${esc(urlApi(p.imagen_url))}">`
+        : `${icono("imagen")}<span>${esc(d.vacio)}</span>`}</div>`
       : `<div class="documento__vista">${icono("documento")}${rutaGuardada
         ? `<span class="documento__nombre">${esc(nombre)}</span><span class="documento__ext">${esc(extension(nombre).slice(1).toUpperCase())}</span>`
         : `<span>${esc(d.vacio)}</span>`}</div>`;
@@ -590,13 +572,9 @@ async function pestanaDocumentos(panel, p, ctx, recargar) {
 
   panel.innerHTML = `<div class="documentos">${tarjeta("imagen")}${tarjeta("catalogo")}</div>`;
 
-  const img = panel.querySelector("[data-imagen]");
-  if (img) {
-    const ok = await cargarImagen(img, p);
-    if (!ok && img.isConnected) {
-      img.closest(".documento__vista").innerHTML = `${icono("alerta")}<span>No se pudo cargar la imagen.</span>`;
-    }
-  }
+  panel.querySelector(".documento__vista--imagen img")?.addEventListener("error", (ev) => {
+    ev.target.closest(".documento__vista").innerHTML = `${icono("alerta")}<span>No se pudo cargar la imagen.</span>`;
+  });
 
   panel.addEventListener("click", async (ev) => {
     if (ev.target.closest("[data-descargar]")) {

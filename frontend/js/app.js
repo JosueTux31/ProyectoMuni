@@ -2,13 +2,14 @@
 import { CONFIG } from "./config.js";
 import { api, cuandoExpireSesion, ErrorApi, sesion } from "./api.js";
 import {
-  cargandoHTML, debounce, errorHTML, esc, fecha, icono, iniciales, nombreCompleto,
+  avatarHTML, cargandoHTML, debounce, errorHTML, esc, fecha, icono, nombreCompleto,
   botonCargando, tablaHTML, eventoFila, vacioHTML,
 } from "./ui.js";
 import { filasCatalogo } from "./datos.js";
 import { vistaPerfil, vistaUsuario, vistaUsuarioNuevo, vistaUsuarios } from "./usuarios.js";
 import { vistaCatalogo, vistaGeografia } from "./recursos.js";
 import { vistaProveedor, vistaProveedores, vistaProveedorNuevo } from "./proveedores.js";
+import { feedAuditoria, vistaAuditoria } from "./auditoria.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -46,7 +47,7 @@ function entrar(perfil) {
 
 function pintarSesion() {
   const u = usuarioActual;
-  $("#sesion-iniciales").textContent = iniciales(u.nombre, u.apellido1);
+  $("#sesion-avatar").innerHTML = avatarHTML(u, { clase: "avatar--claro" });
   $("#sesion-nombre").textContent = nombreCompleto(u);
   $("#sesion-rol").textContent = u.rol || "";
   const indicador = $("#indicador-permiso");
@@ -59,6 +60,8 @@ function pintarSesion() {
 }
 
 function salir(mensaje) {
+  // Registra el cierre de sesión en la auditoría (si falla, se sale igual)
+  if (!mensaje && sesion.leer()?.token) api("usuarios/logout/", { metodo: "POST" }).catch(() => {});
   sesion.borrar();
   history.replaceState(null, "", location.pathname);
   mostrarLogin(mensaje);
@@ -134,6 +137,7 @@ const RUTAS = [
   { patron: /^proveedores$/, vista: vistaProveedores },
   { patron: /^proveedores\/nuevo$/, vista: vistaProveedorNuevo, soloAdmin: true },
   { patron: /^proveedores\/(\d+)(?:\/([\w-]+))?$/, vista: vistaProveedor },
+  { patron: /^auditoria$/, vista: vistaAuditoria, soloAdmin: true },
   { patron: /^catalogos\/([\w-]+)$/, vista: vistaCatalogo },
   { patron: /^geografia\/([\w-]+)$/, vista: vistaGeografia },
 ];
@@ -244,7 +248,17 @@ async function vistaInicio(cont, _params, ctx) {
         <div class="panel__cabeza"><h2>Accesos rápidos</h2></div>
         <ul class="atajos">${atajos(ctx).join("")}</ul>
       </section>
-    </div>`;
+    </div>
+    ${ctx.esAdmin ? `
+    <section class="panel" style="margin-top:20px">
+      <div class="panel__cabeza"><div><h2>Actividad reciente</h2><p>Últimos cambios en el sistema.</p></div><a class="btn btn--fantasma btn--sm" href="#/auditoria">Ver toda la auditoría</a></div>
+      <div class="panel__cuerpo" id="actividad-reciente"></div>
+    </section>` : ""}`;
+
+  if (ctx.esAdmin) {
+    feedAuditoria(cont.querySelector("#actividad-reciente"), {}, { limite: 8, paginar: false })
+      .catch((e) => { cont.querySelector("#actividad-reciente").innerHTML = errorHTML(e.message); });
+  }
 
   const [usuarios, proveedores, departamentos] = await Promise.all([
     api("usuarios/", { query: { activo: "" } }),
@@ -274,7 +288,7 @@ async function vistaInicio(cont, _params, ctx) {
     clicable: true,
     filas: recientes,
     columnas: [
-      { titulo: "Usuario", html: (u) => `<div class="persona"><span class="avatar">${esc(iniciales(u.nombre, u.apellido1))}</span><div><a href="#/usuarios/${u.id}"><strong>${esc(nombreCompleto(u))}</strong></a><span class="secundario">${esc(u.departamento || "Sin departamento")}</span></div></div>` },
+      { titulo: "Usuario", html: (u) => `<div class="persona">${avatarHTML(u)}<div><a href="#/usuarios/${u.id}"><strong>${esc(nombreCompleto(u))}</strong></a><span class="secundario">${esc(u.departamento || "Sin departamento")}</span></div></div>` },
       { titulo: "Registrado", html: (u) => `<span class="secundario">${esc(fecha(u.creado_en))}</span>` },
     ],
   });

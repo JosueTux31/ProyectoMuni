@@ -14,6 +14,7 @@ urlpatterns = [
     path("validar-credenciales/", v.UsuarioViewSet.as_view({"post": "login"}),
          name="validar-credenciales"),
     path("yo/", v.UsuarioViewSet.as_view({"get": "yo"}), name="yo"),
+    path("logout/", v.UsuarioViewSet.as_view({"post": "logout"}), name="logout"),
 
     # Acciones especiales de usuarios
     path("<int:id>/activar/",
@@ -22,6 +23,9 @@ urlpatterns = [
          v.UsuarioViewSet.as_view({"post": "cambiar_clave"}), name="usuarios-cambiar-clave"),
     path("<int:id>/eliminar-fisico/",
          v.UsuarioViewSet.as_view({"delete": "eliminar_fisico"}), name="usuarios-eliminar-fisico"),
+    path("<int:id>/foto/",
+         v.UsuarioViewSet.as_view({"get": "descargar", "post": "subir", "delete": "quitar"}, tipo_archivo="foto"),
+         name="usuarios-foto"),
 
     # CRUD de usuarios
     *rutas_crud("", "<int:id>/", v.UsuarioViewSet, "usuarios"),

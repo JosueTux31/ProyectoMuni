@@ -1,6 +1,7 @@
 // Componentes de interfaz: escape de HTML, íconos, avisos, modales,
 // formularios generados a partir de una lista de campos y tablas.
 import { ErrorApi } from "./api.js";
+import { CONFIG } from "./config.js";
 
 /* ----------------------------------------------------------- Utilidades */
 const ENTIDADES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
@@ -17,6 +18,36 @@ export function iniciales(nombre, apellido) {
 
 export const nombreCompleto = (u) =>
   [u.nombre, u.apellido1, u.apellido2].filter(Boolean).join(" ");
+
+/** Agrega la dirección del backend a las rutas /api/... que entrega el servidor. */
+export const urlApi = (ruta) => (ruta ? `${CONFIG.API_BASE}${ruta}` : null);
+
+/**
+ * Avatar de una persona: su foto si tiene (foto_url o imagen_url), si no sus iniciales.
+ *   avatarHTML(usuario)                        -> 36 px
+ *   avatarHTML(usuario, { tam: "grande" })     -> 64 px
+ *   avatarHTML(proveedor, { logo: true })      -> esquinas cuadradas, imagen completa
+ */
+export function avatarHTML(p, { tam = "", logo = false, clase = "" } = {}) {
+  const url = urlApi(p?.foto_url || p?.imagen_url);
+  const clases = ["avatar", tam && `avatar--${tam}`, logo && "avatar--logo", url && "con-imagen", clase].filter(Boolean).join(" ");
+  const texto = esc(iniciales(p?.nombre, p?.apellido1));
+  return `<span class="${clases}" aria-hidden="true"><span>${texto}</span>${url ? `<img src="${esc(url)}" alt="" loading="lazy" onerror="this.parentNode.classList.remove('con-imagen');this.remove()">` : ""}</span>`;
+}
+
+const relativo = new Intl.RelativeTimeFormat("es", { numeric: "auto" });
+const soloHora = new Intl.DateTimeFormat("es-CR", { hour: "numeric", minute: "2-digit" });
+
+/** "hace 5 minutos", "hace 3 horas"; después de un día, la hora. */
+export function tiempoRelativo(valor) {
+  const d = new Date(valor);
+  if (Number.isNaN(d.getTime())) return "";
+  const seg = Math.round((d.getTime() - Date.now()) / 1000);
+  if (Math.abs(seg) < 45) return "hace un momento";
+  if (Math.abs(seg) < 3600) return relativo.format(Math.round(seg / 60), "minute");
+  if (Math.abs(seg) < 6 * 3600) return relativo.format(Math.round(seg / 3600), "hour");
+  return soloHora.format(d);
+}
 
 const formatoFecha = new Intl.DateTimeFormat("es-CR", { dateStyle: "medium", timeStyle: "short" });
 export function fecha(valor) {
