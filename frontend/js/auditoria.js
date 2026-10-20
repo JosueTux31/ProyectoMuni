@@ -24,6 +24,14 @@ const TABLAS = {
   geo_provincias: { art: "la", nom: "provincia", grupo: "Territorio", filtro: "Provincias" },
   geo_cantones: { art: "el", nom: "cantón", grupo: "Territorio", filtro: "Cantones" },
   geo_distritos: { art: "el", nom: "distrito", grupo: "Territorio", filtro: "Distritos" },
+  red_dispositivos: { art: "el", nom: "dispositivo", grupo: "Dispositivos de red", filtro: "Dispositivos" },
+  red_documentos_dispositivos: { art: "el", nom: "documento", grupo: "Dispositivos de red", filtro: "Documentos de dispositivos" },
+  cat_edificios: { art: "el", nom: "edificio", grupo: "Dispositivos de red", filtro: "Edificios" },
+  cat_marcas: { art: "la", nom: "marca", grupo: "Dispositivos de red", filtro: "Marcas" },
+  cat_modelos: { art: "el", nom: "modelo", grupo: "Dispositivos de red", filtro: "Modelos" },
+  cat_tipos_dispositivos: { art: "el", nom: "tipo de dispositivo", grupo: "Dispositivos de red", filtro: "Tipos de dispositivo" },
+  cat_sistemas_operativos: { art: "el", nom: "sistema operativo", grupo: "Dispositivos de red", filtro: "Sistemas operativos" },
+  cat_tipos_documentos: { art: "el", nom: "tipo de documento", grupo: "Dispositivos de red", filtro: "Tipos de documento" },
 };
 
 const ACCIONES = {
@@ -46,6 +54,10 @@ const ETIQUETAS = {
   correo: "Correo", url_web: "Página web", num_linea: "Línea", id_usuario: "Persona", fecha_registro: "Fecha",
   descripcion: "Descripción", nombre_pais: "Nombre", nombre_provincia: "Nombre", nombre_canton: "Nombre",
   nombre_distrito: "Nombre", motivo: "Motivo",
+  serie: "Serie", tipo_disp: "Tipo de dispositivo", id_marca: "Marca", id_modelo: "Modelo",
+  cant_ptos_ethernet: "Puertos Ethernet", cant_ptos_sfp: "Puertos SFP", id_os: "Sistema operativo",
+  gps: "Ubicación GPS", id_edificio: "Edificio", ubicacion: "Ubicación en el edificio", id_proveedor: "Proveedor",
+  direccion_ip: "Dirección IP", direccion_mac: "Dirección MAC", id_doc: "Tipo de documento", path_docs: "Archivo",
 };
 
 // Campo → catálogo para mostrar la descripción en lugar del código
@@ -53,9 +65,14 @@ const CAMPO_CATALOGO = {
   cod_rol: "roles", cod_departamento: "departamentos", cod_tipo_identificacion: "tipos-identificaciones",
   cod_tipo_auth: "tipos-autenticaciones", cod_categoria: "categorias-proveedores",
   cod_telefono: "tipos-telefonos", cod_correo: "tipos-correos",
+  tipo_disp: "tipos-dispositivos", id_marca: "marcas", id_os: "sistemas-operativos", id_doc: "tipos-documentos",
+  id_edificio: "edificios",
 };
 const BOOLEANOS = new Set(["activo", "es_whatsapp", "es_proveedor"]);
-const OCULTOS = new Set(["id", "id_usuario", "num_linea"]);
+const OCULTOS = new Set(["id", "id_usuario", "num_linea", "id_disp"]);
+
+/** dispositivos/5/manual-1a2b3c4d.pdf -> manual.pdf */
+const nombreDocumento = (r) => String(r || "").split("/").pop().replace(/-[0-9a-f]{8}(?=\.[^.]+$|$)/, "");
 
 let catalogos = null;
 async function cargarCatalogos() {
@@ -77,6 +94,7 @@ function valorLegible(campo, valor) {
   if (BOOLEANOS.has(campo)) return Number(valor) ? "Sí" : "No";
   if (catalogos?.[campo]?.has(String(valor))) return esc(catalogos[campo].get(String(valor)));
   if (campo === "imagen_path" || campo === "archivo_path") return esc(String(valor).split("/").pop());
+  if (campo === "path_docs") return esc(nombreDocumento(valor));
   return esc(valor);
 }
 
@@ -136,6 +154,26 @@ function frase(e) {
     }
     if (cambios.every((c) => c === "codigo_postal")) return `actualizó el código postal de ${destino}`;
     return propio ? "modificó sus datos" : `modificó ${quien} ${destino}`;
+  }
+
+  if (e.tabla === "red_dispositivos") {
+    const disp = e.accion === "ELIMINAR" ? desc
+      : `<a href="#/red/dispositivos/${esc(e.llave)}">${esc(e.descripcion || `N.º ${e.llave}`)}</a>`;
+    if (e.accion === "INSERTAR") return `registró el dispositivo ${disp}`;
+    if (e.accion === "ELIMINAR") return `eliminó definitivamente el dispositivo ${disp}`;
+    const cambios = camposCambiados(e);
+    if (cambios.length === 1 && cambios[0] === "activo") return `${Number(e.despues.activo) ? "activó" : "desactivó"} el dispositivo ${disp}`;
+    return `modificó el dispositivo ${disp}`;
+  }
+
+  if (e.tabla === "red_documentos_dispositivos") {
+    const idDisp = String(e.llave || "").split("/")[0];
+    const doc = `<strong>${esc(nombreDocumento(e.descripcion))}</strong>`;
+    const del = idDisp ? ` del <a href="#/red/dispositivos/${esc(idDisp)}/documentos">dispositivo N.º ${esc(idDisp)}</a>` : "";
+    if (e.accion === "INSERTAR") return `subió el documento ${doc}${del}`;
+    if (e.accion === "ELIMINAR") return `eliminó el documento ${doc}${del}`;
+    return camposCambiados(e).includes("path_docs")
+      ? `reemplazó el archivo ${doc}${del}` : `cambió el tipo del documento ${doc}${del}`;
   }
 
   const verbo = { INSERTAR: t.detalle ? "agregó" : "creó", ACTUALIZAR: "modificó", ELIMINAR: "eliminó" }[e.accion] || "cambió";
@@ -206,9 +244,13 @@ function etiquetaDia(fecha) {
 
 /**
  * Dibuja un feed de auditoría en `cont` con los filtros dados.
+ * `ruta`: API que responde {resultados, hay_mas} (por defecto auditoria/;
+ * el historial de un dispositivo usa dispositivos/<id>/historial/).
  * Devuelve { recargar(filtros) }.
  */
-export async function feedAuditoria(cont, filtros = {}, { limite = 30, vacio = "Todavía no hay actividad registrada.", paginar = true } = {}) {
+export async function feedAuditoria(cont, filtros = {}, {
+  limite = 30, vacio = "Todavía no hay actividad registrada.", paginar = true, ruta = "auditoria/",
+} = {}) {
   await cargarCatalogos();
   let actuales = { ...filtros };
   let desplazamiento = 0;
@@ -231,7 +273,7 @@ export async function feedAuditoria(cont, filtros = {}, { limite = 30, vacio = "
     }
     let r;
     try {
-      r = await api("auditoria/", { query: { ...actuales, limite, desplazamiento } });
+      r = await api(ruta, { query: { ...actuales, limite, desplazamiento } });
     } catch (e) {
       if (esta === consulta) estado.innerHTML = errorHTML(e.message);
       return;

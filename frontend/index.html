@@ -52,6 +52,15 @@
       <symbol id="i-historial" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3 4v4.5h4.5"/><path d="M12 7.5V12l3 2"/></symbol>
       <symbol id="i-camara" viewBox="0 0 24 24"><path d="M3 8.5a2 2 0 0 1 2-2h2.2l1.6-2.5h6.4l1.6 2.5H19a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.5Z"/><circle cx="12" cy="13" r="3.8"/></symbol>
       <symbol id="i-entrar" viewBox="0 0 24 24"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="M14 16.5 18.5 12 14 7.5"/><path d="M18.5 12H9"/></symbol>
+      <symbol id="i-modulos" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></symbol>
+      <symbol id="i-cambiar" viewBox="0 0 24 24"><path d="M7 3.5 3.5 7 7 10.5"/><path d="M3.5 7H17"/><path d="m17 13.5 3.5 3.5-3.5 3.5"/><path d="M20.5 17H7"/></symbol>
+      <symbol id="i-red" viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="5" rx="1"/><rect x="2.5" y="16.5" width="6" height="5" rx="1"/><rect x="15.5" y="16.5" width="6" height="5" rx="1"/><path d="M12 7.5V12M5.5 16.5V12h13v4.5"/></symbol>
+      <symbol id="i-modem" viewBox="0 0 24 24"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M10.5 16.5h.01"/><path d="M15 16.5h3"/><path d="M8.5 9.5a5 5 0 0 1 7 0"/><path d="M6 7a8.5 8.5 0 0 1 12 0"/></symbol>
+      <symbol id="i-firewall" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="1.5"/><path d="M3 9.5h18M3 14.5h18M9 4.5v5M15 4.5v5M6 9.5v5M12 9.5v5M18 9.5v5M9 14.5v5M15 14.5v5"/></symbol>
+      <symbol id="i-router" viewBox="0 0 24 24"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M10.5 16.5h.01M14 16.5h3.5"/><path d="M7.5 13 5.5 5M16.5 13l2-8"/></symbol>
+      <symbol id="i-switch" viewBox="0 0 24 24"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M5.5 11h2.5v2.5H5.5zM10.75 11h2.5v2.5h-2.5zM16 11h2.5v2.5H16z"/></symbol>
+      <symbol id="i-puertos" viewBox="0 0 24 24"><path d="M5 5.5h14v9.5h-3.5v3.5h-7V15H5V5.5Z"/><path d="M9 8.5v2.5M12 8.5v2.5M15 8.5v2.5"/></symbol>
+      <symbol id="i-sistema" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="m7 8.5 2.5 2-2.5 2M12 12.5h4"/><path d="M9 20.5h6M12 17v3.5"/></symbol>
       <symbol id="i-escudo" viewBox="0 0 24 24"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6l-8-3Z"/><path d="M7.5 14.5l2.8-3.6 1.9 2.3 3-4.2 3.3 5.5"/></symbol>
     </defs>
   </svg>
@@ -66,7 +75,7 @@
       </div>
       <div class="login__titular">
         <h1>Gestión interna</h1>
-        <p>Usuarios, proveedores, catálogos y división territorial del municipio, en un solo lugar.</p>
+        <p>Usuarios, proveedores y dispositivos de red del municipio, en un solo lugar.</p>
       </div>
       <p class="login__nota">Acceso exclusivo para personal municipal.</p>
     </div>
@@ -104,7 +113,23 @@
         </div>
       </div>
 
+      <a class="modulo-actual" id="modulo-actual" href="#/modulos" title="Cambiar de módulo">
+        <svg class="ic"><use id="modulo-icono" href="#i-modulos"/></svg>
+        <span class="modulo-actual__texto"><small>Módulo</small><strong id="modulo-nombre">Elija un módulo</strong></span>
+        <svg class="ic ic--sm"><use href="#i-cambiar"/></svg>
+      </a>
+
       <nav class="nav" id="nav" aria-label="Menú principal">
+        <!-- Menú de módulos (primera pantalla) -->
+        <div class="nav__modulo" data-modulo="modulos">
+          <a href="#/modulos" data-ruta="modulos"><svg class="ic"><use href="#i-modulos"/></svg>Módulos</a>
+          <p class="nav__grupo">Ir al módulo</p>
+          <a href="#/inicio"><svg class="ic"><use href="#i-usuarios"/></svg>Usuarios y proveedores</a>
+          <a href="#/red"><svg class="ic"><use href="#i-red"/></svg>Dispositivos de red</a>
+        </div>
+
+        <!-- Módulo de usuarios y proveedores -->
+        <div class="nav__modulo" data-modulo="usuarios" hidden>
         <a href="#/inicio" data-ruta="inicio"><svg class="ic"><use href="#i-inicio"/></svg>Inicio</a>
 
         <p class="nav__grupo">Personas</p>
@@ -132,6 +157,28 @@
         <a href="#/geografia/provincias" data-ruta="geografia/provincias"><svg class="ic"><use href="#i-mapa"/></svg>Provincias</a>
         <a href="#/geografia/cantones" data-ruta="geografia/cantones"><svg class="ic"><use href="#i-capas"/></svg>Cantones</a>
         <a href="#/geografia/distritos" data-ruta="geografia/distritos"><svg class="ic"><use href="#i-punto"/></svg>Distritos</a>
+        </div>
+
+        <!-- Módulo de dispositivos de red -->
+        <div class="nav__modulo" data-modulo="red" hidden>
+          <a href="#/red" data-ruta="red"><svg class="ic"><use href="#i-inicio"/></svg>Inicio</a>
+
+          <p class="nav__grupo">Dispositivos</p>
+          <a href="#/red/dispositivos" data-ruta="red/dispositivos"><svg class="ic"><use href="#i-red"/></svg>Dispositivos</a>
+          <a href="#/red/dispositivos/nuevo" data-ruta="red/dispositivos/nuevo" data-solo-admin><svg class="ic"><use href="#i-mas"/></svg>Nuevo dispositivo</a>
+
+          <p class="nav__grupo">Inventario</p>
+          <a href="#/red/edificios" data-ruta="red/edificios"><svg class="ic"><use href="#i-edificio"/></svg>Edificios</a>
+          <a href="#/red/marcas" data-ruta="red/marcas"><svg class="ic"><use href="#i-etiqueta"/></svg>Marcas y modelos</a>
+
+          <p class="nav__grupo">Catálogos</p>
+          <a href="#/red/catalogos/tipos-dispositivos" data-ruta="red/catalogos/tipos-dispositivos"><svg class="ic"><use href="#i-switch"/></svg>Tipos de dispositivo</a>
+          <a href="#/red/catalogos/sistemas-operativos" data-ruta="red/catalogos/sistemas-operativos"><svg class="ic"><use href="#i-sistema"/></svg>Sistemas operativos</a>
+          <a href="#/red/catalogos/tipos-documentos" data-ruta="red/catalogos/tipos-documentos"><svg class="ic"><use href="#i-documento"/></svg>Tipos de documento</a>
+
+          <p class="nav__grupo" data-solo-admin>Control</p>
+          <a href="#/red/auditoria" data-ruta="red/auditoria" data-solo-admin><svg class="ic"><use href="#i-historial"/></svg>Auditoría</a>
+        </div>
       </nav>
 
       <div class="lateral__pie">

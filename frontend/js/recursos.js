@@ -4,7 +4,7 @@ import {
   abrirFormulario, botonesFila, cargandoHTML, confirmar, errorHTML, esc, eventoFila, icono,
   tablaHTML, toast, vacioHTML,
 } from "./ui.js";
-import { CATALOGOS, cascadaGeo, NIVELES_GEO, olvidarCatalogo, rutaGeo } from "./datos.js";
+import { apiCatalogo, CATALOGOS, cascadaGeo, NIVELES_GEO, olvidarCatalogo, rutaGeo } from "./datos.js";
 
 const normalizar = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
@@ -30,11 +30,13 @@ function noExiste(cont, ctx) {
 /* =====================================================================
    Catálogos
    ===================================================================== */
-export async function vistaCatalogo(cont, [slug], ctx) {
+/** modulo: "usuarios" (#/catalogos/...) o "red" (#/red/catalogos/...). */
+export async function vistaCatalogo(cont, [slug], ctx, modulo = "usuarios") {
   const def = CATALOGOS[slug];
-  if (!def) return noExiste(cont, ctx);
+  if (!def || def.soloDatos || (def.modulo || "usuarios") !== modulo) return noExiste(cont, ctx);
   const admin = ctx.esAdmin;
-  ctx.migas([{ texto: "Catálogos" }, { texto: def.titulo }]);
+  const base = apiCatalogo(slug);
+  ctx.migas([{ texto: def.grupo || "Catálogos" }, { texto: def.titulo }]);
 
   cont.innerHTML = `
     ${encabezado({ titulo: def.titulo, descripcion: def.descripcion, boton: `Agregar ${def.singular}`, admin })}
@@ -74,7 +76,7 @@ export async function vistaCatalogo(cont, [slug], ctx) {
 
   async function cargar() {
     try {
-      filas = await api(`catalogos/${slug}/`);
+      filas = await api(`${base}/`);
     } catch (e) {
       lista.innerHTML = `<div class="panel__cuerpo">${errorHTML(e.message)}</div>`;
       return;
@@ -92,7 +94,7 @@ export async function vistaCatalogo(cont, [slug], ctx) {
       campos,
       valores: fila || {},
       textoGuardar: fila ? "Guardar cambios" : "Agregar",
-      alGuardar: (datos) => api(fila ? ruta(`catalogos/${slug}`, fila[def.llave]) : `catalogos/${slug}/`, {
+      alGuardar: (datos) => api(fila ? ruta(base, fila[def.llave]) : `${base}/`, {
         metodo: fila ? "PUT" : "POST", datos,
       }),
     });
@@ -106,9 +108,9 @@ export async function vistaCatalogo(cont, [slug], ctx) {
     if (r.accion === "editar") return formulario(r.fila);
     const ok = await confirmar({
       titulo: `Eliminar ${def.singular}`,
-      mensaje: `Se eliminará «${r.fila.descripcion}». Si algún usuario lo está usando, no se podrá eliminar.`,
+      mensaje: `Se eliminará «${r.fila.descripcion}». ${def.enUso || "Si algún usuario lo está usando, no se podrá eliminar."}`,
       textoBoton: "Eliminar",
-      accion: () => api(ruta(`catalogos/${slug}`, r.fila[def.llave]), { metodo: "DELETE" }),
+      accion: () => api(ruta(base, r.fila[def.llave]), { metodo: "DELETE" }),
     });
     if (ok) { toast(`Se eliminó «${r.fila.descripcion}».`); await cargar(); }
   });

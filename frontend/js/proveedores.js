@@ -67,7 +67,7 @@ async function descargarCatalogo(p) {
 const PAR = /(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/;
 
 /** Mismas reglas que el servidor: "lat, lng" o un enlace de Google Maps que las incluya. */
-function coordenadas(texto) {
+export function coordenadas(texto) {
   const t = (texto || "").trim();
   if (!t) return null;
   let m;
@@ -85,12 +85,12 @@ function coordenadas(texto) {
   return { lat, lng, texto: `${lat},${lng}` };
 }
 
-const enlaceMaps = (c) => `https://www.google.com/maps?q=${encodeURIComponent(c.texto)}`;
-const embebidoMaps = (c) => `https://maps.google.com/maps?q=${encodeURIComponent(c.texto)}&z=16&output=embed`;
+export const enlaceMaps = (c) => `https://www.google.com/maps?q=${encodeURIComponent(c.texto)}`;
+export const embebidoMaps = (c) => `https://maps.google.com/maps?q=${encodeURIComponent(c.texto)}&z=16&output=embed`;
 
-/** Muestra debajo del campo "mapa" un enlace para comprobar la ubicación. */
-function enlazarCampoMapa(form) {
-  const input = form.elements.namedItem("mapa");
+/** Muestra debajo del campo de coordenadas un enlace para comprobar la ubicación. */
+export function enlazarCampoMapa(form, nombre = "mapa") {
+  const input = form.elements.namedItem(nombre);
   if (!input) return;
   const contenedor = input.closest(".campo");
   const enlace = document.createElement("a");
@@ -243,11 +243,11 @@ async function definicionCampos() {
   ];
 }
 
-function validarMapaLocal(form) {
-  const input = form.elements.namedItem("mapa");
+export function validarMapaLocal(form, nombre = "mapa") {
+  const input = form.elements.namedItem(nombre);
   if (!input || !input.value.trim() || coordenadas(input.value)) return true;
   mostrarErrores(form, new ErrorApi("", 400, {
-    mapa: "Escriba latitud y longitud separadas por coma (por ejemplo 10.0732, -84.3116) o pegue un enlace de Google Maps que las incluya.",
+    [nombre]: "Escriba latitud y longitud separadas por coma (por ejemplo 10.0732, -84.3116) o pegue un enlace de Google Maps que las incluya.",
   }), form.querySelector("[data-error]"));
   return false;
 }

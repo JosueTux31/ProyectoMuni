@@ -1,4 +1,5 @@
-"""Archivos subidos (fotos de usuarios, imágenes y catálogos de proveedores).
+"""Archivos subidos (fotos de usuarios, imágenes y catálogos de proveedores,
+documentos de los dispositivos de red).
 
 - Se guardan en MEDIA_ROOT con un nombre que genera el servidor; en la base
   solo queda la ruta relativa.
@@ -51,6 +52,20 @@ _FIRMAS_IMAGEN = {
 
 def almacen():
     return FileSystemStorage(location=settings.MEDIA_ROOT)
+
+
+def imagen_valida(archivo, extension):
+    """True si los primeros bytes corresponden al formato de imagen de la
+    extensión (evita un archivo de otro tipo con la extensión cambiada).
+    Las extensiones que no son de imagen siempre dan True."""
+    if extension not in _FIRMAS_IMAGEN:
+        return True
+    inicio = archivo.read(12)
+    archivo.seek(0)
+    valida = any(inicio.startswith(f) for f in _FIRMAS_IMAGEN[extension])
+    if extension == ".webp":
+        valida = valida and inicio[8:12] == b"WEBP"
+    return valida
 
 
 def borrar(ruta):
@@ -178,14 +193,8 @@ class ArchivosMixin:
         limite = getattr(settings, conf["ajuste_max_mb"], conf["max_mb_defecto"])
         if archivo.size > limite * 1024 * 1024:
             raise ValidationError({"archivo": [f"El archivo pesa más de {limite} MB."]})
-        if extension in _FIRMAS_IMAGEN:
-            inicio = archivo.read(12)
-            archivo.seek(0)
-            es_valida = any(inicio.startswith(f) for f in _FIRMAS_IMAGEN[extension])
-            if extension == ".webp":
-                es_valida = es_valida and inicio[8:12] == b"WEBP"
-            if not es_valida:
-                raise ValidationError({"archivo": ["El archivo no es una imagen válida."]})
+        if not imagen_valida(archivo, extension):
+            raise ValidationError({"archivo": ["El archivo no es una imagen válida."]})
         return extension
 
     # ----------------------------------------------------------- acciones

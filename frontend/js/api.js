@@ -31,6 +31,9 @@ const ETIQUETAS = {
   cod_categoria: "Categoría", mapa: "Ubicación en el mapa", archivo: "Archivo",
   password: "Clave", password_actual: "Clave actual", correo: "Correo", url_web: "Página web",
   telefono: "Teléfono", cod_rol: "Rol", activo: "Estado",
+  serie: "Serie", tipo_disp: "Tipo de dispositivo", id_marca: "Marca", id_modelo: "Modelo", id_doc: "Tipo de documento",
+  direccion_ip: "Dirección IP", direccion_mac: "Dirección MAC", gps: "Ubicación GPS",
+  cant_ptos_ethernet: "Puertos Ethernet", cant_ptos_sfp: "Puertos SFP", otras_senas: "Otras señas",
 };
 
 function textoDe(valor) {
@@ -117,6 +120,35 @@ export async function api(ruta, { metodo = "GET", datos, query, formulario, como
     throw error;
   }
   return cuerpo;
+}
+
+/**
+ * Sube un archivo (FormData) mostrando el avance, para archivos grandes
+ * como el firmware de un dispositivo.
+ *   apiSubir("dispositivos/5/documentos/", datos, { alProgreso: (0..1) => ... })
+ */
+export function apiSubir(ruta, formulario, { metodo = "POST", alProgreso } = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(metodo, `${CONFIG.API_BASE}/api/${ruta.replace(/^\/+/, "")}`);
+    xhr.setRequestHeader("Accept", "application/json");
+    const actual = sesion.leer();
+    if (actual?.token) xhr.setRequestHeader("Authorization", `Bearer ${actual.token}`);
+    if (alProgreso) {
+      xhr.upload.addEventListener("progress", (ev) => { if (ev.lengthComputable) alProgreso(ev.loaded / ev.total); });
+    }
+    xhr.addEventListener("error", () => reject(new ErrorApi("No hay conexión con el servidor. Verifique que Django esté corriendo.", 0)));
+    xhr.addEventListener("load", () => {
+      let cuerpo = null;
+      try { cuerpo = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { cuerpo = null; }
+      if (xhr.status >= 200 && xhr.status < 300) { resolve(cuerpo); return; }
+      if (xhr.status === 413) { reject(new ErrorApi("El archivo es demasiado grande para el servidor.", 413)); return; }
+      const error = interpretarError(cuerpo, xhr.status);
+      if (xhr.status === 401) alExpirarSesion(error.message);
+      reject(error);
+    });
+    xhr.send(formulario);
+  });
 }
 
 /** Arma una ruta escapando cada segmento: ruta("geografia/provincias", "CR", "2") */

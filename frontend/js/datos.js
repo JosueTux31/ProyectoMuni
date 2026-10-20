@@ -32,13 +32,39 @@ export const CATALOGOS = {
     titulo: "Categorías de proveedores", singular: "categoría", llave: "cod_categoria", max: 150, icono: "proveedor",
     descripcion: "Tipo de bien o servicio que ofrece cada proveedor. Cada proveedor tiene una categoría.",
   },
+
+  // Módulo de dispositivos de red (api = ruta propia; modulo = dónde se administra)
+  "tipos-dispositivos": {
+    titulo: "Tipos de dispositivo", singular: "tipo de dispositivo", llave: "tipo_disp", max: 100, icono: "red",
+    descripcion: "Modem, firewall, router, switch… Cada marca y cada dispositivo pertenecen a un tipo.",
+    api: "dispositivos/tipos", modulo: "red", grupo: "Catálogos de red",
+    enUso: "Si tiene marcas o dispositivos, no se podrá eliminar.",
+  },
+  "sistemas-operativos": {
+    titulo: "Sistemas operativos", singular: "sistema operativo", llave: "id_os", max: 100, icono: "sistema",
+    descripcion: "Sistema operativo de cada dispositivo. N/D es para los que no aplica o no se conoce.",
+    api: "dispositivos/sistemas-operativos", modulo: "red", grupo: "Catálogos de red",
+    enUso: "Si algún dispositivo lo usa, no se podrá eliminar.",
+  },
+  "tipos-documentos": {
+    titulo: "Tipos de documento", singular: "tipo de documento", llave: "id_doc", max: 100, icono: "documento",
+    descripcion: "Clasificación de los archivos de cada dispositivo: manuales, imágenes, firmware, respaldos y configuración.",
+    api: "dispositivos/tipos-documentos", modulo: "red", grupo: "Catálogos de red",
+    enUso: "Si algún dispositivo tiene documentos de este tipo, no se podrá eliminar.",
+  },
+  // Solo para mostrar nombres (tienen su propia pantalla)
+  marcas: { titulo: "Marcas", llave: "id_marca", api: "dispositivos/marcas", modulo: "red", soloDatos: true },
+  edificios: { titulo: "Edificios", llave: "id_edificio", api: "dispositivos/edificios", modulo: "red", soloDatos: true },
 };
+
+/** Ruta de la API de un catálogo: catalogos/<slug> o la propia del módulo. */
+export const apiCatalogo = (slug) => CATALOGOS[slug]?.api || `catalogos/${slug}`;
 
 const cache = new Map();
 
 /** Filas de un catálogo (con caché durante la sesión). */
 export async function filasCatalogo(slug) {
-  if (!cache.has(slug)) cache.set(slug, api(`catalogos/${slug}/`).catch((e) => { cache.delete(slug); throw e; }));
+  if (!cache.has(slug)) cache.set(slug, api(`${apiCatalogo(slug)}/`).catch((e) => { cache.delete(slug); throw e; }));
   return cache.get(slug);
 }
 
