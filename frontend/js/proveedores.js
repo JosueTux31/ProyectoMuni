@@ -2,15 +2,17 @@
 // Se guardan en la misma tabla que los usuarios, pero no inician sesión.
 import { api, ErrorApi, ruta } from "./api.js";
 import {
-  avatarHTML, botonCargando, cargandoHTML, confirmar, debounce, errorHTML, esc, eventoFila, fecha, icono,
-  leerCampos, limpiarErrores, mostrarErrores, nombreCompleto, tablaHTML, toast, urlApi, vacioHTML,
+  avatarHTML, botonCargando, cargandoHTML, confirmar, debounce, errorHTML, esc, eventoFila, fecha,
+  formatearTelefono, icono, leerCampos, limpiarErrores, mostrarErrores, nombreCompleto, tablaHTML, toast,
+  urlApi, vacioHTML,
 } from "./ui.js";
 import { opcionesCatalogo } from "./datos.js";
 import {
-  camposUbicacion, contactosHTML, enlazarContactos, enlazarUbicacion, guardarContactos, leerContactos,
+  camposUbicacion, contactosHTML, enlazarConsultaCedula, enlazarContactos, enlazarUbicacion, guardarContactos, leerContactos,
   pastillaEstado, pestanaContactos, precisarDuplicado, seccionesHTML, todosLosCampos,
 } from "./usuarios.js";
 import { pestanaHistorialProveedor } from "./auditoria.js";
+import { abrirVisor, abrirVistaPrevia, zoomAlPasar } from "./zoom.js";
 
 const RECURSO = "proveedores";
 
@@ -187,7 +189,7 @@ export async function vistaProveedores(cont, _params, ctx) {
         {
           titulo: "Contacto", clase: "col-opcional",
           html: (p) => (p.telefono_principal || p.correo_principal
-            ? `${esc(p.telefono_principal || "")}<span class="secundario">${esc(p.correo_principal || "")}</span>`
+            ? `${esc(formatearTelefono(p.telefono_principal))}<span class="secundario">${esc(p.correo_principal || "")}</span>`
             : `<span class="secundario">Sin contacto</span>`),
         },
         { titulo: "Estado", html: (p) => pastillaEstado(p.activo) },
@@ -233,7 +235,7 @@ async function definicionCampos() {
       campos: [
         ...camposUbicacion("Edificio, local, referencias"),
         {
-          nombre: "mapa", etiqueta: "Ubicación en Google Maps", max: 2000, completo: true, placeholder: "10.0732, -84.3116",
+          nombre: "mapa", etiqueta: "Ubicación en Google Maps", max: 2000, completo: true, placeholder: "10.0732, -84.3116", mayus: false,
           ayuda: "En Google Maps, haga clic derecho sobre el lugar y elija las coordenadas para copiarlas. También puede pegar el enlace del lugar.",
         },
       ],
@@ -259,6 +261,7 @@ const campoArchivoHTML = (tipo) => {
     <label for="doc-${tipo}">${esc(d.titulo)}</label>
     <input id="doc-${tipo}" type="file" class="control-archivo" accept="${d.extensiones.join(",")}">
     <p class="ayuda">${esc(d.ayuda)}</p>
+    <button type="button" class="enlace-mapa" data-ver-local="${tipo}" hidden>${icono("buscar", "ic--sm")}<span>Vista previa</span></button>
     <p class="error-campo" hidden></p>
   </div>`;
 };
@@ -297,6 +300,33 @@ export async function vistaProveedorNuevo(cont, _params, ctx) {
   enlazarContactos(form, contactos.tipos);
   enlazarCampoMapa(form);
   enlazarUbicacion(form);
+  enlazarConsultaCedula(form);
+
+  // Vista previa de los archivos elegidos, antes de guardarlos
+  for (const tipo of Object.keys(DOCUMENTOS)) {
+    const input = form.querySelector(`#doc-${tipo}`);
+    const ver = form.querySelector(`[data-ver-local="${tipo}"]`);
+    input.addEventListener("change", () => {
+      const archivo = input.files[0];
+      const ext = archivo ? extension(archivo.name) : "";
+      ver.hidden = !archivo;
+      ver.dataset.office = String(![".pdf", ".jpg", ".jpeg", ".png", ".webp"].includes(ext));
+    });
+    ver.addEventListener("click", () => {
+      const archivo = input.files[0];
+      if (!archivo) return;
+      abrirVistaPrevia({
+        titulo: DOCUMENTOS[tipo].titulo,
+        nombre: archivo.name,
+        obtener: async () => {
+          if (ver.dataset.office === "true") {
+            throw new Error("Word, Excel y PowerPoint se pueden ver después de registrar el proveedor, desde su pestaña Documentos.");
+          }
+          return archivo;
+        },
+      });
+    });
+  }
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -376,7 +406,7 @@ export async function vistaProveedor(cont, [id, pestanaInicial], ctx) {
   cont.innerHTML = `
     <a class="volver" href="#/proveedores">${icono("atras")}Volver a proveedores</a>
     <div class="ficha">
-      ${avatarHTML(p, { tam: "grande", logo: true })}
+      ${p.imagen_url ? `<button type="button" class="ficha__ver-foto" data-ver-imagen aria-label="Ver imagen de ${esc(nombreCompleto(p))}">${avatarHTML(p, { tam: "grande", logo: true })}</button>` : avatarHTML(p, { tam: "grande", logo: true })}
       <div class="ficha__texto">
         <h1>${esc(nombreCompleto(p))}</h1>
         <div class="ficha__datos">
@@ -397,6 +427,9 @@ export async function vistaProveedor(cont, [id, pestanaInicial], ctx) {
     <div id="panel-pestana" role="tabpanel"></div>`;
 
   cont.querySelector("[data-estado]")?.addEventListener("click", () => cambiarEstado(p, () => recargar()));
+  cont.querySelector("[data-ver-imagen]")?.addEventListener("click", () => {
+    abrirVisor(urlApi(p.imagen_url), { titulo: nombreCompleto(p), alt: `Imagen de ${nombreCompleto(p)}` });
+  });
 
   const panel = cont.querySelector("#panel-pestana");
   async function mostrar(clave) {
@@ -552,7 +585,10 @@ async function pestanaDocumentos(panel, p, ctx, recargar) {
         : `<span>${esc(d.vacio)}</span>`}</div>`;
 
     const acciones = [];
-    if (tipo === "catalogo" && rutaGuardada) acciones.push(`<button type="button" class="btn btn--primario btn--sm" data-descargar>${icono("descargar")}Descargar</button>`);
+    if (tipo === "catalogo" && rutaGuardada) {
+      acciones.push(`<button type="button" class="btn btn--primario btn--sm" data-vista-previa>${icono("buscar")}Vista previa</button>`);
+      acciones.push(`<button type="button" class="btn btn--secundario btn--sm" data-descargar>${icono("descargar")}Descargar</button>`);
+    }
     if (admin) {
       acciones.push(`<label class="btn btn--secundario btn--sm boton-archivo">${icono("subir")}${rutaGuardada ? "Reemplazar" : "Subir"}
         <input type="file" accept="${d.extensiones.join(",")}" data-subir="${tipo}" class="visualmente-oculto"></label>`);
@@ -572,11 +608,25 @@ async function pestanaDocumentos(panel, p, ctx, recargar) {
 
   panel.innerHTML = `<div class="documentos">${tarjeta("imagen")}${tarjeta("catalogo")}</div>`;
 
+  const imagen = panel.querySelector(".documento__vista--imagen img");
+  if (imagen) {
+    zoomAlPasar(imagen);
+    imagen.addEventListener("click", () => abrirVisor(imagen.src, { titulo: nombreCompleto(p), alt: imagen.alt }));
+  }
   panel.querySelector(".documento__vista--imagen img")?.addEventListener("error", (ev) => {
     ev.target.closest(".documento__vista").innerHTML = `${icono("alerta")}<span>No se pudo cargar la imagen.</span>`;
   });
 
   panel.addEventListener("click", async (ev) => {
+    if (ev.target.closest("[data-vista-previa]")) {
+      abrirVistaPrevia({
+        titulo: "Catálogo de servicios",
+        nombre: nombreArchivo(p.archivo_path),
+        obtener: () => api(ruta(RECURSO, p.id, "catalogo", "vista-previa"), { comoArchivo: true }),
+        alDescargar: () => descargarCatalogo(p).catch((e) => toast(e.message, "error")),
+      });
+      return;
+    }
     if (ev.target.closest("[data-descargar]")) {
       const boton = ev.target.closest("[data-descargar]");
       botonCargando(boton, true);

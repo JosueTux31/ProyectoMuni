@@ -154,6 +154,19 @@ MUNI_MAX_MB_FOTO = 5
 # envía la IP real del cliente en X-Forwarded-For.
 MUNI_PROXY_CONFIABLE = False
 
+# Búsqueda de nombre por cédula: además del padrón del TSE (tabla pad_padron),
+# consultar la API pública de Hacienda (empresas y otros). Necesita internet.
+MUNI_CONSULTA_HACIENDA = True
+
+# Hacienda da el nombre de las personas en un solo texto y el sistema lo
+# separa en nombre y apellidos. False = viene "NOMBRE APELLIDO1 APELLIDO2";
+# cámbielo a True si al probar ve que viene "APELLIDO1 APELLIDO2 NOMBRE".
+MUNI_HACIENDA_APELLIDOS_PRIMERO = False
+
+# Ruta de LibreOffice para la vista previa de Word/Excel/PowerPoint.
+# None = buscar "soffice" o "libreoffice" en el sistema.
+MUNI_LIBREOFFICE = None
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

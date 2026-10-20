@@ -2,9 +2,10 @@
 import { CONFIG } from "./config.js";
 import { api, cuandoExpireSesion, ErrorApi, sesion } from "./api.js";
 import {
-  avatarHTML, cargandoHTML, debounce, errorHTML, esc, fecha, icono, nombreCompleto,
+  activarMascaraTelefono, avatarHTML, cargandoHTML, debounce, errorHTML, esc, fecha, icono, nombreCompleto,
   botonCargando, tablaHTML, eventoFila, vacioHTML,
 } from "./ui.js";
+import { activarVistaAvatares } from "./zoom.js";
 import { filasCatalogo } from "./datos.js";
 import { vistaPerfil, vistaUsuario, vistaUsuarioNuevo, vistaUsuarios } from "./usuarios.js";
 import { vistaCatalogo, vistaGeografia } from "./recursos.js";
@@ -18,6 +19,8 @@ const pantallaApp = $("#pantalla-app");
 const vista = $("#vista");
 
 document.querySelectorAll("[data-institucion]").forEach((el) => { el.textContent = CONFIG.INSTITUCION; });
+activarMascaraTelefono();   // 0000-0000 en todos los teléfonos
+activarVistaAvatares();     // foto más grande al pasar el mouse por un avatar
 
 /* =====================================================================
    Sesión

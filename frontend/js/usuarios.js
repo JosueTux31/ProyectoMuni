@@ -3,12 +3,100 @@ import { CONFIG } from "./config.js";
 import { api, ErrorApi, ruta } from "./api.js";
 import {
   abrirFormulario, avatarHTML, botonCargando, botonesFila, camposHTML, cargandoHTML, confirmar, debounce,
+  formatearTelefono, urlApi,
   errorHTML, esc, eventoFila, fecha, icono, leerCampos, limpiarErrores, mostrarErrores,
   nombreCompleto, tablaHTML, toast, vacioHTML,
 } from "./ui.js";
 import { cascadaGeo, NIVELES_GEO, opcionesCatalogo } from "./datos.js";
 import { elegirFoto } from "./foto.js";
+import { abrirVisor } from "./zoom.js";
 import { pestanaActividadUsuario } from "./auditoria.js";
+
+/* ------------------------------------------------- Nombre según la cédula */
+const normalizarTexto = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+
+/** Cédula sin guiones ni espacios, como en el padrón: 1-234-567 -> 102340567. */
+function normalizarCedula(texto) {
+  const valor = String(texto || "").trim();
+  const partes = valor.split(/[-\s.]+/).filter(Boolean);
+  if (partes.length === 3 && partes.every((p) => /^\d+$/.test(p))
+      && partes[0].length === 1 && partes[1].length <= 4 && partes[2].length <= 4) {
+    return partes[0] + partes[1].padStart(4, "0") + partes[2].padStart(4, "0");
+  }
+  return /^[\d\s.-]+$/.test(valor) ? valor.replace(/\D/g, "") : valor;
+}
+
+/**
+ * Al escribir la cédula busca nombre y apellidos (padrón del TSE o Hacienda)
+ * y llena los campos que estén vacíos o que se hayan llenado solos antes.
+ */
+export function enlazarConsultaCedula(form) {
+  const dni = form.elements.namedItem("dni");
+  if (!dni) return;
+  const estado = document.createElement("p");
+  estado.className = "estado-cedula";
+  estado.hidden = true;
+  estado.setAttribute("aria-live", "polite");
+  dni.closest(".campo").querySelector(".error-campo").before(estado);
+
+  let ultima = "";
+  let llenado = {};
+  const mostrar = (clase, html) => {
+    estado.className = `estado-cedula estado-cedula--${clase}`;
+    estado.innerHTML = html;
+    estado.hidden = false;
+  };
+
+  async function buscar() {
+    const valor = dni.value.trim();
+    if (valor.replace(/[^0-9A-Za-z]/g, "").length < 9 || valor === ultima) return;
+    ultima = valor;
+    mostrar("buscando", "Buscando el nombre…");
+    let r;
+    try {
+      r = await api(`consultas/cedula/${encodeURIComponent(valor)}/`);
+    } catch (e) {
+      if (dni.value.trim() !== valor) return;
+      if (e.estado === 404) mostrar("nada", "No está en el padrón ni en Hacienda. Escriba el nombre a mano.");
+      else if (e.estado === 400) estado.hidden = true;
+      else mostrar("nada", esc(e.message));
+      return;
+    }
+    if (dni.value.trim() !== valor) return;
+
+    // La cédula se guarda como en el padrón: solo números (1-1456-0789 -> 114560789)
+    if (r.cedula) {
+      dni.value = r.cedula;
+      ultima = r.cedula;
+    }
+
+    const valores = r.apellido1 || r.apellido2
+      ? { nombre: r.nombre, apellido1: r.apellido1 || "", apellido2: r.apellido2 || "" }
+      : { nombre: r.nombre_completo, apellido1: "", apellido2: "" };
+    for (const [campo, texto] of Object.entries(valores)) {
+      const el = form.elements.namedItem(campo);
+      if (el && (!el.value.trim() || el.value === llenado[campo])) el.value = texto;
+    }
+    llenado = valores;
+
+    // Tipo de identificación según lo encontrado, si todavía no se eligió
+    const tipo = form.elements.namedItem("cod_tipo_identificacion");
+    const buscado = { fisica: "FISICA", juridica: "JURIDICA", dimex: "DIMEX" }[r.tipo];
+    if (tipo && !tipo.value && buscado) {
+      const opcion = [...tipo.options].find((o) => normalizarTexto(o.textContent).includes(buscado));
+      if (opcion) tipo.value = opcion.value;
+    }
+
+    const fuente = r.fuente === "padron" ? "del padrón electoral del TSE" : "del registro de Hacienda";
+    const revisar = r.fuente === "hacienda" && r.apellido1
+      ? " Hacienda da el nombre junto; se separó en nombre y apellidos, revise que esté bien." : "";
+    mostrar("ok", `${icono("check", "ic--sm")}<span>${esc(r.nombre_completo)}: datos tomados ${fuente}.${revisar}</span>`);
+  }
+
+  // Al salir del campo se quitan guiones y espacios; mientras escribe, busca solo
+  dni.addEventListener("change", () => { dni.value = normalizarCedula(dni.value); buscar(); });
+  dni.addEventListener("input", debounce(buscar, 700));
+}
 
 /** Sube la foto de un usuario (archivo JPG ya recortado). */
 export function subirFoto(id, archivo) {
@@ -344,6 +432,7 @@ export async function vistaUsuarioNuevo(cont, _params, ctx) {
   const campos = todosLosCampos(secciones);
   enlazarContactos(form, contactos.tipos);
   enlazarUbicacion(form);
+  enlazarConsultaCedula(form);
 
   // Foto elegida (se sube después de crear el usuario)
   let foto = null;
@@ -443,7 +532,7 @@ async function ficha(cont, id, pestanaInicial, ctx, perfil) {
     ${perfil ? "" : `<a class="volver" href="#/usuarios">${icono("atras")}Volver a usuarios</a>`}
     <div class="ficha">
       <div class="ficha__foto">
-        ${avatarHTML(u, { tam: "grande" })}
+        ${u.foto_url ? `<button type="button" class="ficha__ver-foto" data-ver-foto aria-label="Ver foto de ${esc(nombreCompleto(u))}">${avatarHTML(u, { tam: "grande" })}</button>` : avatarHTML(u, { tam: "grande" })}
         ${puedeFoto ? `<button type="button" class="ficha__camara" data-cambiar-foto title="${u.foto_url ? "Cambiar foto" : "Agregar foto"}" aria-label="${u.foto_url ? "Cambiar foto" : "Agregar foto"}">${icono("camara")}</button>` : ""}
       </div>
       <div class="ficha__texto">
@@ -473,6 +562,10 @@ async function ficha(cont, id, pestanaInicial, ctx, perfil) {
   cont.querySelector("[data-estado]")?.addEventListener("click", () => cambiarEstado(u, () => recargar()));
 
   // Foto de perfil
+  cont.querySelector("[data-ver-foto]")?.addEventListener("click", () => {
+    abrirVisor(urlApi(u.foto_url), { titulo: nombreCompleto(u), alt: `Foto de ${nombreCompleto(u)}` });
+  });
+
   const fotoCambiada = async (mensaje) => {
     toast(mensaje);
     if (propio) await ctx.refrescarSesion();
@@ -620,7 +713,7 @@ const SUBRECURSOS = {
       { nombre: "es_whatsapp", etiqueta: "Este número tiene WhatsApp", tipo: "checkbox" },
     ],
     columnas: [
-      { titulo: "Número", html: (f) => `<strong>${esc(f.telefono)}</strong>` },
+      { titulo: "Número", html: (f) => `<strong>${esc(formatearTelefono(f.telefono))}</strong>` },
       { titulo: "Tipo", html: (f) => esc(f.tipo_telefono) },
       { titulo: "WhatsApp", html: (f) => (f.es_whatsapp ? `<span class="pastilla pastilla--activo pastilla--sin-punto">${icono("chat", "ic--sm")}Sí</span>` : `<span class="secundario">No</span>`) },
     ],

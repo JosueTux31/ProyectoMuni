@@ -21,6 +21,9 @@ urlpatterns = [
          v.ProveedorViewSet.as_view(ACCIONES_ARCHIVO, tipo_archivo="imagen"), name="proveedores-imagen"),
     path("<int:id>/catalogo/",
          v.ProveedorViewSet.as_view(ACCIONES_ARCHIVO, tipo_archivo="catalogo"), name="proveedores-catalogo"),
+    path("<int:id>/catalogo/vista-previa/",
+         v.ProveedorViewSet.as_view({"get": "vista_previa"}, tipo_archivo="catalogo"),
+         name="proveedores-catalogo-vista-previa"),
 
     # CRUD de proveedores
     *rutas_crud("", "<int:id>/", v.ProveedorViewSet, "proveedores"),

@@ -61,6 +61,10 @@ class CredencialesSerializer(serializers.Serializer):
     password = serializers.CharField(max_length=128, trim_whitespace=False,
                                      style={"input_type": "password"})
 
+    def validate_usuario_red(self, valor):
+        # En la base todo se guarda en mayúscula: "admin" y "ADMIN" son el mismo usuario
+        return valor.upper()
+
 
 # ------------------------------------------------------------- Detalles
 class TelefonoSerializer(serializers.Serializer):

@@ -158,6 +158,36 @@ export function confirmar({ titulo, mensaje, textoBoton = "Confirmar", peligro =
      "select"|"textarea"|"checkbox", requerido, max, min, entero, opciones:
      [{valor, texto}], vacioTexto, ayuda, completo, deshabilitado, autocompletar }
    --------------------------------------------------------------------- */
+/* ------------------------------------------------- Mayúsculas y teléfonos
+   La base de datos guarda los textos en MAYÚSCULA. Para que la persona lo
+   vea desde que escribe, los campos de texto se muestran en mayúscula
+   (clase .mayus) y se envían ya convertidos. No aplica a correos, páginas
+   web, claves, teléfonos ni a los campos marcados con mayus: false.  */
+const SIN_MAYUS = new Set(["email", "url", "password", "tel", "number", "date", "select", "checkbox"]);
+export const usaMayus = (c) => c.mayus !== false && !SIN_MAYUS.has(c.tipo || "text");
+
+/** 88881234 -> 8888-1234. Los números internacionales (con +) se dejan igual. */
+export function formatearTelefono(valor) {
+  const texto = String(valor ?? "").trim();
+  if (texto.startsWith("+")) return texto;
+  const digitos = texto.replace(/\D/g, "").slice(0, 8);
+  return digitos.length > 4 ? `${digitos.slice(0, 4)}-${digitos.slice(4)}` : digitos;
+}
+
+/** Máscara 0000-0000 en todos los campos de teléfono de la página. */
+export function activarMascaraTelefono(raiz = document) {
+  raiz.addEventListener("input", (ev) => {
+    const el = ev.target;
+    if (!(el instanceof HTMLInputElement) || el.type !== "tel" || el.value.trim().startsWith("+")) return;
+    const antes = el.value;
+    const despues = formatearTelefono(antes);
+    if (antes !== despues) {
+      el.value = despues;
+      el.setSelectionRange(despues.length, despues.length);
+    }
+  });
+}
+
 export function campoHTML(c, valor, { soloLectura = false } = {}) {
   const id = `c-${c.nombre}-${++contadorModal}`;
   const deshabilitado = soloLectura || c.deshabilitado ? "disabled" : "";
@@ -181,10 +211,11 @@ export function campoHTML(c, valor, { soloLectura = false } = {}) {
       .join("");
     control = `<select id="${id}" name="${esc(c.nombre)}" ${requerido} ${deshabilitado}>${vacio}${opciones}</select>`;
   } else if (c.tipo === "textarea") {
-    control = `<textarea id="${id}" name="${esc(c.nombre)}" ${c.max ? `maxlength="${c.max}"` : ""} ${requerido} ${deshabilitado}>${esc(valor)}</textarea>`;
+    control = `<textarea id="${id}" name="${esc(c.nombre)}"${usaMayus(c) ? ' class="mayus"' : ""} ${c.max ? `maxlength="${c.max}"` : ""} ${requerido} ${deshabilitado}>${esc(valor)}</textarea>`;
   } else {
     const tipo = c.tipo || "text";
-    control = `<input id="${id}" name="${esc(c.nombre)}" type="${tipo}" value="${esc(valor)}"
+    const valorMostrado = tipo === "tel" ? formatearTelefono(valor) : valor;
+    control = `<input id="${id}" name="${esc(c.nombre)}" type="${tipo}" value="${esc(valorMostrado)}"${usaMayus(c) ? ' class="mayus"' : ""}${tipo === "tel" ? ' inputmode="tel"' : ""}
       ${c.max ? `maxlength="${c.max}"` : ""} ${c.min ? `minlength="${c.min}"` : ""}
       ${c.autocompletar ? `autocomplete="${c.autocompletar}"` : tipo === "password" ? 'autocomplete="new-password"' : ""}
       ${c.placeholder && !soloLectura ? `placeholder="${esc(c.placeholder)}"` : ""}
@@ -208,6 +239,8 @@ export function leerCampos(form, campos) {
     let v = el.value;
     if (c.tipo !== "password") v = v.trim();
     if (v === "") { datos[c.nombre] = null; continue; }
+    if (usaMayus(c)) v = v.toUpperCase();
+    if (c.tipo === "tel") v = formatearTelefono(v);
     datos[c.nombre] = c.entero ? Number.parseInt(v, 10) : v;
   }
   return datos;
