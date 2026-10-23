@@ -133,7 +133,7 @@ class IpDispositivo(models.Model):
 
     class Meta:
         managed = False
-        db_table = "red_ips_dispositivos"
+        db_table = "equipos"            # antes red_ips_dispositivos
         verbose_name = "dirección IP"
         verbose_name_plural = "direcciones IP"
         ordering = ["dispositivo_id", "num_linea"]

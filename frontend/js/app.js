@@ -14,6 +14,10 @@ import { feedAuditoria, vistaAuditoria } from "./auditoria.js";
 import {
   vistaDispositivo, vistaDispositivoNuevo, vistaDispositivos, vistaEdificios, vistaInicioRed, vistaMarcas,
 } from "./dispositivos.js";
+import {
+  vistaCamposLogs, vistaComparar, vistaEventos, vistaImportacion, vistaImportaciones, vistaImportarSophos, vistaInicioLogs,
+  vistaInventarioLogs, vistaTablero,
+} from "./logs.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -137,12 +141,14 @@ document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") menuMovi
 const MODULOS = {
   usuarios: { nombre: "Usuarios y proveedores", inicio: "#/inicio", icono: "usuarios" },
   red: { nombre: "Dispositivos de red", inicio: "#/red", icono: "red" },
+  logs: { nombre: "Análisis de logs", inicio: "#/logs", icono: "logs", soloAdmin: true },
 };
 let moduloActual = null;
 
 function moduloDeRuta(r) {
   if (r === "modulos") return null;
   if (r === "red" || r.startsWith("red/")) return "red";
+  if (r === "logs" || r.startsWith("logs/")) return "logs";
   // Mi perfil se queda en el módulo donde estaba la persona
   if (r === "perfil" || r.startsWith("perfil/")) return moduloActual || "usuarios";
   return "usuarios";
@@ -182,6 +188,17 @@ const RUTAS = [
   { patron: /^red\/edificios$/, vista: vistaEdificios },
   { patron: /^red\/catalogos\/([\w-]+)$/, vista: (cont, params, ctx) => vistaCatalogo(cont, params, ctx, "red") },
   { patron: /^red\/auditoria$/, vista: vistaAuditoria, soloAdmin: true },
+  // Módulo de análisis de logs (solo administradores: muestra la navegación del personal)
+  { patron: /^logs$/, vista: vistaInicioLogs, soloAdmin: true },
+  { patron: /^logs\/importar\/sophos$/, vista: vistaImportarSophos, soloAdmin: true },
+  { patron: /^logs\/importaciones$/, vista: vistaImportaciones, soloAdmin: true },
+  { patron: /^logs\/importaciones\/(\d+)$/, vista: vistaImportacion, soloAdmin: true },
+  { patron: /^logs\/tablero$/, vista: vistaTablero, soloAdmin: true },
+  { patron: /^logs\/eventos$/, vista: vistaEventos, soloAdmin: true },
+  { patron: /^logs\/comparar$/, vista: vistaComparar, soloAdmin: true },
+  { patron: /^logs\/inventario$/, vista: vistaInventarioLogs, soloAdmin: true },
+  { patron: /^logs\/campos$/, vista: vistaCamposLogs, soloAdmin: true },
+  { patron: /^logs\/auditoria$/, vista: vistaAuditoria, soloAdmin: true },
 ];
 
 let navegacion = 0;
@@ -305,6 +322,8 @@ async function vistaModulos(cont, _params, ctx) {
         ["usuarios activos", "proveedores activos"])}
       ${tarjeta("red", "Modems, firewalls, routers y switches: dónde están, quién les da soporte y sus manuales, firmware, respaldos y configuraciones.",
         ["dispositivos activos", "edificios"])}
+      ${ctx.esAdmin ? tarjeta("logs", "Logs de Sophos Firewall en gráficos: filtro estilo Wireshark, comparación entre logs y cruce con el inventario y el personal.",
+        ["importaciones", "eventos"]) : ""}
     </div>
     ${ctx.esAdmin ? "" : `<div class="aviso aviso--ocre" style="margin-top:20px">${icono("candado")}<span>Su rol permite consultar la información de los dos módulos. Los cambios los hace un administrador.</span></div>`}`;
 
@@ -312,16 +331,22 @@ async function vistaModulos(cont, _params, ctx) {
   const pintar = (clave, valores) => {
     cont.querySelectorAll(`[data-datos="${clave}"] b`).forEach((b, i) => { b.textContent = valores[i] ?? "—"; });
   };
-  const [usuarios, proveedores, dispositivos, edificios] = await Promise.allSettled([
+  const [usuarios, proveedores, dispositivos, edificios, importaciones] = await Promise.allSettled([
     api("usuarios/", { query: { activo: true } }),
     api("proveedores/", { query: { activo: true } }),
     api("dispositivos/", { query: { activo: true } }),
     api("dispositivos/edificios/"),
+    ctx.esAdmin ? api("logs/importaciones/") : Promise.resolve([]),
   ]);
   if (!ctx.vigente()) return;
   const n = (r) => (r.status === "fulfilled" ? r.value.length : null);
   pintar("usuarios", [n(usuarios), n(proveedores)]);
   pintar("red", [n(dispositivos), n(edificios)]);
+  if (ctx.esAdmin) {
+    const eventos = importaciones.status === "fulfilled"
+      ? importaciones.value.reduce((s, x) => s + (Number(x.total_eventos) || 0), 0).toLocaleString("es-CR") : null;
+    pintar("logs", [n(importaciones), eventos]);
+  }
 }
 
 /* =====================================================================

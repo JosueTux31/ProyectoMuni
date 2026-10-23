@@ -25,7 +25,9 @@ const TABLAS = {
   geo_cantones: { art: "el", nom: "cantón", grupo: "Territorio", filtro: "Cantones" },
   geo_distritos: { art: "el", nom: "distrito", grupo: "Territorio", filtro: "Distritos" },
   red_dispositivos: { art: "el", nom: "dispositivo", grupo: "Dispositivos de red", filtro: "Dispositivos" },
-  red_ips_dispositivos: { art: "la", nom: "dirección IP", grupo: "Dispositivos de red", filtro: "Direcciones IP" },
+  equipos: { art: "la", nom: "dirección IP", grupo: "Dispositivos de red", filtro: "Direcciones IP" },
+  // Nombre anterior de la tabla equipos: solo para mostrar la auditoría vieja
+  red_ips_dispositivos: { art: "la", nom: "dirección IP", grupo: "Dispositivos de red", filtro: "Direcciones IP", anterior: true },
   red_macs_dispositivos: { art: "la", nom: "dirección MAC", grupo: "Dispositivos de red", filtro: "Direcciones MAC" },
   red_documentos_dispositivos: { art: "el", nom: "documento", grupo: "Dispositivos de red", filtro: "Documentos de dispositivos" },
   cat_edificios: { art: "el", nom: "edificio", grupo: "Dispositivos de red", filtro: "Edificios" },
@@ -34,6 +36,8 @@ const TABLAS = {
   cat_tipos_dispositivos: { art: "el", nom: "tipo de dispositivo", grupo: "Dispositivos de red", filtro: "Tipos de dispositivo" },
   cat_sistemas_operativos: { art: "el", nom: "sistema operativo", grupo: "Dispositivos de red", filtro: "Sistemas operativos" },
   cat_tipos_documentos: { art: "el", nom: "tipo de documento", grupo: "Dispositivos de red", filtro: "Tipos de documento" },
+  log_importaciones: { art: "la", nom: "importación de logs", grupo: "Análisis de logs", filtro: "Importaciones de logs" },
+  log_mapeo_campos: { art: "el", nom: "alias de campo", grupo: "Análisis de logs", filtro: "Alias de campos de logs" },
 };
 
 const ACCIONES = {
@@ -61,6 +65,8 @@ const ETIQUETAS = {
   gps: "Coordenadas", id_predio: "Edificio", id_edificio: "Edificio", ubicacion: "Ubicación en el edificio",
   id_proveedor: "Proveedor", direccion_ip: "Dirección IP", direccion_mac: "Dirección MAC", interfaz: "Interfaz",
   id_doc: "Tipo de documento", path_docs: "Archivo",
+  fuente: "Programa", nombre_archivo: "Archivo", total_eventos: "Eventos", id_importacion: "Importación",
+  campo_origen: "Nombre en el log", campo: "Campo común", prioridad: "Prioridad",
 };
 
 // Campo → catálogo para mostrar la descripción en lugar del código
@@ -186,7 +192,28 @@ function frase(e) {
       ? `reemplazó el archivo ${doc}${del}` : `cambió el tipo del documento ${doc}${del}`;
   }
 
-  if (e.tabla === "red_ips_dispositivos" || e.tabla === "red_macs_dispositivos") {
+  if (e.tabla === "log_importaciones") {
+    const d = e.despues || e.antes || {};
+    const archivo = `<strong>${esc(d.nombre_archivo || e.descripcion || "")}</strong>`;
+    const fuente = d.fuente === "SOPHOS" ? " de Sophos" : "";
+    if (e.accion === "INSERTAR") return `importó el archivo de logs${fuente} ${archivo} (<a href="#/logs/importaciones/${esc(e.llave)}">importación N.º ${esc(e.llave)}</a>)`;
+    if (e.accion === "ELIMINAR") {
+      const n = Number(d.total_eventos) || 0;
+      return `eliminó la importación de logs${fuente} ${archivo}${n ? ` con sus ${n.toLocaleString("es-CR")} eventos` : ""}`;
+    }
+    return `modificó la importación de logs ${archivo}`;
+  }
+
+  if (e.tabla === "log_mapeo_campos") {
+    const d = e.despues || e.antes || {};
+    const origen = `<strong class="dato-mono">${esc(d.campo_origen || "")}</strong>`;
+    const campo = `<strong>${esc(d.campo || "")}</strong>`;
+    if (e.accion === "INSERTAR") return `hizo que el campo ${origen} de los logs se lea como ${campo}`;
+    if (e.accion === "ELIMINAR") return `quitó el alias ${origen} → ${campo} de los logs`;
+    return `cambió el alias ${origen} de los logs (ahora se lee como ${campo})`;
+  }
+
+  if (e.tabla === "equipos" || e.tabla === "red_ips_dispositivos" || e.tabla === "red_macs_dispositivos") {
     const idDisp = String(e.llave || "").split("/")[0];
     const esMac = e.tabla === "red_macs_dispositivos";
     const valor = `<strong class="dato-mono">${esc(esMac ? macConGuiones(e.descripcion) : e.descripcion)}</strong>`;
@@ -345,7 +372,7 @@ export async function feedAuditoria(cont, filtros = {}, {
 export async function vistaAuditoria(cont, _params, ctx) {
   ctx.migas([{ texto: "Auditoría" }]);
   const grupos = {};
-  for (const [tabla, t] of Object.entries(TABLAS)) (grupos[t.grupo] ||= []).push([tabla, t.filtro]);
+  for (const [tabla, t] of Object.entries(TABLAS)) if (!t.anterior) (grupos[t.grupo] ||= []).push([tabla, t.filtro]);
 
   cont.innerHTML = `
     <div class="encabezado">

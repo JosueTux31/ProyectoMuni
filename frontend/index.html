@@ -61,6 +61,15 @@
       <symbol id="i-switch" viewBox="0 0 24 24"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M5.5 11h2.5v2.5H5.5zM10.75 11h2.5v2.5h-2.5zM16 11h2.5v2.5H16z"/></symbol>
       <symbol id="i-puertos" viewBox="0 0 24 24"><path d="M5 5.5h14v9.5h-3.5v3.5h-7V15H5V5.5Z"/><path d="M9 8.5v2.5M12 8.5v2.5M15 8.5v2.5"/></symbol>
       <symbol id="i-sistema" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="m7 8.5 2.5 2-2.5 2M12 12.5h4"/><path d="M9 20.5h6M12 17v3.5"/></symbol>
+      <symbol id="i-logs" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M6.5 12.5h2.6l1.6-3.5 2.8 7 1.7-3.5h2.3"/></symbol>
+      <symbol id="i-filtro" viewBox="0 0 24 24"><path d="M3.5 5h17l-6.5 8v5.5l-4 2V13L3.5 5Z"/></symbol>
+      <symbol id="i-comparar" viewBox="0 0 24 24"><rect x="3" y="4" width="7.5" height="16" rx="1.5"/><rect x="13.5" y="4" width="7.5" height="16" rx="1.5"/><path d="M5.5 8.5h2.5M5.5 12h2.5M16 8.5h2.5M16 12h2.5"/></symbol>
+      <symbol id="i-grafico" viewBox="0 0 24 24"><path d="M4 3.5v17h16.5"/><path d="M8.5 16.5v-5M12.5 16.5V7.5M16.5 16.5v-3"/></symbol>
+      <symbol id="i-enlace" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+      <symbol id="i-ayuda" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17.2v.3"/></symbol>
+      <symbol id="i-campos" viewBox="0 0 24 24"><path d="M4 6h3M4 12h3M4 18h3M10.5 6h9.5M10.5 12h9.5M10.5 18h9.5"/></symbol>
+      <symbol id="i-abajo" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="i-punto-lleno" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="currentColor"/></symbol>
       <symbol id="i-escudo" viewBox="0 0 24 24"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6l-8-3Z"/><path d="M7.5 14.5l2.8-3.6 1.9 2.3 3-4.2 3.3 5.5"/></symbol>
     </defs>
   </svg>
@@ -75,7 +84,7 @@
       </div>
       <div class="login__titular">
         <h1>Gestión interna</h1>
-        <p>Usuarios, proveedores y dispositivos de red del municipio, en un solo lugar.</p>
+        <p>Usuarios, proveedores, dispositivos de red y análisis de logs del municipio, en un solo lugar.</p>
       </div>
       <p class="login__nota">Acceso exclusivo para personal municipal.</p>
     </div>
@@ -126,6 +135,7 @@
           <p class="nav__grupo">Ir al módulo</p>
           <a href="#/inicio"><svg class="ic"><use href="#i-usuarios"/></svg>Usuarios y proveedores</a>
           <a href="#/red"><svg class="ic"><use href="#i-red"/></svg>Dispositivos de red</a>
+          <a href="#/logs" data-solo-admin><svg class="ic"><use href="#i-logs"/></svg>Análisis de logs</a>
         </div>
 
         <!-- Módulo de usuarios y proveedores -->
@@ -178,6 +188,27 @@
 
           <p class="nav__grupo" data-solo-admin>Control</p>
           <a href="#/red/auditoria" data-ruta="red/auditoria" data-solo-admin><svg class="ic"><use href="#i-historial"/></svg>Auditoría</a>
+        </div>
+
+        <!-- Módulo de análisis de logs (solo administradores) -->
+        <div class="nav__modulo" data-modulo="logs" hidden>
+          <a href="#/logs" data-ruta="logs"><svg class="ic"><use href="#i-inicio"/></svg>Inicio</a>
+
+          <p class="nav__grupo">Importar</p>
+          <a href="#/logs/importar/sophos" data-ruta="logs/importar/sophos"><svg class="ic"><use href="#i-firewall"/></svg>Logs de Sophos</a>
+
+          <p class="nav__grupo">Análisis</p>
+          <a href="#/logs/eventos" data-ruta="logs/eventos"><svg class="ic"><use href="#i-filtro"/></svg>Eventos</a>
+          <a href="#/logs/tablero" data-ruta="logs/tablero"><svg class="ic"><use href="#i-grafico"/></svg>Tablero</a>
+          <a href="#/logs/comparar" data-ruta="logs/comparar"><svg class="ic"><use href="#i-comparar"/></svg>Comparar logs</a>
+          <a href="#/logs/inventario" data-ruta="logs/inventario"><svg class="ic"><use href="#i-red"/></svg>Cruce con el inventario</a>
+
+          <p class="nav__grupo">Datos</p>
+          <a href="#/logs/importaciones" data-ruta="logs/importaciones"><svg class="ic"><use href="#i-capas"/></svg>Importaciones</a>
+          <a href="#/logs/campos" data-ruta="logs/campos"><svg class="ic"><use href="#i-campos"/></svg>Campos y alias</a>
+
+          <p class="nav__grupo">Control</p>
+          <a href="#/logs/auditoria" data-ruta="logs/auditoria"><svg class="ic"><use href="#i-historial"/></svg>Auditoría</a>
         </div>
       </nav>
 

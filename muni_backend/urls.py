@@ -21,6 +21,7 @@ urlpatterns = [
     path("api/proveedores/", include("apps.proveedores.urls")),
     path("api/auditoria/", include("apps.auditoria.urls")),
     path("api/dispositivos/", include("apps.dispositivos.urls")),
+    path("api/logs/", include("apps.logs.urls")),
     path("api/consultas/cedula/<str:numero>/", ConsultaCedulaView.as_view(), name="consulta-cedula"),
 
     # Documentación Swagger

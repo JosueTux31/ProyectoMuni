@@ -200,9 +200,9 @@ class DispositivoViewSet(SPViewSet):
 # Direcciones IP y MAC de los dispositivos (puede tener varias)
 # =====================================================================
 class IpDispositivoViewSet(SPViewSet):
-    """Direcciones IP de un dispositivo (sp_red_ips_dispositivos_*).
+    """Direcciones IP de un dispositivo: tabla equipos (sp_equipos_*).
     IPv4 o IPv6; "interfaz" es opcional (WAN, LAN, GESTIÓN...)."""
-    sp = "sp_red_ips_dispositivos"
+    sp = "sp_equipos"
     campos_padre = ("id_disp",)
     campos_pk = ("id_disp", "num_linea")
     campos_insertar = ("direccion_ip", "interfaz")
