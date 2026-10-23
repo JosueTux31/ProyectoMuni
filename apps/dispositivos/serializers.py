@@ -12,8 +12,9 @@ _SOLO_MAC = re.compile(r"[0-9A-Fa-f:.\-\s]+")
 
 
 def normalizar_mac(valor):
-    """Devuelve la MAC como AA:BB:CC:DD:EE:FF, venga como venga
-    (aabb.ccdd.eeff de Cisco, AA-BB-CC-DD-EE-FF de Windows, aabbccddeeff).
+    """Devuelve la MAC entera, sin separadores (AABBCCDDEEFF), venga como
+    venga: aabb.ccdd.eeff de Cisco, AA-BB-CC-DD-EE-FF de Windows,
+    AA:BB:CC:DD:EE:FF... La página la muestra con guiones.
     Vacía = None. Lanza ValueError si no es una MAC."""
     if valor is None:
         return None
@@ -22,9 +23,9 @@ def normalizar_mac(valor):
         return None
     hexa = re.sub(r"[^0-9A-Fa-f]", "", texto).upper()
     if len(hexa) != 12 or not _SOLO_MAC.fullmatch(texto):
-        raise ValueError("Escriba la MAC con 12 dígitos hexadecimales, por ejemplo AA:BB:CC:DD:EE:FF, "
-                         "AA-BB-CC-DD-EE-FF o aabb.ccdd.eeff.")
-    return ":".join(hexa[i:i + 2] for i in range(0, 12, 2))
+        raise ValueError("Escriba la MAC con 12 dígitos hexadecimales, por ejemplo AA-BB-CC-DD-EE-FF, "
+                         "AA:BB:CC:DD:EE:FF o aabb.ccdd.eeff.")
+    return hexa
 
 
 def normalizar_ip(valor):
@@ -74,12 +75,75 @@ class ModeloFiltrosSerializer(serializers.Serializer):
 class EdificioSerializer(serializers.Serializer):
     descripcion = serializers.CharField(max_length=150)
     otras_senas = serializers.CharField(**TEXTO_OPCIONAL)
+    # Coordenadas del edificio para el mapa. Se acepta un enlace de Google
+    # Maps; se guarda solo "latitud,longitud".
+    gps = serializers.CharField(max_length=2000, **TEXTO_OPCIONAL)
 
     def validate_otras_senas(self, valor):
         return _texto_o_nulo(valor)
 
+    def validate_gps(self, valor):
+        return normalizar_mapa(valor)
+
 
 # ---------------------------------------------------------- dispositivos
+MAX_DIRECCIONES = 50   # IP o MAC por dispositivo
+
+# Campos que mandaba la página de versiones anteriores. Si llegan, el
+# navegador tiene guardada una página vieja: se rechaza en vez de perder
+# en silencio las IP, MAC o coordenadas que el usuario escribió.
+CAMPOS_VIEJOS = ("direccion_ip", "direccion_mac", "gps", "id_edificio")
+MENSAJE_PAGINA_VIEJA = (
+    "Esta página es de una versión anterior del sistema y sus datos no se guardaron. "
+    "Recargue la página con Ctrl+Shift+R (o Ctrl+F5) y vuelva a guardar. Las IP y MAC "
+    "van en la sección Direcciones de red y las coordenadas se ponen en el edificio."
+)
+
+
+def _validar_direcciones(filas, clase, campo, nombre, mostrar=str):
+    """Valida la lista de IP o MAC que llega con el dispositivo:
+    [{"num_linea": 1, "direccion_ip": "...", "interfaz": "LAN"}, {...}].
+    num_linea va en las que ya existían (se modifican); las que no lo
+    traen se agregan y las que no vienen se borran. Devuelve la lista
+    normalizada o lanza los errores por fila, igual que DRF."""
+    if filas is None:
+        return None
+    if len(filas) > MAX_DIRECCIONES:
+        raise serializers.ValidationError(f"Máximo {MAX_DIRECCIONES} direcciones {nombre} por dispositivo.")
+    limpias, errores, vistas = [], [], set()
+    for fila in filas:
+        error = {}
+        validador = clase(data=fila)
+        if validador.is_valid():
+            dato = dict(validador.validated_data)
+        else:
+            dato, error = {}, dict(validador.errors)
+        num_linea = fila.get("num_linea")
+        if num_linea not in (None, ""):
+            try:
+                num_linea = int(num_linea)
+                if num_linea < 1:
+                    raise ValueError
+            except (TypeError, ValueError):
+                error["num_linea"] = ["Número de línea inválido."]
+        else:
+            num_linea = None
+        valor = dato.get(campo)
+        if valor is not None:
+            if valor in vistas:
+                error[campo] = [f"La {nombre} {mostrar(valor)} está repetida."]
+            vistas.add(valor)
+        errores.append(error)
+        limpias.append({"num_linea": num_linea, **dato})
+    if any(errores):
+        raise serializers.ValidationError(errores)
+    return limpias
+
+
+def mac_con_guiones(mac):
+    return "-".join(mac[i:i + 2] for i in range(0, 12, 2)) if mac and len(mac) == 12 else mac
+
+
 class DispositivoSerializer(serializers.Serializer):
     serie = serializers.CharField(max_length=100)
     tipo_disp = serializers.IntegerField()
@@ -88,13 +152,13 @@ class DispositivoSerializer(serializers.Serializer):
     cant_ptos_ethernet = serializers.IntegerField(**PUERTOS)
     cant_ptos_sfp = serializers.IntegerField(**PUERTOS)
     id_os = serializers.IntegerField(**OPCIONAL)            # vacío = N/D
-    # Se acepta un enlace de Google Maps; se guarda solo "latitud,longitud".
-    gps = serializers.CharField(max_length=2000, **TEXTO_OPCIONAL)
-    id_edificio = serializers.IntegerField(**OPCIONAL)
+    id_predio = serializers.IntegerField(**OPCIONAL)        # edificio (su mapa es el del edificio)
     ubicacion = serializers.CharField(max_length=255, **TEXTO_OPCIONAL)
     id_proveedor = serializers.IntegerField(**OPCIONAL)
-    direccion_ip = serializers.CharField(max_length=45, **TEXTO_OPCIONAL)
-    direccion_mac = serializers.CharField(max_length=30, **TEXTO_OPCIONAL)
+    # Todas las IP y MAC del dispositivo; se guardan junto con él. Si no
+    # vienen (o vienen en null) no se tocan las que ya tiene.
+    ips = serializers.ListField(child=serializers.DictField(), required=False, allow_null=True)
+    macs = serializers.ListField(child=serializers.DictField(), required=False, allow_null=True)
 
     def validate_serie(self, valor):
         valor = valor.strip()
@@ -102,30 +166,27 @@ class DispositivoSerializer(serializers.Serializer):
             raise serializers.ValidationError("Escriba la serie del dispositivo.")
         return valor
 
-    def validate_gps(self, valor):
-        return normalizar_mapa(valor)
-
     def validate_ubicacion(self, valor):
         return _texto_o_nulo(valor)
 
-    def validate_direccion_ip(self, valor):
-        try:
-            return normalizar_ip(valor)
-        except ValueError as e:
-            raise serializers.ValidationError(str(e))
+    def validate_ips(self, filas):
+        return _validar_direcciones(filas, IpSerializer, "direccion_ip", "IP")
 
-    def validate_direccion_mac(self, valor):
-        try:
-            return normalizar_mac(valor)
-        except ValueError as e:
-            raise serializers.ValidationError(str(e))
+    def validate_macs(self, filas):
+        return _validar_direcciones(filas, MacSerializer, "direccion_mac", "MAC", mac_con_guiones)
+
+    def validate(self, datos):
+        viejos = [c for c in CAMPOS_VIEJOS if c in (self.initial_data or {})]
+        if viejos:
+            raise serializers.ValidationError(MENSAJE_PAGINA_VIEJA)
+        return datos
 
 
 class DispositivoFiltrosSerializer(serializers.Serializer):
     activo = serializers.BooleanField(default=None, **OPCIONAL)
     tipo_disp = serializers.IntegerField(**OPCIONAL)
     id_marca = serializers.IntegerField(**OPCIONAL)
-    id_edificio = serializers.IntegerField(**OPCIONAL)
+    id_predio = serializers.IntegerField(**OPCIONAL)
     id_proveedor = serializers.IntegerField(**OPCIONAL)
     buscar = serializers.CharField(max_length=150, **TEXTO_OPCIONAL)
 
@@ -133,6 +194,42 @@ class DispositivoFiltrosSerializer(serializers.Serializer):
 class HistorialSerializer(serializers.Serializer):
     limite = serializers.IntegerField(min_value=1, max_value=200, default=20)
     desplazamiento = serializers.IntegerField(min_value=0, default=0)
+
+
+# ------------------------------------------------- direcciones IP y MAC
+class IpSerializer(serializers.Serializer):
+    direccion_ip = serializers.CharField(max_length=45)
+    interfaz = serializers.CharField(max_length=50, **TEXTO_OPCIONAL)   # WAN, LAN, GESTIÓN...
+
+    def validate_direccion_ip(self, valor):
+        try:
+            ip = normalizar_ip(valor)
+        except ValueError as e:
+            raise serializers.ValidationError(str(e))
+        if ip is None:
+            raise serializers.ValidationError("Escriba la dirección IP.")
+        return ip
+
+    def validate_interfaz(self, valor):
+        return _texto_o_nulo(valor)
+
+
+class MacSerializer(serializers.Serializer):
+    # Se acepta con o sin separadores; se guarda entera (AABBCCDDEEFF)
+    direccion_mac = serializers.CharField(max_length=30)
+    interfaz = serializers.CharField(max_length=50, **TEXTO_OPCIONAL)
+
+    def validate_direccion_mac(self, valor):
+        try:
+            mac = normalizar_mac(valor)
+        except ValueError as e:
+            raise serializers.ValidationError(str(e))
+        if mac is None:
+            raise serializers.ValidationError("Escriba la dirección MAC.")
+        return mac
+
+    def validate_interfaz(self, valor):
+        return _texto_o_nulo(valor)
 
 
 # ------------------------------------------------------------ documentos

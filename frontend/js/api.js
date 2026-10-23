@@ -32,7 +32,8 @@ const ETIQUETAS = {
   password: "Clave", password_actual: "Clave actual", correo: "Correo", url_web: "Página web",
   telefono: "Teléfono", cod_rol: "Rol", activo: "Estado",
   serie: "Serie", tipo_disp: "Tipo de dispositivo", id_marca: "Marca", id_modelo: "Modelo", id_doc: "Tipo de documento",
-  direccion_ip: "Dirección IP", direccion_mac: "Dirección MAC", gps: "Ubicación GPS",
+  direccion_ip: "Dirección IP", direccion_mac: "Dirección MAC", gps: "Coordenadas", interfaz: "Interfaz",
+  id_predio: "Edificio", ips: "Direcciones IP", macs: "Direcciones MAC",
   cant_ptos_ethernet: "Puertos Ethernet", cant_ptos_sfp: "Puertos SFP", otras_senas: "Otras señas",
 };
 
@@ -68,6 +69,7 @@ function interpretarError(cuerpo, estado) {
   }
   const error = new ErrorApi(mensaje, estado, campos);
   error.db = cuerpo?.db || "";
+  error.cuerpo = cuerpo;   // respuesta completa (p. ej. errores por fila de una lista)
   return error;
 }
 

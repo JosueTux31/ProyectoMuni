@@ -16,7 +16,7 @@ urlpatterns = [
     *rutas_crud("modelos/", "<int:id_marca>/<int:id_modelo>/", v.ModeloViewSet, "modelos"),
     *rutas_crud("sistemas-operativos/", "<int:id_os>/", v.SistemaOperativoViewSet, "sistemas-operativos"),
     *rutas_crud("tipos-documentos/", "<int:id_doc>/", v.TipoDocumentoViewSet, "tipos-documentos"),
-    *rutas_crud("edificios/", "<int:id_edificio>/", v.EdificioViewSet, "edificios"),
+    *rutas_crud("edificios/", "<int:id_predio>/", v.EdificioViewSet, "edificios"),
 
     # Acciones especiales de los dispositivos
     path(DISPOSITIVO + "activar/",
@@ -32,7 +32,9 @@ urlpatterns = [
     path(DOCUMENTO + "vista-previa/",
          v.DocumentoDispositivoViewSet.as_view({"get": "vista_previa"}), name="documentos-vista-previa"),
 
-    # CRUD de dispositivos y de sus documentos
+    # CRUD de dispositivos, de sus direcciones IP y MAC, y de sus documentos
     *rutas_crud("", DISPOSITIVO, v.DispositivoViewSet, "dispositivos"),
+    *rutas_crud(DISPOSITIVO + "ips/", "<int:num_linea>/", v.IpDispositivoViewSet, "ips"),
+    *rutas_crud(DISPOSITIVO + "macs/", "<int:num_linea>/", v.MacDispositivoViewSet, "macs"),
     *rutas_crud(DISPOSITIVO + "documentos/", "<int:num_linea>/", v.DocumentoDispositivoViewSet, "documentos"),
 ]

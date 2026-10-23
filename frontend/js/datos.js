@@ -54,7 +54,7 @@ export const CATALOGOS = {
   },
   // Solo para mostrar nombres (tienen su propia pantalla)
   marcas: { titulo: "Marcas", llave: "id_marca", api: "dispositivos/marcas", modulo: "red", soloDatos: true },
-  edificios: { titulo: "Edificios", llave: "id_edificio", api: "dispositivos/edificios", modulo: "red", soloDatos: true },
+  edificios: { titulo: "Edificios", llave: "id_predio", api: "dispositivos/edificios", modulo: "red", soloDatos: true },
 };
 
 /** Ruta de la API de un catálogo: catalogos/<slug> o la propia del módulo. */

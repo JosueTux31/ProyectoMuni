@@ -741,6 +741,25 @@ dialog.modal::backdrop { background: rgba(15, 42, 32, .5); }
 .progreso__texto, .progreso-texto { font-size: 13.5px; color: var(--tinta-2); }
 .progreso-texto { margin-right: auto; align-self: center; }
 
+/* Direcciones IP y MAC */
+.dos-columnas--iguales { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mas-direcciones { display: inline-block; margin-left: 4px; padding: 0 6px; border-radius: 999px; background: var(--azul-100); color: var(--azul); font-family: var(--fuente); font-size: 12px; font-weight: 700; }
+.repetible__fila--direccion { grid-template-columns: minmax(0, 1fr) minmax(0, 220px) auto; }
+.nota-red { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13.5px; color: var(--tinta-3); }
+.nota-red .ic { color: var(--azul); }
+.nota-edificio { margin-top: 6px; font-size: 13.5px; }
+.seccion-form .repetible:first-of-type { margin-top: 0; }
+
+/* Ubicación GPS del edificio dentro del formulario del dispositivo */
+.campo .etiqueta-nota { font-weight: 400; color: var(--tinta-3); }
+.campo-gps__fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.campo-gps__fila input { flex: 1 1 240px; min-width: 0; }
+.campo input[readonly] { background: var(--verde-50); color: var(--tinta); cursor: default; }
+.campo-gps__acciones { display: flex; flex-wrap: wrap; gap: 6px; }
+.campo-gps__acciones:empty { display: none; }
+iframe.mapa--formulario { height: 260px; margin-top: 4px; border: 1px solid var(--linea-2); border-radius: var(--r-md); }
+.enlace-boton { margin-top: 6px; padding: 0; border: 0; background: none; color: var(--verde-700); font-family: inherit; cursor: pointer; }
+
 /* Marcas (izquierda) y modelos de la marca elegida (derecha) */
 .maestro-detalle { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px; align-items: start; }
 .maestro-detalle > .panel + .panel { margin-top: 0; }
@@ -762,6 +781,8 @@ dialog.modal::backdrop { background: rgba(15, 42, 32, .5); }
   .modulo { padding: 20px; }
   .insignia-tipo--grande { width: 52px; height: 52px; }
   .subida__campos { grid-template-columns: 1fr; }
+  .repetible__fila--direccion { grid-template-columns: 1fr auto; }
+  .repetible__fila--direccion .campo:first-child { grid-column: 1 / -1; }
   .doc-red { grid-template-columns: 48px minmax(0, 1fr); padding: 12px 16px; }
   .doc-red__vista { width: 48px; height: 48px; }
   .doc-red__acciones { grid-column: 1 / -1; justify-content: flex-start; }

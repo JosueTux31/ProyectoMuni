@@ -25,6 +25,8 @@ const TABLAS = {
   geo_cantones: { art: "el", nom: "cantón", grupo: "Territorio", filtro: "Cantones" },
   geo_distritos: { art: "el", nom: "distrito", grupo: "Territorio", filtro: "Distritos" },
   red_dispositivos: { art: "el", nom: "dispositivo", grupo: "Dispositivos de red", filtro: "Dispositivos" },
+  red_ips_dispositivos: { art: "la", nom: "dirección IP", grupo: "Dispositivos de red", filtro: "Direcciones IP" },
+  red_macs_dispositivos: { art: "la", nom: "dirección MAC", grupo: "Dispositivos de red", filtro: "Direcciones MAC" },
   red_documentos_dispositivos: { art: "el", nom: "documento", grupo: "Dispositivos de red", filtro: "Documentos de dispositivos" },
   cat_edificios: { art: "el", nom: "edificio", grupo: "Dispositivos de red", filtro: "Edificios" },
   cat_marcas: { art: "la", nom: "marca", grupo: "Dispositivos de red", filtro: "Marcas" },
@@ -56,8 +58,9 @@ const ETIQUETAS = {
   nombre_distrito: "Nombre", motivo: "Motivo",
   serie: "Serie", tipo_disp: "Tipo de dispositivo", id_marca: "Marca", id_modelo: "Modelo",
   cant_ptos_ethernet: "Puertos Ethernet", cant_ptos_sfp: "Puertos SFP", id_os: "Sistema operativo",
-  gps: "Ubicación GPS", id_edificio: "Edificio", ubicacion: "Ubicación en el edificio", id_proveedor: "Proveedor",
-  direccion_ip: "Dirección IP", direccion_mac: "Dirección MAC", id_doc: "Tipo de documento", path_docs: "Archivo",
+  gps: "Coordenadas", id_predio: "Edificio", id_edificio: "Edificio", ubicacion: "Ubicación en el edificio",
+  id_proveedor: "Proveedor", direccion_ip: "Dirección IP", direccion_mac: "Dirección MAC", interfaz: "Interfaz",
+  id_doc: "Tipo de documento", path_docs: "Archivo",
 };
 
 // Campo → catálogo para mostrar la descripción en lugar del código
@@ -66,10 +69,16 @@ const CAMPO_CATALOGO = {
   cod_tipo_auth: "tipos-autenticaciones", cod_categoria: "categorias-proveedores",
   cod_telefono: "tipos-telefonos", cod_correo: "tipos-correos",
   tipo_disp: "tipos-dispositivos", id_marca: "marcas", id_os: "sistemas-operativos", id_doc: "tipos-documentos",
-  id_edificio: "edificios",
+  id_predio: "edificios", id_edificio: "edificios",
 };
 const BOOLEANOS = new Set(["activo", "es_whatsapp", "es_proveedor"]);
 const OCULTOS = new Set(["id", "id_usuario", "num_linea", "id_disp"]);
+
+/** AABBCCDDEEFF (o AA:BB:...) -> AA-BB-CC-DD-EE-FF */
+const macConGuiones = (m) => {
+  const h = String(m ?? "").replace(/[^0-9a-f]/gi, "").toUpperCase();
+  return h.length === 12 ? h.match(/../g).join("-") : String(m ?? "");
+};
 
 /** dispositivos/5/manual-1a2b3c4d.pdf -> manual.pdf */
 const nombreDocumento = (r) => String(r || "").split("/").pop().replace(/-[0-9a-f]{8}(?=\.[^.]+$|$)/, "");
@@ -95,6 +104,7 @@ function valorLegible(campo, valor) {
   if (catalogos?.[campo]?.has(String(valor))) return esc(catalogos[campo].get(String(valor)));
   if (campo === "imagen_path" || campo === "archivo_path") return esc(String(valor).split("/").pop());
   if (campo === "path_docs") return esc(nombreDocumento(valor));
+  if (campo === "direccion_mac") return esc(macConGuiones(valor));
   return esc(valor);
 }
 
@@ -174,6 +184,17 @@ function frase(e) {
     if (e.accion === "ELIMINAR") return `eliminó el documento ${doc}${del}`;
     return camposCambiados(e).includes("path_docs")
       ? `reemplazó el archivo ${doc}${del}` : `cambió el tipo del documento ${doc}${del}`;
+  }
+
+  if (e.tabla === "red_ips_dispositivos" || e.tabla === "red_macs_dispositivos") {
+    const idDisp = String(e.llave || "").split("/")[0];
+    const esMac = e.tabla === "red_macs_dispositivos";
+    const valor = `<strong class="dato-mono">${esc(esMac ? macConGuiones(e.descripcion) : e.descripcion)}</strong>`;
+    const enlace = idDisp ? `<a href="#/red/dispositivos/${esc(idDisp)}">dispositivo N.º ${esc(idDisp)}</a>` : "dispositivo";
+    const que = `la dirección ${esMac ? "MAC" : "IP"} ${valor}`;
+    if (e.accion === "INSERTAR") return `agregó ${que} al ${enlace}`;
+    if (e.accion === "ELIMINAR") return `eliminó ${que} del ${enlace}`;
+    return `modificó ${que} del ${enlace}`;
   }
 
   const verbo = { INSERTAR: t.detalle ? "agregó" : "creó", ACTUALIZAR: "modificó", ELIMINAR: "eliminó" }[e.accion] || "cambió";

@@ -75,9 +75,12 @@ class TipoDocumento(CatalogoBase):
 
 
 class Edificio(CatalogoBase):
-    id_edificio = models.AutoField(primary_key=True)
+    """Edificio donde están los dispositivos. Sus coordenadas son el mapa de
+    cada dispositivo que está en él."""
+    id_predio = models.AutoField(primary_key=True)
     descripcion = models.CharField(max_length=150)     # nombre del edificio
     otras_senas = models.TextField(null=True, blank=True)
+    gps = models.CharField(max_length=100, null=True, blank=True)          # "latitud,longitud"
 
     class Meta(CatalogoBase.Meta):
         db_table = "cat_edificios"
@@ -88,7 +91,8 @@ class Edificio(CatalogoBase):
 class Dispositivo(models.Model):
     """Dispositivo de red. Se liga a su edificio y a su proveedor de soporte
     (usr_usuarios con es_proveedor = TRUE). El modelo se identifica con
-    tipo + marca + id_modelo (cat_modelos)."""
+    tipo + marca + id_modelo (cat_modelos). Sus direcciones IP y MAC están en
+    IpDispositivo y MacDispositivo (puede tener varias)."""
     id_disp = models.AutoField(primary_key=True)
     serie = models.CharField(max_length=100)
     tipo_dispositivo = models.ForeignKey(TipoDispositivo, on_delete=models.DO_NOTHING, db_column="tipo_disp",
@@ -99,14 +103,11 @@ class Dispositivo(models.Model):
     cant_ptos_sfp = models.PositiveSmallIntegerField(default=0)
     sistema_operativo = models.ForeignKey(SistemaOperativo, on_delete=models.DO_NOTHING, db_column="id_os",
                                           related_name="dispositivos")
-    gps = models.CharField(max_length=100, null=True, blank=True)          # "latitud,longitud"
-    edificio = models.ForeignKey(Edificio, on_delete=models.DO_NOTHING, db_column="id_edificio",
+    edificio = models.ForeignKey(Edificio, on_delete=models.DO_NOTHING, db_column="id_predio",
                                  null=True, blank=True, related_name="dispositivos")
     ubicacion = models.CharField(max_length=255, null=True, blank=True)    # piso, cuarto, rack
     proveedor = models.ForeignKey("proveedores.Proveedor", on_delete=models.DO_NOTHING, db_column="id_proveedor",
                                   null=True, blank=True, related_name="dispositivos")
-    direccion_ip = models.CharField(max_length=45, null=True, blank=True)
-    direccion_mac = models.CharField(max_length=17, null=True, blank=True)  # AA:BB:CC:DD:EE:FF
     activo = models.BooleanField(default=True)
     creado_en = models.DateTimeField(editable=False)
     actualizado_en = models.DateTimeField(editable=False)
@@ -120,6 +121,45 @@ class Dispositivo(models.Model):
 
     def __str__(self):
         return self.serie
+
+
+class IpDispositivo(models.Model):
+    pk = models.CompositePrimaryKey("dispositivo_id", "num_linea")
+    dispositivo = models.ForeignKey(Dispositivo, on_delete=models.CASCADE, db_column="id_disp",
+                                    related_name="ips")
+    num_linea = models.IntegerField()
+    direccion_ip = models.CharField(max_length=45)                          # IPv4 o IPv6
+    interfaz = models.CharField(max_length=50, null=True, blank=True)       # WAN, LAN, GESTIÓN...
+
+    class Meta:
+        managed = False
+        db_table = "red_ips_dispositivos"
+        verbose_name = "dirección IP"
+        verbose_name_plural = "direcciones IP"
+        ordering = ["dispositivo_id", "num_linea"]
+
+    def __str__(self):
+        return self.direccion_ip
+
+
+class MacDispositivo(models.Model):
+    """La MAC se guarda entera, sin separadores (AABBCCDDEEFF)."""
+    pk = models.CompositePrimaryKey("dispositivo_id", "num_linea")
+    dispositivo = models.ForeignKey(Dispositivo, on_delete=models.CASCADE, db_column="id_disp",
+                                    related_name="macs")
+    num_linea = models.IntegerField()
+    direccion_mac = models.CharField(max_length=12)
+    interfaz = models.CharField(max_length=50, null=True, blank=True)
+
+    class Meta:
+        managed = False
+        db_table = "red_macs_dispositivos"
+        verbose_name = "dirección MAC"
+        verbose_name_plural = "direcciones MAC"
+        ordering = ["dispositivo_id", "num_linea"]
+
+    def __str__(self):
+        return "-".join(self.direccion_mac[i:i + 2] for i in range(0, 12, 2))
 
 
 class DocumentoDispositivo(models.Model):

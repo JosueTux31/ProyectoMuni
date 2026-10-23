@@ -5,6 +5,7 @@ almacenados sp_<tabla>_listar / _obtener / _insertar / _actualizar /
 _eliminar por medio de SPViewSet. Consultar: cualquier usuario con sesión.
 Crear, modificar y eliminar: solo administradores.
 """
+import json
 import mimetypes
 import os
 import re
@@ -84,12 +85,13 @@ class ModeloViewSet(SPViewSet):
 
 
 class EdificioViewSet(SPViewSet):
-    """Edificios de la Municipalidad: nombre y otras señas (sp_cat_edificios_*).
-    Cada uno trae cantidad_dispositivos (dispositivos activos)."""
+    """Edificios de la Municipalidad: nombre, otras señas y coordenadas para
+    el mapa (sp_cat_edificios_*). El mapa de cada dispositivo es el de su
+    edificio. Cada uno trae cantidad_dispositivos (dispositivos activos)."""
     sp = "sp_cat_edificios"
-    campos_pk = ("id_edificio",)
-    campos_insertar = ("descripcion", "otras_senas")
-    campos_actualizar = ("descripcion", "otras_senas")
+    campos_pk = ("id_predio",)
+    campos_insertar = ("descripcion", "otras_senas", "gps")
+    campos_actualizar = ("descripcion", "otras_senas", "gps")
     insertar_devuelve_codigo = True
     serializer_class = s.EdificioSerializer
 
@@ -99,16 +101,36 @@ class EdificioViewSet(SPViewSet):
 # =====================================================================
 CAMPOS_DISPOSITIVO = (
     "serie", "tipo_disp", "id_marca", "id_modelo", "cant_ptos_ethernet", "cant_ptos_sfp", "id_os",
-    "gps", "id_edificio", "ubicacion", "id_proveedor", "direccion_ip", "direccion_mac",
+    "id_predio", "ubicacion", "id_proveedor", "ips", "macs",
 )
+DIRECCIONES = ("ips", "macs")
+
+
+def lista_json(filas):
+    """Lista de IP o MAC validada -> texto JSON para el procedimiento.
+    Las llaves sin valor no se mandan (NULL en la base)."""
+    if filas is None:
+        return None
+    return json.dumps([{k: v for k, v in f.items() if v is not None} for f in filas], ensure_ascii=False)
 
 
 class DispositivoViewSet(SPViewSet):
     """CRUD de dispositivos de red (sp_red_dispositivos_*).
 
     - La base valida que la marca sea del tipo, el modelo de la marca, el
-      proveedor sea un proveedor, la serie y la MAC no se repitan, y que la
-      IP y la MAC sean válidas. La MAC se guarda como AA:BB:CC:DD:EE:FF.
+      proveedor sea un proveedor y que la serie no se repita.
+    - Las IP y MAC se guardan con el dispositivo, en la misma transacción:
+      POST y PUT reciben "ips" y "macs" como listas
+        "ips":  [{"num_linea": 1, "direccion_ip": "192.168.1.1", "interfaz": "LAN"},
+                 {"direccion_ip": "10.0.0.1"}]
+        "macs": [{"direccion_mac": "AA-BB-CC-DD-EE-FF", "interfaz": "WAN"}]
+      Las que traen num_linea se modifican, las que no lo traen se agregan
+      y las que ya no vienen se borran. Si no se mandan, no se tocan.
+      También se pueden manejar una por una en /dispositivos/<id>/ips/ y
+      /dispositivos/<id>/macs/.
+    - Cada dispositivo trae "ips" y "macs" (todas, separadas por coma; la
+      MAC sin separadores) y "gps_edificio" (las coordenadas de su
+      edificio, para el mapa: el GPS se pone en el edificio).
     - DELETE desactiva. POST /<id>/activar/ lo activa de nuevo.
       DELETE /<id>/eliminar-fisico/ lo borra con sus documentos y archivos.
     - GET /<id>/historial/ (solo administradores): quién lo registró y
@@ -118,7 +140,7 @@ class DispositivoViewSet(SPViewSet):
     campos_pk = ("id_disp",)
     campos_insertar = CAMPOS_DISPOSITIVO
     campos_actualizar = CAMPOS_DISPOSITIVO
-    filtros_listar = ("activo", "tipo_disp", "id_marca", "id_edificio", "id_proveedor", "buscar")
+    filtros_listar = ("activo", "tipo_disp", "id_marca", "id_predio", "id_proveedor", "buscar")
     insertar_devuelve_codigo = True
     campos_bool = ("activo",)
 
@@ -129,6 +151,23 @@ class DispositivoViewSet(SPViewSet):
         if self.action == "historial":
             return [SoloAdmin()]
         return super().get_permissions()
+
+    def preparar_datos(self, datos, accion):
+        for campo in DIRECCIONES:
+            datos[campo] = lista_json(datos.get(campo))
+        return datos
+
+    def update(self, request, partial=False, **kwargs):
+        pk = self._valores_pk(kwargs)
+        entrada = request.data
+        if partial:
+            # PATCH: se completa con los datos actuales. Las IP y MAC de la
+            # lectura vienen como texto ("a, b"): si no se mandan, no se tocan.
+            actual = {k: v for k, v in self._obtener(pk).items() if k not in DIRECCIONES}
+            entrada = {**actual, **request.data}
+        datos = self.preparar_datos(self._validar(self.serializer_class, entrada), "actualizar")
+        llamar_sp(f"{self.sp}_actualizar", pk + [datos.get(c) for c in self.campos_actualizar])
+        return Response(self.salida(self._obtener(pk)))
 
     # POST /dispositivos/<id>/activar/
     def activar(self, request, id_disp):
@@ -155,6 +194,34 @@ class DispositivoViewSet(SPViewSet):
             "resultados": [formatear(x) for x in filas[:limite]],
             "hay_mas": len(filas) > limite,
         })
+
+
+# =====================================================================
+# Direcciones IP y MAC de los dispositivos (puede tener varias)
+# =====================================================================
+class IpDispositivoViewSet(SPViewSet):
+    """Direcciones IP de un dispositivo (sp_red_ips_dispositivos_*).
+    IPv4 o IPv6; "interfaz" es opcional (WAN, LAN, GESTIÓN...)."""
+    sp = "sp_red_ips_dispositivos"
+    campos_padre = ("id_disp",)
+    campos_pk = ("id_disp", "num_linea")
+    campos_insertar = ("direccion_ip", "interfaz")
+    campos_actualizar = ("direccion_ip", "interfaz")
+    insertar_devuelve_codigo = True
+    serializer_class = s.IpSerializer
+
+
+class MacDispositivoViewSet(SPViewSet):
+    """Direcciones MAC de un dispositivo (sp_red_macs_dispositivos_*).
+    Se reciben con o sin separadores y se guardan enteras (AABBCCDDEEFF);
+    la página las muestra con guiones. Una MAC no se repite en el inventario."""
+    sp = "sp_red_macs_dispositivos"
+    campos_padre = ("id_disp",)
+    campos_pk = ("id_disp", "num_linea")
+    campos_insertar = ("direccion_mac", "interfaz")
+    campos_actualizar = ("direccion_mac", "interfaz")
+    insertar_devuelve_codigo = True
+    serializer_class = s.MacSerializer
 
 
 # =====================================================================

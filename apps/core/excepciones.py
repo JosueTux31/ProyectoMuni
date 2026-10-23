@@ -15,6 +15,9 @@ ERR_FK_EN_USO = 1451         # No se puede borrar: hay registros que lo referenc
 ERR_FK_NO_EXISTE = 1452      # Se referencia un código que no existe
 ERR_DATOS_INVALIDOS = {1048, 1406, 1366, 1292}  # NULL, texto muy largo, tipo, fecha
 ERR_CHECK = {4025, 3819}     # Regla CHECK no cumplida (MariaDB, MySQL)
+# La base no tiene la misma versión que el sistema: falta un procedimiento,
+# tiene otros parámetros o falta una tabla o columna.
+ERR_BASE_DESACTUALIZADA = {1305, 1318, 1054, 1146}
 
 
 def _codigo_y_mensaje(exc):
@@ -49,6 +52,12 @@ def manejador_excepciones(exc, context):
     if codigo in ERR_DATOS_INVALIDOS:
         return Response({"detail": "Datos inválidos.", "db": mensaje},
                         status=status.HTTP_400_BAD_REQUEST)
+    if codigo in ERR_BASE_DESACTUALIZADA:
+        logger.error("La base de datos no está al día: %s", mensaje)
+        return Response({"detail": "La base de datos no tiene la versión más reciente de las tablas o "
+                                   "procedimientos. Ejecute de nuevo los scripts .sql del módulo y "
+                                   f"reinicie Django. Detalle: {mensaje}", "db": mensaje},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     logger.exception("Error de base de datos no controlado")
     return Response({"detail": "Error interno de base de datos."},
