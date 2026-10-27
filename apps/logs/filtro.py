@@ -82,6 +82,7 @@ VIRTUALES = {
     "equipo_destino": "Destino es un equipo del inventario (por IP, IP de NAT o MAC)",
     "equipo": "Origen o destino es un equipo del inventario",
     "persona": "El usuario del log es una persona del sistema",
+    "con_agente": "El origen tiene el agente de Microclaudia (por IP o MAC, en el último listado importado)",
 }
 
 
@@ -98,6 +99,8 @@ def resolver_campo(nombre, alias_fuente=None):
         return "virtual", n
     if n in ("importacion", "id_importacion"):
         return "importacion", n
+    if n in ("fuente", "programa"):
+        return "fuente", n
     if n in ("id_evento", "evento"):
         return "evento", n
     if n.startswith("datos."):
@@ -138,7 +141,8 @@ SI = {"si", "sí", "true", "1", "yes", "verdadero"}
 NO = {"no", "false", "0", "falso"}
 
 TEXTO_LIBRE = ["dominio", "url", "regla_nombre", "usuario", "categoria", "aplicacion", "tipo", "politica_web",
-               "ip_origen", "ip_destino", "id_conexion", "motivo", "actividad", "interfaz_entrada", "interfaz_salida"]
+               "ip_origen", "ip_destino", "id_conexion", "motivo", "actividad", "interfaz_entrada", "interfaz_salida",
+               "nombre_equipo", "sistema_operativo"]
 
 
 class _Analizador:
@@ -282,6 +286,13 @@ class _Analizador:
     def una(self, clase, dato, op, valor, posicion):
         if clase == "ambos":
             partes = [self.una("columna", c, "==" if op == "!=" else op, valor, posicion) for c in dato]
+            # ip / mac también buscan en todas las direcciones del evento
+            # (los equipos de Microclaudia tienen varias IP y MAC)
+            tipo_dir = "IP" if "ip_origen" in dato else "MAC" if "mac_origen" in dato else None
+            if tipo_dir:
+                cond = (self.ip if tipo_dir == "IP" else self.mac)("d.direccion", "==" if op == "!=" else op, valor, posicion)
+                partes.append(f"EXISTS (SELECT 1 FROM log_direcciones d WHERE d.id_evento = e.id_evento"
+                              f" AND d.tipo = '{tipo_dir}' AND {cond})")
             sql = "(" + " OR ".join(partes) + ")"
             return f"NOT COALESCE({sql}, FALSE)" if op == "!=" else sql
         if clase == "virtual":
@@ -292,6 +303,10 @@ class _Analizador:
                 raise ErrorFiltro("Escriba si o no.", posicion)
             sql = _virtual(dato)
             return sql if sí == (op == "==") else f"NOT {sql}"
+        if clase == "fuente":
+            if op not in ("==", "!="):
+                raise ErrorFiltro("Con el programa use == o != (sophos, microclaudia).", posicion)
+            return f"e.fuente {'=' if op == '==' else '<>'} {lit(valor.strip().upper())}"
         if clase in ("importacion", "evento"):
             col = "e.id_importacion" if clase == "importacion" else "e.id_evento"
             return self.numerica(col, op, valor, posicion)
@@ -416,6 +431,10 @@ def _virtual(nombre):
         return destino
     if nombre == "equipo":
         return f"({origen} OR {destino})"
+    if nombre == "con_agente":
+        return ("EXISTS (SELECT 1 FROM log_direcciones d WHERE d.id_importacion = "
+                "(SELECT MAX(i.id_importacion) FROM log_importaciones i WHERE i.fuente = 'MICROCLAUDIA')"
+                " AND ((d.tipo = 'IP' AND d.direccion = e.ip_origen) OR (d.tipo = 'MAC' AND d.direccion = e.mac_origen)))")
     return ("EXISTS (SELECT 1 FROM usr_usuarios u WHERE u.usuario_red = e.usuario AND u.es_proveedor = FALSE)")
 
 
@@ -439,4 +458,4 @@ def unir(*partes):
 
 
 def campos_conocidos():
-    return sorted(set(NOMBRES) | set(CAMPOS_AMBOS) | set(ALIAS_FILTRO) | set(VIRTUALES) | {"importacion"})
+    return sorted(set(NOMBRES) | set(CAMPOS_AMBOS) | set(ALIAS_FILTRO) | set(VIRTUALES) | {"importacion", "fuente"})

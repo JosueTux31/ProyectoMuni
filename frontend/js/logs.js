@@ -1,23 +1,30 @@
 // Módulo de análisis de logs (tipo SIEM). Pantallas:
 //   #/logs                       inicio del módulo
 //   #/logs/importar/sophos       importar archivos de Sophos Firewall
+//   #/logs/importar/microclaudia importar el listado de equipos con el agente de Microclaudia
 //   #/logs/importaciones         archivos importados
 //   #/logs/importaciones/<id>    tablero visual de una importación
 //   #/logs/tablero?q=&importaciones=     tablero de cualquier filtro
 //   #/logs/eventos?q=&importaciones=     explorador con filtro estilo Wireshark
 //   #/logs/comparar?importaciones=1,2    comparación de 2 a 4 conjuntos
 //   #/logs/inventario?q=&importaciones=  cruce con equipos y personas
+//   #/logs/cobertura?agentes=&q=&importaciones=  equipos de la red sin el agente de Microclaudia
 //   #/logs/campos                campos comunes y alias de cada programa
 import { api, apiSubir } from "./api.js";
-import { abrirFormulario, cargandoHTML, confirmar, errorHTML, esc, fecha, icono, toast, vacioHTML } from "./ui.js";
+import { abrirFormulario, cargandoHTML, confirmar, debounce, errorHTML, esc, fecha, icono, toast, vacioHTML } from "./ui.js";
 import {
   abrirEvento, activarBarraFiltro, activarGlobos, agregarCondicion, barraFiltroHTML, bytes, catalogoCampos, claseGrupo,
-  compacto, condicion, descargar, escucharDocumento, eventos, descargarTexto, diaLog, esMono, fechaFiltro, fechaLog, horaLog, leyendaAccionesHTML,
+  compacto, condicion, descargar, escucharDocumento, eventos, descargarTexto, diaLog, esMono, fechaFiltro, fechaLog, globoHTML, horaLog, leyendaAccionesHTML,
   lineaTiempo, listaIds, listaTopHTML, macGuiones, marcaArchivo, medidorAcciones, num, olvidarCatalogo, pastillaAccion, pct,
   rangoFechas, reemplazarRuta, rutaLogs, tablaTiempoHTML, valorCorto,
 } from "./logs_ui.js";
 
-const FUENTES = { SOPHOS: "Sophos Firewall" };
+const FUENTES = { SOPHOS: "Sophos Firewall", MICROCLAUDIA: "Microclaudia" };
+// Programas cuyo archivo es un listado de equipos con un agente (cada fila es un equipo)
+const LISTADOS = new Set(["MICROCLAUDIA"]);
+const esListado = (fuente) => LISTADOS.has(fuente);
+const unidades = (fuente, n) => (esListado(fuente) ? `${num(n)} ${Number(n) === 1 ? "equipo" : "equipos"}` : eventos(n));
+const iconoFuente = (fuente) => (esListado(fuente) ? "agente" : "logs");
 const MAX_MB = 100;
 
 // Resultado de la última importación (para mostrar los avisos en su tablero)
@@ -32,19 +39,28 @@ export async function vistaInicioLogs(cont, _params, ctx) {
     <div class="encabezado">
       <div>
         <h1>Análisis de logs</h1>
-        <p>Importe los registros del firewall y véalos de inmediato en gráficos. Fíltrelos como en Wireshark, compare varios logs
-          entre sí y crúcelos con el inventario de equipos y con el personal.</p>
+        <p>Importe los registros del firewall y el listado de equipos con el agente de Microclaudia, y véalos de inmediato en gráficos.
+          Fíltrelos como en Wireshark, compárelos entre sí y crúcelos con el inventario de equipos y con el personal.</p>
       </div>
-      <div class="encabezado__acciones"><a class="btn btn--primario" href="#/logs/importar/sophos">${icono("subir")}Importar logs de Sophos</a></div>
+      <div class="encabezado__acciones">
+        <a class="btn btn--primario" href="#/logs/importar/sophos">${icono("subir")}Logs de Sophos</a>
+        <a class="btn btn--secundario" href="#/logs/importar/microclaudia">${icono("agente")}Equipos de Microclaudia</a>
+      </div>
     </div>
     <div data-resumen>${cargandoHTML()}</div>
 
     <h2 class="titulo-seccion">Importar desde</h2>
-    <div class="fuentes">
+    <div class="fuentes fuentes--tres">
       <a class="fuente" href="#/logs/importar/sophos">
         <span class="fuente__icono">${icono("firewall")}</span>
         <span class="fuente__texto"><strong>Sophos Firewall</strong>
           <span>Log viewer: Firewall, Web filter, SSL/TLS, IPS, ATP… El archivo .txt o .log que se copia o descarga.</span></span>
+        <span class="fuente__ir">Importar${icono("derecha")}</span>
+      </a>
+      <a class="fuente fuente--agente" href="#/logs/importar/microclaudia">
+        <span class="fuente__icono">${icono("agente")}</span>
+        <span class="fuente__texto"><strong>Microclaudia</strong>
+          <span>El listado de equipos con el agente (.csv o .txt). Muestra el estado del agente y qué equipos no lo tienen.</span></span>
         <span class="fuente__ir">Importar${icono("derecha")}</span>
       </a>
       <div class="fuente fuente--pronto">
@@ -65,6 +81,7 @@ export async function vistaInicioLogs(cont, _params, ctx) {
         <ul class="atajos">
           ${atajo("#/logs/eventos", "filtro", "Explorar eventos", "Filtro estilo Wireshark, detalle y exportación")}
           ${atajo("#/logs/tablero", "grafico", "Tablero general", "Gráficos de todos los logs o de un filtro")}
+          ${atajo("#/logs/cobertura", "agente", "Equipos sin agente", "Equipos registrados sin el agente de Microclaudia")}
           ${atajo("#/logs/comparar", "comparar", "Comparar logs", "Qué tienen en común y qué solo aparece en uno")}
           ${atajo("#/logs/inventario", "red", "Cruce con el inventario", "Equipos, IP sin registrar y personas")}
           ${atajo("#/logs/campos", "campos", "Campos y alias", "Cómo se llama cada dato en cada programa")}
@@ -74,21 +91,22 @@ export async function vistaInicioLogs(cont, _params, ctx) {
 
   const imps = await api("logs/importaciones/");
   if (!ctx.vigente()) return;
-  const suma = (k) => imps.reduce((s, x) => s + (Number(x[k]) || 0), 0);
-  const desde = imps.map((x) => x.fecha_desde).filter(Boolean).sort()[0];
-  const hasta = imps.map((x) => x.fecha_hasta).filter(Boolean).sort().pop();
+  const logs = imps.filter((x) => !esListado(x.fuente));
+  const ultimoListado = imps.find((x) => esListado(x.fuente));
+  const suma = (k) => logs.reduce((s, x) => s + (Number(x[k]) || 0), 0);
   cont.querySelector("[data-resumen]").outerHTML = `
     <nav class="resumen" aria-label="Resumen">
       <a href="#/logs/importaciones"><b>${num(imps.length)}</b><span>Importaciones</span></a>
-      <a href="#/logs/eventos"><b>${compacto(suma("total_eventos"))}</b><span>Eventos guardados</span></a>
+      <a href="${rutaLogs("eventos", { q: "fuente != microclaudia" })}"><b>${compacto(suma("total_eventos"))}</b><span>Eventos de los logs</span></a>
       <a href="${rutaLogs("eventos", { q: "accion == denegado" })}"><b>${compacto(suma("denegados"))}</b><span>Eventos denegados</span></a>
-      <a href="#/logs/tablero"><b class="resumen__texto">${esc(desde ? rangoFechas(desde, hasta) : "—")}</b><span>Período de los logs</span></a>
+      <a href="${ultimoListado ? `#/logs/importaciones/${ultimoListado.id_importacion}` : "#/logs/importar/microclaudia"}">
+        <b>${ultimoListado ? num(ultimoListado.total_eventos) : "—"}</b><span>Equipos con el agente${ultimoListado ? " (último listado)" : ""}</span></a>
     </nav>`;
 
   const caja = cont.querySelector("[data-recientes]");
   if (!imps.length) {
     caja.innerHTML = vacioHTML({
-      icono: "logs", titulo: "Todavía no hay logs importados", texto: "Importe el primer archivo de Sophos para ver su tablero.",
+      icono: "logs", titulo: "Todavía no hay nada importado", texto: "Importe el primer archivo de Sophos o de Microclaudia para ver su tablero.",
       boton: `<a class="btn btn--primario" href="#/logs/importar/sophos">${icono("subir")}Importar logs de Sophos</a>`,
     });
     return;
@@ -102,14 +120,15 @@ const atajo = (href, ic, titulo, texto) =>
   `<li><a href="${href}">${icono(ic)}<span><strong>${esc(titulo)}</strong><small>${esc(texto)}</small></span>${icono("derecha")}</a></li>`;
 
 function tarjetaImportacion(x) {
-  return `<li><a class="tarjeta-imp" href="#/logs/importaciones/${x.id_importacion}">
-    <span class="tarjeta-imp__icono">${icono("logs")}</span>
+  const listado = esListado(x.fuente);
+  return `<li><a class="tarjeta-imp${listado ? " tarjeta-imp--agente" : ""}" href="#/logs/importaciones/${x.id_importacion}">
+    <span class="tarjeta-imp__icono">${icono(iconoFuente(x.fuente))}</span>
     <span class="tarjeta-imp__texto">
       <strong>${esc(x.nombre_archivo)}</strong>
-      <small>N.º ${x.id_importacion} · ${esc(FUENTES[x.fuente] || x.fuente)} · ${esc(rangoFechas(x.fecha_desde, x.fecha_hasta))}${x.descripcion ? ` · ${esc(x.descripcion)}` : ""}</small>
-      ${miniMedidor(x)}
+      <small>N.º ${x.id_importacion} · ${esc(FUENTES[x.fuente] || x.fuente)} · ${esc(listado ? `listado del ${fechaLog(x.fecha_hasta)}` : rangoFechas(x.fecha_desde, x.fecha_hasta))}${x.descripcion ? ` · ${esc(x.descripcion)}` : ""}</small>
+      ${listado ? "" : miniMedidor(x)}
     </span>
-    <span class="tarjeta-imp__n"><b>${num(x.total_eventos)}</b><small>${Number(x.total_eventos) === 1 ? "evento" : "eventos"}</small></span>
+    <span class="tarjeta-imp__n"><b>${num(x.total_eventos)}</b><small>${listado ? (Number(x.total_eventos) === 1 ? "equipo" : "equipos") : (Number(x.total_eventos) === 1 ? "evento" : "eventos")}</small></span>
   </a></li>`;
 }
 
@@ -126,50 +145,85 @@ function miniMedidor(x) {
 }
 
 /* =====================================================================
-   Importar logs de Sophos
+   Importar: una pantalla por programa, con el mismo funcionamiento
    ===================================================================== */
-export async function vistaImportarSophos(cont, _params, ctx) {
-  ctx.migas([{ texto: "Importar logs de Sophos" }]);
+const IMPORTADORES = {
+  sophos: {
+    clave: "SOPHOS", titulo: "Importar logs de Sophos Firewall", miga: "Importar logs de Sophos",
+    ruta: "logs/importaciones/sophos/", icono: "firewall",
+    texto: "Suelte uno o varios archivos. Cada uno queda como una importación con su propio tablero; después se pueden explorar juntos o comparar.",
+    zona: "Arrastre aquí los archivos de Sophos", formatos: ".txt o .log", accept: ".txt,.log,.csv,.text,text/plain",
+    extension: /\.(txt|log|csv|text)$/i, procesando: "Leyendo y guardando los eventos…",
+    ejemplo: "Ej.: Revisión del acceso a www.grecia.go.cr",
+    ayuda: `
+      <ol class="pasos-ayuda">
+        <li><strong>En Sophos</strong>, abra <em>Log viewer</em>, filtre lo que necesita y copie o descargue los registros como texto.</li>
+        <li><strong>Formato del visor:</strong> el tipo (<em>Firewall</em>, <em>Web filter</em>…), la fecha y los campos <code>clave="valor"</code>.
+          No importa si hay espacios, tabulaciones o líneas de más, ni si un valor quedó partido en dos líneas.</li>
+        <li><strong>Formato syslog:</strong> un evento por línea con <code>date=</code> y <code>time=</code> también sirve.</li>
+        <li><strong>Repetidos:</strong> un evento idéntico dentro del mismo archivo se guarda una sola vez. Si importa el mismo archivo otra vez,
+          queda como otra importación y la comparación lo marca como idéntico.</li>
+      </ol>
+      <p class="ayuda-importar__nota">${icono("enlace", "ic--sm")}<span>Cada campo de Sophos se asigna solo a un campo común
+        (<code>src_ip</code> → IP de origen, <code>fw_rule_id</code> → N.º de regla…). Los nombres se pueden ajustar en
+        <a href="#/logs/campos">Campos y alias</a>.</span></p>`,
+  },
+  microclaudia: {
+    clave: "MICROCLAUDIA", titulo: "Importar equipos de Microclaudia", miga: "Importar equipos de Microclaudia",
+    ruta: "logs/importaciones/microclaudia/", icono: "agente",
+    texto: "El listado de los equipos que tienen el agente de Microclaudia. Al importarlo se ve el estado del agente y qué equipos de la red municipal no lo tienen.",
+    zona: "Arrastre aquí el listado de equipos de Microclaudia", formatos: ".csv o .txt", accept: ".csv,.txt,.text,text/csv,text/plain",
+    extension: /\.(csv|txt|text)$/i, procesando: "Leyendo y guardando los equipos…",
+    ejemplo: "Ej.: Listado del 23 de octubre",
+    ayuda: `
+      <ol class="pasos-ayuda">
+        <li><strong>En el portal de Microclaudia</strong>, abra el listado de equipos y expórtelo. Sirven los dos formatos:
+          <code>.csv</code> (separado por punto y coma) y <code>.txt</code> (separado por tabulaciones).</li>
+        <li><strong>Columnas:</strong> NOMBRE, SIST_OPERATIVO, VERSION, ULTIMA_CONEXION, las vacunas, IPADDRESS y MACADDRESS.
+          Un equipo puede traer varias IP y MAC: se guardan todas.</li>
+        <li><strong>Para cruzar</strong> se usan las IPv4 y MAC de cada equipo; se dejan fuera las 169.254.x (sin DHCP) y la MAC que
+          comparte VirtualBox en muchos equipos.</li>
+        <li><strong>Equipos sin agente:</strong> los equipos registrados en el sistema (Dispositivos de red) se comparan por su MAC
+          y su IP con el último listado importado.</li>
+      </ol>
+      <p class="ayuda-importar__nota">${icono("enlace", "ic--sm")}<span>Importe un listado nuevo cada cierto tiempo y compárelos en
+        <a href="#/logs/comparar">Comparar logs</a> por nombre del equipo: verá qué equipos entraron y cuáles salieron.</span></p>`,
+  },
+};
+
+export const vistaImportarSophos = (cont, _params, ctx) => vistaImportar(cont, ctx, IMPORTADORES.sophos);
+export const vistaImportarMicroclaudia = (cont, _params, ctx) => vistaImportar(cont, ctx, IMPORTADORES.microclaudia);
+
+async function vistaImportar(cont, ctx, def) {
+  ctx.migas([{ texto: def.miga }]);
   cont.innerHTML = `
     <div class="encabezado">
-      <div>
-        <h1>Importar logs de Sophos Firewall</h1>
-        <p>Suelte uno o varios archivos. Cada uno queda como una importación con su propio tablero; después se pueden explorar juntos o comparar.</p>
+      <div class="encabezado-imp">
+        <span class="insignia-log${esListado(def.clave) ? " insignia-log--agente" : ""}">${icono(def.icono)}</span>
+        <div><h1>${esc(def.titulo)}</h1><p>${esc(def.texto)}</p></div>
       </div>
       <div class="encabezado__acciones"><a class="btn btn--secundario" href="#/logs/importaciones">${icono("capas")}Importaciones</a></div>
     </div>
     <div class="importar">
       <section class="panel soltar" data-zona>
-        <input type="file" id="archivos-log" multiple accept=".txt,.log,.csv,.text,text/plain" class="visualmente-oculto">
+        <input type="file" id="archivos-log" multiple accept="${esc(def.accept)}" class="visualmente-oculto">
         <label for="archivos-log" class="soltar__zona">
           <span class="soltar__icono">${icono("subir")}</span>
-          <strong>Arrastre aquí los archivos de Sophos</strong>
-          <span>o haga clic para elegirlos · .txt o .log · hasta ${MAX_MB} MB cada uno</span>
+          <strong>${esc(def.zona)}</strong>
+          <span>o haga clic para elegirlos · ${esc(def.formatos)} · hasta ${MAX_MB} MB cada uno</span>
         </label>
         <ul class="soltar__archivos" data-lista hidden></ul>
         <div class="soltar__pie">
           <div class="campo">
             <label for="desc-log">Descripción <span class="etiqueta-nota">(opcional, para todos los archivos)</span></label>
-            <input id="desc-log" maxlength="255" placeholder="Ej.: Revisión del acceso a www.grecia.go.cr">
+            <input id="desc-log" maxlength="255" placeholder="${esc(def.ejemplo)}">
           </div>
           <button type="button" class="btn btn--primario" data-importar disabled>${icono("subir")}Importar</button>
         </div>
       </section>
       <aside class="panel ayuda-importar">
         <div class="panel__cabeza"><h2>Qué archivos sirven</h2></div>
-        <div class="panel__cuerpo">
-          <ol class="pasos-ayuda">
-            <li><strong>En Sophos</strong>, abra <em>Log viewer</em>, filtre lo que necesita y copie o descargue los registros como texto.</li>
-            <li><strong>Formato del visor:</strong> el tipo (<em>Firewall</em>, <em>Web filter</em>…), la fecha y los campos <code>clave="valor"</code>.
-              No importa si hay espacios, tabulaciones o líneas de más, ni si un valor quedó partido en dos líneas.</li>
-            <li><strong>Formato syslog:</strong> un evento por línea con <code>date=</code> y <code>time=</code> también sirve.</li>
-            <li><strong>Repetidos:</strong> un evento idéntico dentro del mismo archivo se guarda una sola vez. Si importa el mismo archivo otra vez,
-              queda como otra importación y la comparación lo marca como idéntico.</li>
-          </ol>
-          <p class="ayuda-importar__nota">${icono("enlace", "ic--sm")}<span>Cada campo de Sophos se asigna solo a un campo común
-            (<code>src_ip</code> → IP de origen, <code>fw_rule_id</code> → N.º de regla…). Los nombres se pueden ajustar en
-            <a href="#/logs/campos">Campos y alias</a>.</span></p>
-        </div>
+        <div class="panel__cuerpo">${def.ayuda}</div>
       </aside>
     </div>
     <div data-resultados></div>`;
@@ -182,7 +236,7 @@ export async function vistaImportarSophos(cont, _params, ctx) {
   let archivos = [];
   let trabajando = false;
 
-  const extOk = (n) => /\.(txt|log|csv|text)$/i.test(n) || !/\.[^./\\]+$/.test(n);
+  const extOk = (n) => def.extension.test(n) || !/\.[^./\\]+$/.test(n);
   const pintar = () => {
     lista.hidden = !archivos.length;
     lista.innerHTML = archivos.map((a, i) => `
@@ -201,8 +255,8 @@ export async function vistaImportarSophos(cont, _params, ctx) {
   const textoEstado = (a) => ({
     pendiente: "Listo para importar",
     subiendo: `Subiendo ${Math.round((a.progreso || 0) * 100)} %`,
-    procesando: "Leyendo y guardando los eventos…",
-    listo: `${eventos(a.resultado?.total_eventos)} guardados${a.resultado?.repetidos ? ` · ${num(a.resultado.repetidos)} repetidos` : ""}${a.resultado?.avisos ? ` · ${num(a.resultado.avisos)} avisos` : ""}`,
+    procesando: def.procesando,
+    listo: `${unidades(def.clave, a.resultado?.total_eventos)} guardados${a.resultado?.repetidos ? ` · ${num(a.resultado.repetidos)} repetidos` : ""}${a.resultado?.avisos ? ` · ${num(a.resultado.avisos)} avisos` : ""}`,
     error: a.error || "No se pudo importar",
   }[a.estado]);
 
@@ -210,7 +264,7 @@ export async function vistaImportarSophos(cont, _params, ctx) {
     for (const f of lista2) {
       if (archivos.some((a) => a.file.name === f.name && a.file.size === f.size && a.estado !== "error")) continue;
       const a = { file: f, estado: "pendiente" };
-      if (!extOk(f.name)) { a.estado = "error"; a.error = "Use el archivo de texto que exporta Sophos (.txt o .log)."; }
+      if (!extOk(f.name)) { a.estado = "error"; a.error = `Use el archivo que exporta ${FUENTES[def.clave]} (${def.formatos}).`; }
       else if (f.size > MAX_MB * 1024 * 1024) { a.estado = "error"; a.error = `Pesa más de ${MAX_MB} MB. Divídalo en partes.`; }
       else if (!f.size) { a.estado = "error"; a.error = "El archivo está vacío."; }
       archivos.push(a);
@@ -239,7 +293,7 @@ export async function vistaImportarSophos(cont, _params, ctx) {
       datos.append("archivo", a.file);
       if (descripcion) datos.append("descripcion", descripcion);
       try {
-        a.resultado = await apiSubir("logs/importaciones/sophos/", datos, {
+        a.resultado = await apiSubir(def.ruta, datos, {
           alProgreso: (p) => {
             a.progreso = p;
             if (p >= 1) a.estado = "procesando";
@@ -262,7 +316,7 @@ export async function vistaImportarSophos(cont, _params, ctx) {
     const listas = archivos.filter((a) => a.estado === "listo");
     const errores = archivos.filter((a) => a.estado === "error");
     if (listas.length === 1 && !errores.length) {
-      toast(`Se importaron ${eventos(listas[0].resultado.total_eventos)}.`);
+      toast(`Se importaron ${unidades(def.clave, listas[0].resultado.total_eventos)}.`);
       location.hash = `#/logs/importaciones/${listas[0].resultado.id_importacion}`;
       return;
     }
@@ -272,11 +326,13 @@ export async function vistaImportarSophos(cont, _params, ctx) {
       resultados.innerHTML = `
         <section class="panel resultado-importacion">
           <div class="panel__cuerpo">
-            <div class="resultado-importacion__texto">${icono("check")}<div><strong>Se importaron ${listas.length} archivos con ${eventos(total)}.</strong>
+            <div class="resultado-importacion__texto">${icono("check")}<div><strong>Se importaron ${listas.length} archivos con ${unidades(def.clave, total)}.</strong>
               <p>${errores.length ? `${errores.length} no se pudieron importar (vea el motivo en la lista). ` : ""}Véalos juntos o compárelos.</p></div></div>
             <div class="encabezado__acciones">
-              <a class="btn btn--primario" href="${rutaLogs("tablero", { importaciones: ids })}">${icono("grafico")}Tablero de todos</a>
-              <a class="btn btn--secundario" href="${rutaLogs("eventos", { importaciones: ids })}">${icono("filtro")}Explorar eventos</a>
+              ${esListado(def.clave)
+                ? `<a class="btn btn--primario" href="${rutaLogs("cobertura", { agentes: ids[ids.length - 1] })}">${icono("agente")}Equipos sin agente</a>`
+                : `<a class="btn btn--primario" href="${rutaLogs("tablero", { importaciones: ids })}">${icono("grafico")}Tablero de todos</a>`}
+              <a class="btn btn--secundario" href="${rutaLogs("eventos", { importaciones: ids })}">${icono("filtro")}Explorar ${esListado(def.clave) ? "equipos" : "eventos"}</a>
               ${ids.length >= 2 && ids.length <= 4 ? `<a class="btn btn--secundario" href="${rutaLogs("comparar", { importaciones: ids })}">${icono("comparar")}Comparar</a>` : ""}
             </div>
           </div>
@@ -293,8 +349,9 @@ export async function vistaImportaciones(cont, _params, ctx) {
   ctx.migas([{ texto: "Importaciones" }]);
   cont.innerHTML = `
     <div class="encabezado">
-      <div><h1>Importaciones</h1><p>Cada archivo de logs importado. Marque varias para explorarlas juntas o compararlas.</p></div>
-      <div class="encabezado__acciones"><a class="btn btn--primario" href="#/logs/importar/sophos">${icono("subir")}Importar logs de Sophos</a></div>
+      <div><h1>Importaciones</h1><p>Cada archivo importado: logs de Sophos y listados de equipos de Microclaudia. Marque varias para explorarlas juntas o compararlas.</p></div>
+      <div class="encabezado__acciones"><a class="btn btn--primario" href="#/logs/importar/sophos">${icono("subir")}Logs de Sophos</a>
+        <a class="btn btn--secundario" href="#/logs/importar/microclaudia">${icono("agente")}Equipos de Microclaudia</a></div>
     </div>
     <section class="panel">
       <div class="barra-seleccion" data-barra-seleccion hidden>
@@ -333,25 +390,28 @@ export async function vistaImportaciones(cont, _params, ctx) {
     pintarSeleccion();
     if (!filas.length) {
       caja.innerHTML = vacioHTML({
-        icono: "logs", titulo: "Todavía no hay logs importados",
-        boton: `<a class="btn btn--primario" href="#/logs/importar/sophos">${icono("subir")}Importar logs de Sophos</a>`,
+        icono: "logs", titulo: "Todavía no hay nada importado", texto: "Importe logs de Sophos o el listado de equipos de Microclaudia.",
+        boton: `<span class="botones-vacio"><a class="btn btn--primario" href="#/logs/importar/sophos">${icono("subir")}Logs de Sophos</a>
+          <a class="btn btn--secundario" href="#/logs/importar/microclaudia">${icono("agente")}Equipos de Microclaudia</a></span>`,
       });
       return;
     }
     caja.innerHTML = `<div class="tabla-envoltura"><table class="tabla">
-      <thead><tr><th class="col-check"><span class="visualmente-oculto">Elegir</span></th><th>Archivo</th><th class="col-numero">Eventos</th>
-        <th>Permitidos / denegados</th><th class="col-opcional">Período de los eventos</th><th class="col-opcional">Importado</th><th class="col-acciones"><span class="visualmente-oculto">Acciones</span></th></tr></thead>
+      <thead><tr><th class="col-check"><span class="visualmente-oculto">Elegir</span></th><th>Archivo</th><th class="col-numero">Eventos o equipos</th>
+        <th>Permitidos / denegados</th><th class="col-opcional">Período</th><th class="col-opcional">Importado</th><th class="col-acciones"><span class="visualmente-oculto">Acciones</span></th></tr></thead>
       <tbody>${filas.map((x) => `
         <tr data-id="${x.id_importacion}">
           <td class="col-check"><input type="checkbox" data-elegir="${x.id_importacion}"${elegidas.has(x.id_importacion) ? " checked" : ""} aria-label="Elegir ${esc(x.nombre_archivo)}"></td>
-          <td><a href="#/logs/importaciones/${x.id_importacion}"><strong>${esc(x.nombre_archivo)}</strong></a>
+          <td><a href="#/logs/importaciones/${x.id_importacion}" class="enlace-imp">${icono(iconoFuente(x.fuente), "ic--sm")}<strong>${esc(x.nombre_archivo)}</strong></a>
             <span class="secundario">N.º ${x.id_importacion} · ${esc(FUENTES[x.fuente] || x.fuente)}${x.descripcion ? ` · ${esc(x.descripcion)}` : ""}</span></td>
-          <td class="col-numero"><strong>${num(x.total_eventos)}</strong>${x.repetidos ? `<span class="secundario">${num(x.repetidos)} repetidos</span>` : ""}</td>
-          <td class="col-medidor">${miniMedidor(x)}<span class="secundario">${num(x.permitidos)} · ${num(x.denegados)}</span></td>
-          <td class="col-opcional">${esc(rangoFechas(x.fecha_desde, x.fecha_hasta))}</td>
+          <td class="col-numero"><strong>${num(x.total_eventos)}</strong><span class="secundario">${esListado(x.fuente) ? "equipos" : "eventos"}${x.repetidos ? ` · ${num(x.repetidos)} repetidos` : ""}</span></td>
+          <td class="col-medidor">${esListado(x.fuente) ? `<span class="pastilla pastilla--agente pastilla--sin-punto">${icono("agente", "ic--sm")}Listado de agentes</span>`
+            : `${miniMedidor(x)}<span class="secundario">${num(x.permitidos)} · ${num(x.denegados)}</span>`}</td>
+          <td class="col-opcional">${esc(esListado(x.fuente) ? `Listado del ${fechaLog(x.fecha_hasta)}` : rangoFechas(x.fecha_desde, x.fecha_hasta))}</td>
           <td class="col-opcional"><span>${esc(fecha(x.creado_en))}</span><span class="secundario">${esc(x.importado_por || "")}</span></td>
           <td class="col-acciones"><span class="acciones-fila">
-            <a class="btn-icono" href="${rutaLogs("eventos", { importaciones: [x.id_importacion] })}" title="Explorar eventos" aria-label="Explorar eventos de ${esc(x.nombre_archivo)}">${icono("filtro")}</a>
+            ${esListado(x.fuente) ? `<a class="btn-icono" href="${rutaLogs("cobertura", { agentes: x.id_importacion })}" title="Equipos sin agente" aria-label="Equipos sin agente según ${esc(x.nombre_archivo)}">${icono("agente")}</a>` : ""}
+            <a class="btn-icono" href="${rutaLogs("eventos", { importaciones: [x.id_importacion] })}" title="${esListado(x.fuente) ? "Explorar equipos" : "Explorar eventos"}" aria-label="Explorar ${esc(x.nombre_archivo)}">${icono("filtro")}</a>
             <button type="button" class="btn-icono" data-accion="editar" title="Editar descripción" aria-label="Editar descripción">${icono("editar")}</button>
             <button type="button" class="btn-icono btn-icono--peligro" data-accion="borrar" title="Eliminar" aria-label="Eliminar ${esc(x.nombre_archivo)}">${icono("borrar")}</button>
           </span></td>
@@ -396,7 +456,7 @@ async function editarDescripcion(imp) {
 function eliminarImportacion(imp) {
   return confirmar({
     titulo: "Eliminar la importación",
-    mensaje: `Se eliminarán «${imp.nombre_archivo}» y ${Number(imp.total_eventos) === 1 ? "su evento" : `sus ${num(imp.total_eventos)} eventos`}. El archivo original no se toca; se puede volver a importar.`,
+    mensaje: `Se eliminarán «${imp.nombre_archivo}» y ${Number(imp.total_eventos) === 1 ? (esListado(imp.fuente) ? "su equipo" : "su evento") : `sus ${unidades(imp.fuente, imp.total_eventos)}`}. El archivo original no se toca; se puede volver a importar.`,
     textoBoton: "Eliminar",
     accion: async () => {
       await api(`logs/importaciones/${imp.id_importacion}/`, { metodo: "DELETE" });
@@ -510,8 +570,8 @@ function enlazarTablero(caja, t, base) {
       ir(`fecha >= "${fechaFiltro(desde)}" and fecha < "${fechaFiltro(hasta)}"`));
   }
   caja.addEventListener("click", (ev) => {
-    const top = ev.target.closest("[data-top-campo]");
-    if (top) { ir(condicion(top.dataset.topCampo, top.dataset.topValor)); return; }
+    const top = ev.target.closest("[data-top-campo], [data-top-q]");
+    if (top) { ir(top.dataset.topQ !== undefined ? top.dataset.topQ : condicion(top.dataset.topCampo, top.dataset.topValor)); return; }
     const con = ev.target.closest("[data-conexion]");
     if (con) { ir(condicion("id_conexion", con.dataset.conexion)); return; }
     const inv = ev.target.closest("[data-ir-inventario]");
@@ -528,6 +588,7 @@ export async function vistaImportacion(cont, [id], ctx) {
   cont.innerHTML = cargandoHTML("Preparando el tablero…");
   const base = { q: "", importaciones: [id] };
   const [imp, cat] = await Promise.all([api(`logs/importaciones/${id}/`), catalogoCampos()]);
+  if (esListado(imp.fuente)) return vistaListadoAgentes(cont, imp, ctx, cat);
   const [t, inv] = await Promise.all([
     api("logs/eventos/tablero/", { query: { importaciones: id } }),
     api("logs/inventario/", { query: { importaciones: id } }).catch(() => null),
@@ -818,11 +879,26 @@ function ipPuerto(ip, puerto) {
   return `<span class="dato-mono ip-puerto">${esc(ip)}${puerto ? `<span class="flujo__puerto">:${esc(puerto)}</span>` : ""}</span>`;
 }
 
+/** Fila de un equipo del listado de Microclaudia dentro del explorador */
+function filaAgenteHTML(e) {
+  const pendientes = Number(e.vacunas_pendientes) || 0;
+  return `<tr class="fila-log fila-log--agente" data-evento="${e.id_evento}" tabindex="0" aria-label="${esc(`Equipo con agente ${e.nombre_equipo || ""}`)}">
+    <td class="col-hora"><span class="dato-mono">${esc(horaLog(e.fecha))}</span><small>${esc(diaLog(e.fecha))}</small></td>
+    <td><span class="pastilla pastilla--agente">${icono("agente", "ic--sm")}Agente</span></td>
+    <td class="col-tipo"><strong>${esc(e.nombre_equipo || "—")}</strong><small>${esc(e.sistema_operativo || "Equipo con agente")}</small></td>
+    <td class="col-ip">${ipPuerto(e.ip_origen)}${e.mac_origen ? `<small class="dato-mono">${esc(macGuiones(e.mac_origen))}</small>` : ""}</td>
+    <td class="col-flecha"></td>
+    <td class="col-ip"><span class="sin-dato">—</span></td>
+    <td class="col-sitio"><strong>Microclaudia</strong><small>Versión ${esc(e.version_agente || "—")}${pendientes ? ` · ${num(pendientes)} ${pendientes === 1 ? "vacuna pendiente" : "vacunas pendientes"}` : ""}</small></td>
+  </tr>`;
+}
+
 function tablaEventosHTML(filas, cat) {
   return `<div class="tabla-envoltura"><table class="tabla tabla--eventos">
     <thead><tr><th>Hora</th><th>Acción</th><th>Tipo</th><th>Origen</th><th class="col-flecha"><span class="visualmente-oculto">hacia</span></th>
       <th>Destino</th><th>Sitio o aplicación</th></tr></thead>
     <tbody>${filas.map((e) => {
+      if (esListado(e.fuente)) return filaAgenteHTML(e);
       const accion = String(e.accion || "otro").toLowerCase();
       const sitio = e.dominio || e.aplicacion || "";
       const detalle = e.url && e.url !== `https://${e.dominio}` && e.url !== `http://${e.dominio}` ? e.url : e.categoria || "";
@@ -860,7 +936,8 @@ export async function vistaComparar(cont, _params, ctx) {
   cont.innerHTML = `
     <div class="encabezado">
       <div><h1>Comparar logs</h1>
-        <p>Arme de 2 a 4 conjuntos (una o varias importaciones, con o sin filtro) y vea qué IP, dominios, reglas o usuarios tienen en común y cuáles aparecen solo en uno.</p></div>
+        <p>Arme de 2 a 4 conjuntos (una o varias importaciones, con o sin filtro) y vea qué IP, dominios, reglas, usuarios o equipos tienen en común y cuáles aparecen solo en uno.
+          Por ejemplo: un log de Sophos contra el listado de Microclaudia, por «IP de origen» o «MAC de origen».</p></div>
     </div>
     ${imps.length ? "" : `<div class="aviso aviso--ocre">${icono("alerta")}<span>Primero importe al menos un archivo de logs.</span></div>`}
     <form class="panel comparar-form" novalidate>
@@ -891,7 +968,7 @@ export async function vistaComparar(cont, _params, ctx) {
         <div class="campo"><span class="etiqueta-campo">Importaciones</span>
           <div class="conjunto__imps">${imps.length ? imps.map((x) => `
             <label class="conjunto__imp"><input type="checkbox" data-imp value="${x.id_importacion}"${c.importaciones.includes(x.id_importacion) ? " checked" : ""}>
-              <span><strong>N.º ${x.id_importacion} · ${esc(x.nombre_archivo)}</strong><small>${eventos(x.total_eventos)} · ${esc(rangoFechas(x.fecha_desde, x.fecha_hasta))}</small></span></label>`).join("")
+              <span><strong>N.º ${x.id_importacion} · ${esc(x.nombre_archivo)}</strong><small>${esListado(x.fuente) ? `<span class="pastilla pastilla--agente pastilla--mini">${icono("agente", "ic--sm")}Microclaudia</span> ` : ""}${esc(unidades(x.fuente, x.total_eventos))} · ${esc(esListado(x.fuente) ? `listado del ${diaLog(x.fecha_hasta)}` : rangoFechas(x.fecha_desde, x.fecha_hasta))}</small></span></label>`).join("")
             : `<p class="top-vacio">No hay importaciones.</p>`}</div></div>
         <div class="campo"><label for="cj-filtro-${i}">Filtro <span class="etiqueta-nota">(opcional)</span></label>
           <input id="cj-filtro-${i}" name="filtro" class="dato-mono" spellcheck="false" autocomplete="off" value="${esc(c.filtro)}" placeholder="p. ej.: accion == denegado"></div>
@@ -930,7 +1007,8 @@ export async function vistaComparar(cont, _params, ctx) {
       const r = await api("logs/comparar/", { metodo: "POST", datos: { conjuntos: envio } });
       if (!ctx.vigente()) return;
       reemplazarRuta(rutaLogs("comparar", { importaciones: conjuntos.every((c) => c.importaciones.length === 1 && !c.filtro) ? conjuntos.map((c) => c.importaciones[0]) : [] }));
-      pintarComparacion(salida, r, envio, cat);
+      const listado = (ids) => ids.length && ids.every((id) => esListado(imps.find((x) => x.id_importacion === id)?.fuente));
+      pintarComparacion(salida, r, envio, cat, envio.map((c) => listado(c.importaciones)));
       if (bajar) salida.scrollIntoView({ behavior: "smooth", block: "start" });
       bajar = true;
     } catch (e) {
@@ -955,11 +1033,14 @@ const METRICAS = [
   ["desde", "Primer evento", fechaLog], ["hasta", "Último evento", fechaLog],
 ];
 
-function pintarComparacion(salida, r, envio, cat) {
+function pintarComparacion(salida, r, envio, cat, listados = []) {
   const k = r.conjuntos.length;
   const nombres = r.conjuntos.map((c) => c.nombre);
   const letra = (i) => `<span class="letra-conjunto letra-conjunto--${i + 1}" title="${esc(nombres[i])}">${LETRAS[i]}</span>`;
-  const campos = Object.keys(r.campos);
+  // Solo los campos con algún valor (un listado de equipos no trae dominios ni reglas)
+  const conValores = Object.keys(r.campos).filter((c) => r.campos[c].total);
+  const campos = conValores.length ? conValores : Object.keys(r.campos);
+  const cuantos = (i, n) => (listados[i] ? `${num(n)} ${Number(n) === 1 ? "equipo" : "equipos"}` : eventos(n));
   let campoActual = campos.find((c) => r.campos[c].total) || campos[0];
   let vista = "todos";
   const todasImps = [...new Set(envio.flatMap((c) => c.importaciones))];
@@ -971,13 +1052,13 @@ function pintarComparacion(salida, r, envio, cat) {
       <div class="panel__cuerpo">
         <div class="conjuntos-resumen">${r.resumenes.map((s, i) => `
           <div class="conjunto-resumen conjunto-resumen--${i + 1}">
-            ${letra(i)}<div><strong>${esc(nombres[i])}</strong><small>${eventos(s.total)} · ${esc(rangoFechas(s.desde, s.hasta))}</small>
+            ${letra(i)}<div><strong>${esc(nombres[i])}</strong><small>${listados[i] ? `${icono("agente", "ic--sm")} ` : ""}${esc(cuantos(i, s.total))} · ${esc(rangoFechas(s.desde, s.hasta))}</small>
             ${miniMedidor({ total: s.total, permitidos: s.permitidos, denegados: s.denegados })}</div>
           </div>`).join("")}</div>
 
         <div class="tabla-envoltura"><table class="tabla tabla--compacta tabla--comparar">
           <thead><tr><th>Dato</th>${nombres.map((_, i) => `<th class="col-numero">${letra(i)}</th>`).join("")}</tr></thead>
-          <tbody>${METRICAS.map(([clave, texto, f]) => `<tr><td>${esc(texto)}</td>${r.resumenes.map((s) =>
+          <tbody>${METRICAS.map(([clave, texto, f]) => `<tr><td>${esc(clave === "total" && listados.some(Boolean) ? "Eventos o equipos" : texto)}</td>${r.resumenes.map((s) =>
             `<td class="col-numero">${esc(f(s[clave]))}${clave === "denegados" && Number(s.total) ? ` <small>(${pct(Number(s.denegados), Number(s.total))})</small>` : ""}</td>`).join("")}</tr>`).join("")}</tbody>
         </table></div>
 
@@ -1078,6 +1159,7 @@ export async function vistaInventarioLogs(cont, _params, ctx) {
     <div class="encabezado">
       <div><h1>Cruce con el inventario</h1>
         <p>Qué equipos registrados aparecen en los logs (por IP o MAC), qué IP internas no están en el inventario y qué usuarios del log son personal del sistema.</p></div>
+      <div class="encabezado__acciones"><a class="btn btn--secundario" href="#/logs/cobertura">${icono("agente")}Equipos sin el agente de Microclaudia</a></div>
     </div>
     <section class="panel panel--filtro">${barraFiltroHTML({ q: base.q, atajos: false })}</section>
     <div data-cruce>${cargandoHTML()}</div>`;
@@ -1197,10 +1279,11 @@ export async function vistaCamposLogs(cont, _params, ctx) {
   cont.innerHTML = `
     <div class="encabezado">
       <div><h1>Campos y alias</h1>
-        <p>Cada programa llama distinto a lo mismo: Sophos dice <code>src_ip</code>, otro dirá <code>source</code>. Al importar, cada nombre se asigna
-          solo a un campo común, así todos los logs se pueden filtrar y comparar entre sí.</p></div>
+        <p>Cada programa llama distinto a lo mismo: Sophos dice <code>src_ip</code> y Microclaudia <code>ipaddress</code>. Al importar, cada nombre se asigna
+          solo a un campo común, así todos los archivos se pueden filtrar y comparar entre sí.</p></div>
       <div class="encabezado__acciones"><button type="button" class="btn btn--primario" data-nuevo-alias>${icono("mas")}Agregar alias</button></div>
     </div>
+    <ul class="leyenda leyenda--alias"><li><span class="alias__fuente">SF</span>Sophos Firewall</li><li><span class="alias__fuente alias__fuente--agente">MC</span>Microclaudia</li></ul>
     <div class="aviso aviso--info">${icono("enlace")}<span>Un alias nuevo o cambiado se usa en las próximas importaciones. Lo ya importado conserva cómo se leyó,
       pero todos sus campos originales siguen guardados y se pueden filtrar con <code>datos.nombre</code>.</span></div>
     <div data-campos>${cargandoHTML()}</div>`;
@@ -1226,7 +1309,8 @@ export async function vistaCamposLogs(cont, _params, ctx) {
             <td><strong>${esc(c.etiqueta)}</strong><span class="secundario dato-mono">${esc(c.campo)}</span></td>
             <td class="col-opcional">${esc(TIPOS[c.tipo] || c.tipo)}</td>
             <td><div class="alias-lista">${(porCampo[c.campo] || []).sort((a, b) => a.prioridad - b.prioridad).map((a) => `
-              <span class="alias">
+              <span class="alias${esListado(a.fuente) ? " alias--agente" : ""}">
+                <span class="alias__fuente" title="${esc(FUENTES[a.fuente] || a.fuente)}">${esc(a.fuente === "MICROCLAUDIA" ? "MC" : a.fuente === "SOPHOS" ? "SF" : a.fuente.slice(0, 2))}</span>
                 <span class="dato-mono">${esc(a.campo_origen)}</span><small title="Prioridad: si el log trae varios, se usa el de número menor">${a.prioridad}</small>
                 <button type="button" class="alias__boton" data-editar-alias="${esc(a.fuente)}|${esc(a.campo_origen)}" aria-label="Editar alias ${esc(a.campo_origen)}" title="Editar">${icono("editar", "ic--sm")}</button>
                 <button type="button" class="alias__boton alias__boton--peligro" data-borrar-alias="${esc(a.fuente)}|${esc(a.campo_origen)}" aria-label="Quitar alias ${esc(a.campo_origen)}" title="Quitar">${icono("cerrar", "ic--sm")}</button>
@@ -1285,3 +1369,578 @@ export async function vistaCamposLogs(cont, _params, ctx) {
 }
 
 const TIPOS = { fecha: "Fecha y hora", texto: "Texto", ip: "Dirección IP", mac: "Dirección MAC", puerto: "Puerto", numero: "Número", accion: "Permitido / denegado" };
+
+
+/* =====================================================================
+   Tablero de un listado de Microclaudia (equipos con el agente)
+   ===================================================================== */
+const TRAMO_CLASE = { "24h": "t24h", "7d": "t7d", "30d": "t30d", mas: "tmas", sin: "otro" };
+const ALERTA_ICONO = {
+  sin_conexion: "historial", version: "agente", pendientes: "alerta", error: "alerta", soporte: "sistema", ip_compartida: "red",
+};
+
+/** "hace 3 h" / "hace 12 días", contado desde el momento del listado */
+function haceTexto(horas) {
+  if (horas === null || horas === undefined) return "sin fecha";
+  if (horas < 1) return "menos de 1 h antes";
+  if (horas < 48) return `${Math.round(horas)} h antes`;
+  return `${Math.round(horas / 24)} días antes`;
+}
+
+function medidorPartes(partes, unidad) {
+  const total = partes.reduce((s, x) => s + (Number(x.cantidad) || 0), 0);
+  if (!total) return "";
+  return `
+    <div class="medidor" role="img" aria-label="${esc(partes.map((x) => `${x.texto}: ${num(x.cantidad)}`).join(", "))}">
+      ${partes.filter((x) => x.cantidad).map((x) => `<span class="medidor__parte medidor__parte--${x.clase}" style="flex-grow:${x.cantidad}" tabindex="0"
+        data-globo="${globoHTML(x.texto, [[unidad, num(x.cantidad)], ["Del total", pct(x.cantidad, total)]])}"></span>`).join("")}
+    </div>
+    <ul class="leyenda leyenda--medidor">
+      ${partes.map((x) => `<li><i class="muestra muestra--${x.clase}"></i>${esc(x.texto)}<b>${num(x.cantidad)}</b><span>${pct(x.cantidad, total)}</span></li>`).join("")}
+    </ul>`;
+}
+
+const medidorTramos = (tramos) => medidorPartes(tramos.map((t) => ({ texto: t.valor, cantidad: t.cantidad, clase: TRAMO_CLASE[t.clave] })), "Equipos");
+
+/* ---------------------------------------------------------------------
+   Equipos registrados en el sistema contra el listado de Microclaudia.
+   El servidor devuelve cada dispositivo activo con su estado; aquí se
+   filtran los tipos de equipo que se comparan (se recuerda en el navegador).
+   --------------------------------------------------------------------- */
+const CLAVE_TIPOS = "muni.logs.cobertura.excluir";
+
+function tiposExcluidos() {
+  try {
+    const v = JSON.parse(localStorage.getItem(CLAVE_TIPOS) || "[]");
+    return new Set(Array.isArray(v) ? v : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function guardarExcluidos(excluidos) {
+  try {
+    localStorage.setItem(CLAVE_TIPOS, JSON.stringify([...excluidos]));
+  } catch {
+    /* sin almacenamiento del navegador: vale solo mientras la pantalla esté abierta */
+  }
+}
+
+const ESTADOS_COBERTURA = {
+  con: { texto: "Con el agente", clase: "permitido" },
+  sin: { texto: "Sin el agente", clase: "denegado" },
+  revisar: { texto: "Por revisar", clase: "revisar" },
+  sin_direcciones: { texto: "Sin IP ni MAC registradas", clase: "otro" },
+};
+
+function resumirCobertura(cb, excluidos) {
+  const lista = cb.dispositivos.filter((d) => !excluidos.has(d.tipo));
+  const n = { con: 0, sin: 0, revisar: 0, sin_direcciones: 0 };
+  for (const d of lista) n[d.estado] += 1;
+  const comparables = n.con + n.sin + n.revisar;
+  return { lista, ...n, total: lista.length, comparables, cobertura: comparables ? (100 * n.con) / comparables : null };
+}
+
+const porcentaje = (v) => (v === null || v === undefined ? "—" : `${v.toLocaleString("es-CR", { maximumFractionDigits: 1 })} %`);
+
+const medidorCobertura = (r) => medidorPartes(Object.entries(ESTADOS_COBERTURA)
+  .filter(([k]) => k === "con" || k === "sin" || r[k])
+  .map(([k, e]) => ({ texto: e.texto, cantidad: r[k], clase: e.clase })), "Equipos");
+
+/** Barra fina con agente / sin agente / por revisar, con globo. */
+function miniCobertura(n) {
+  const partes = ["con", "sin", "revisar"].filter((k) => n[k]);
+  const total = partes.reduce((s, k) => s + n[k], 0);
+  if (!total) return "";
+  return `<span class="mini-medidor" tabindex="0" data-globo="${globoHTML(`${num(total)} ${total === 1 ? "equipo" : "equipos"} con IP o MAC`,
+    partes.map((k) => [ESTADOS_COBERTURA[k].texto, num(n[k]), ESTADOS_COBERTURA[k].clase]))}">
+    ${partes.map((k) => `<i class="medidor__parte--${ESTADOS_COBERTURA[k].clase}" style="flex-grow:${n[k]}"></i>`).join("")}</span>`;
+}
+
+const nombreDispositivo = (d) => d.equipo || `Dispositivo N.º ${d.id_disp}`;
+/** «SERIE CN-123» del texto «COMPUTADORA · DELL · SERIE CN-123» (para listas cortas) */
+const serieDispositivo = (d) => (d.equipo ? d.equipo.split(" · ").pop() : `N.º ${d.id_disp}`);
+const direccionesHTML = (ips, macs) => [...ips, ...macs.map(macGuiones)].map(esc).join("<br>") || `<span class="sin-dato">—</span>`;
+const rutaRegistrar = (f) => `#/red/dispositivos/nuevo?${new URLSearchParams(
+  Object.entries({ ip: f.ip, mac: f.mac, equipo: f.nombre }).filter(([, v]) => v))}`;
+
+function coberturaResumenHTML(cb, idAgentes) {
+  if (!cb?.totales) return "";
+  const enlace = rutaLogs("cobertura", { agentes: idAgentes });
+  const noRegistrados = cb.totales.no_registrados;
+  if (!cb.totales.dispositivos) {
+    return `<section class="panel cobertura-resumen"><div class="panel__cuerpo"><div class="aviso aviso--info">${icono("red")}
+      <span>Todavía no hay equipos registrados en el sistema. Registre cada equipo en <a href="#/red/dispositivos/nuevo">Dispositivos de red</a>
+      con su IP o su MAC y aquí verá cuáles no tienen el agente.</span></div></div></section>`;
+  }
+  const excluidos = tiposExcluidos();
+  const r = resumirCobertura(cb, excluidos);
+  const sin = r.lista.filter((d) => d.estado === "sin");
+  return `
+    <section class="panel cobertura-resumen">
+      <div class="panel__cabeza"><div><h2>Equipos registrados sin el agente</h2>
+        <p>Los equipos registrados en el sistema${excluidos.size ? ` (sin ${esc([...excluidos].join(", ").toLowerCase())})` : ""}, comparados por su IP y su MAC con este listado.</p></div>
+        <a class="btn btn--primario btn--sm" href="${enlace}">${icono("agente")}Ver el detalle</a></div>
+      <div class="panel__cuerpo cobertura-resumen__cuerpo">
+        <a class="cobertura-resumen__dato${r.sin ? " cobertura-resumen__dato--sin" : ""}" href="${enlace}">
+          <b>${num(r.sin)}</b><span>${r.sin === 1 ? "equipo registrado sin el agente" : "equipos registrados sin el agente"}</span>
+          <small>Cobertura: ${porcentaje(r.cobertura)} de ${num(r.comparables)}</small></a>
+        <div class="cobertura-resumen__medidor">${r.total ? medidorCobertura(r) : ""}
+          ${noRegistrados ? `<p class="cobertura-resumen__nota">${icono("agente", "ic--sm")}<span>${num(noRegistrados)} ${noRegistrados === 1
+            ? "equipo de este listado no está registrado" : "equipos de este listado no están registrados"} en el sistema.
+            <a href="${rutaLogs("cobertura", { agentes: idAgentes, ver: "no-registrados" })}">Verlos</a></span></p>` : ""}</div>
+        ${sin.length ? `<ul class="ips-sin-agente">${sin.slice(0, 8).map((d) => `<li>
+          <a href="#/red/dispositivos/${d.id_disp}" title="${esc(nombreDispositivo(d))}">${esc(serieDispositivo(d))}</a>
+          <small>${esc(d.tipo)} · <span class="dato-mono">${esc(d.ips[0] || macGuiones(d.macs[0] || ""))}</span></small></li>`).join("")}
+          ${sin.length > 8 ? `<li><a href="${enlace}">y ${num(sin.length - 8)} más</a></li>` : ""}</ul>`
+          : `<p class="cobertura-resumen__ok">${icono("check")}<span>${r.comparables ? "Todos los equipos registrados que tienen IP o MAC tienen el agente." : "Ningún equipo registrado tiene IP ni MAC para comparar."}</span></p>`}
+      </div>
+    </section>`;
+}
+
+async function vistaListadoAgentes(cont, imp, ctx, cat) {
+  const id = imp.id_importacion;
+  const base = { q: "", importaciones: [id] };
+  const [a, cb] = await Promise.all([
+    api("logs/agentes/", { query: { importacion: id } }),
+    api("logs/cobertura/", { query: { agentes: id } }).catch(() => null),
+  ]);
+  if (!ctx.vigente()) return;
+  ctx.migas([{ texto: "Importaciones", href: "#/logs/importaciones" }, { texto: imp.nombre_archivo }]);
+  const nueva = recienImportadas.get(id);
+  recienImportadas.delete(id);
+  const avisos = nueva?.avisos_detalle || [];
+  const r = a.resumen;
+  const cifra = (valor, texto, extra = "", clase = "") => `<div class="cifra${clase ? ` ${clase}` : ""}"><b>${valor}</b><span>${esc(texto)}</span>${extra}</div>`;
+  const panelTop = (titulo, grupo, filas, opciones = {}) => `
+    <section class="panel panel--top">
+      <div class="panel__cabeza"><h2><i class="punto-grupo punto-grupo--${grupo}"></i>${esc(titulo)}</h2></div>
+      <div class="panel__cuerpo">${listaTopHTML(opciones.campo || "nombre_equipo", filas, cat, { unidad: "Equipos", limite: opciones.limite || 8 })}</div>
+    </section>`;
+
+  cont.innerHTML = `
+    <div class="encabezado encabezado--imp">
+      <div class="encabezado-imp">
+        <span class="insignia-log insignia-log--agente">${icono("agente")}</span>
+        <div>
+          <h1>${esc(imp.nombre_archivo)}</h1>
+          <p>${imp.descripcion ? `${esc(imp.descripcion)} · ` : ""}Listado de equipos de Microclaudia · Importación N.º ${id} ·
+            ${esc(fecha(imp.creado_en))}${imp.importado_por ? ` por ${esc(imp.importado_por)}` : ""}</p>
+        </div>
+      </div>
+      <div class="encabezado__acciones">
+        <a class="btn btn--primario" href="${rutaLogs("cobertura", { agentes: id })}">${icono("agente")}Equipos sin agente</a>
+        <a class="btn btn--secundario" href="${rutaLogs("eventos", base)}">${icono("filtro")}Explorar equipos</a>
+        <a class="btn btn--secundario" href="${rutaLogs("comparar", base)}">${icono("comparar")}Comparar</a>
+        ${menuExportarHTML()}
+        <button type="button" class="btn-icono" data-editar title="Editar descripción" aria-label="Editar descripción">${icono("editar")}</button>
+        <button type="button" class="btn-icono btn-icono--peligro" data-eliminar title="Eliminar importación" aria-label="Eliminar importación">${icono("borrar")}</button>
+      </div>
+    </div>
+    ${nueva ? `
+      <div class="aviso aviso--exito">${icono("check")}<div><strong>Importación lista: ${unidades(imp.fuente, nueva.total_eventos)} con el agente.</strong>
+        ${nueva.repetidos ? ` ${num(nueva.repetidos)} filas estaban repetidas y se guardaron una sola vez.` : ""}
+        ${avisos.length ? `<details class="avisos-imp"><summary>${num(nueva.avisos)} filas tuvieron avisos</summary><ul>${avisos.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>` : ""}
+      </div></div>` : ""}
+    <div class="tablero" data-tablero>
+      <div class="cifras">
+        <div class="cifra cifra--principal cifra--agente"><span>Equipos con el agente</span><b>${num(a.total)}</b>
+          <small>Listado del ${esc(fechaLog(a.referencia))} (hora del listado)</small></div>
+        <div class="cifra cifra--medidor"><span>Última conexión de cada equipo</span>${medidorTramos(a.tramos)}</div>
+      </div>
+      <div class="cifras cifras--chicas">
+        ${cifra(num(r.conectados_24h), "Conectados en las últimas 24 h", "", "cifra--ok")}
+        ${cifra(num(r.sin_conexion_7d), "Más de 7 días sin conectarse", "", r.sin_conexion_7d ? "cifra--aviso" : "")}
+        ${cifra(num(r.desactualizados), "Con otra versión del agente", `<small>La más nueva: ${esc(a.version_actual || "—")}</small>`, r.desactualizados ? "cifra--aviso" : "")}
+        ${cifra(num(r.con_pendientes), "Con vacunas pendientes", `<small>${num(r.vacunas_pendientes)} vacunas en total</small>`, r.con_pendientes ? "cifra--aviso" : "")}
+        ${cifra(num(r.sin_soporte), "Sistema sin soporte", "<small>Windows 10 o anterior; Server 2012 o anterior</small>", r.sin_soporte ? "cifra--aviso" : "")}
+        ${cifra(num(r.servidores), "Servidores")}
+      </div>
+      ${coberturaResumenHTML(cb, id)}
+      <div class="rejilla-tablero">
+        ${panelTop("Última conexión", "general", a.tramos.map((t) => ({ valor: t.valor, cantidad: t.cantidad, q: t.q, clase: TRAMO_CLASE[t.clave] })), { limite: 6 })}
+        ${panelTop("Sistema operativo", "origen", a.sistemas)}
+        ${panelTop("Versión del agente", "app", a.versiones)}
+        ${panelTop("Nombre del equipo (prefijo)", "origen", a.prefijos, { limite: 10 })}
+        ${panelTop("Red de la IP principal", "origen", a.redes)}
+        <section class="panel panel--top">
+          <div class="panel__cabeza"><h2><i class="punto-grupo punto-grupo--general"></i>IP repetidas en varios equipos</h2></div>
+          <div class="panel__cuerpo">${a.compartidas.length ? `<ul class="lista-compartidas">${a.compartidas.slice(0, 8).map((x) => `
+            <li><span class="dato-mono">${esc(x.ip)}</span><small>${esc(x.equipos.join(", "))}</small></li>`).join("")}</ul>
+            <p class="nota-panel">Suele ser una IP vieja que el agente aún reporta y que el DHCP ya le dio a otro equipo. No se cuenta la red 192.168.56.x de VirtualBox.</p>`
+            : `<p class="top-vacio">Ninguna IP se repite.</p>`}</div>
+        </section>
+      </div>
+
+      <section class="panel" data-atencion>
+        <div class="panel__cabeza"><div><h2>Requieren atención</h2><p>Equipos con el agente que tienen algo por revisar. Elija qué ver.</p></div></div>
+        <div class="chips-alerta" role="group" aria-label="Qué revisar">
+          <button type="button" class="chip-alerta" data-alerta="todas" aria-pressed="true">Todo<b>${num(a.equipos.filter((e) => e.alertas.length).length)}</b></button>
+          ${a.alertas.map((x) => `<button type="button" class="chip-alerta" data-alerta="${x.clave}" aria-pressed="false"${x.cantidad ? "" : " disabled"}>
+            ${icono(ALERTA_ICONO[x.clave], "ic--sm")}${esc(x.texto)}<b>${num(x.cantidad)}</b></button>`).join("")}
+        </div>
+        <div data-atencion-tabla></div>
+      </section>
+
+      <section class="panel" data-equipos>
+        <div class="panel__cabeza"><div><h2>Todos los equipos</h2><p>Haga clic en un equipo para ver todas sus IP, MAC y vacunas.</p></div>
+          <div class="buscador buscador--equipos">${icono("buscar")}<input type="search" class="control" data-buscar-equipo placeholder="Nombre, IP, MAC o sistema" aria-label="Buscar equipo"></div></div>
+        <div data-equipos-tabla></div>
+      </section>
+    </div>`;
+
+  const POR_PAGINA = 25;
+  const masBoton = (lista, todos, clave) => (lista.length > POR_PAGINA && !todos
+    ? `<div class="mas-filas"><button type="button" class="btn btn--secundario btn--sm" data-mas="${clave}">Mostrar los ${num(lista.length)} equipos</button>
+        <span>Se ven ${num(POR_PAGINA)} de ${num(lista.length)}.</span></div>` : "");
+  const tabla = (lista, conAlertas, todos) => (lista.length ? `<div class="tabla-envoltura"><table class="tabla tabla--compacta tabla--equipos">
+    <thead><tr><th>Equipo</th>${conAlertas ? "<th>Qué revisar</th>" : ""}<th>Última conexión</th><th class="col-opcional">Sistema</th><th>Versión</th>
+      <th>IP principal</th>${conAlertas ? "" : `<th class="col-opcional">MAC</th>`}<th class="col-numero col-opcional">Vacunas</th></tr></thead>
+    <tbody>${(todos ? lista : lista.slice(0, POR_PAGINA)).map((e) => `
+      <tr class="clicable" data-evento="${e.id_evento}" tabindex="0">
+        <td><strong>${esc(e.nombre)}</strong></td>
+        ${conAlertas ? `<td><span class="alertas-equipo">${e.alertas.map((k) => `<span class="alerta-equipo alerta-equipo--${k}">${esc((a.alertas.find((x) => x.clave === k) || {}).texto || k)}</span>`).join("")}</span></td>` : ""}
+        <td><span class="tramo tramo--${TRAMO_CLASE[e.tramo]}"><i class="muestra muestra--${TRAMO_CLASE[e.tramo]}"></i>${esc(haceTexto(e.horas))}</span>
+          <span class="secundario">${esc(fechaLog(e.ultima_conexion))}</span></td>
+        <td class="col-opcional">${esc(e.sistema || "—")}</td>
+        <td>${e.version === a.version_actual ? esc(e.version || "—") : `<strong class="texto-denegado">${esc(e.version || "—")}</strong>`}</td>
+        <td class="dato-mono">${esc(e.ip || "—")}${e.ips.length > 1 ? `<span class="mas-direcciones" title="${esc(e.ips.join(", "))}">+${e.ips.length - 1}</span>` : ""}</td>
+        ${conAlertas ? "" : `<td class="dato-mono col-opcional">${esc(macGuiones(e.macs[0] || ""))}${e.macs.length > 1 ? `<span class="mas-direcciones" title="${esc(e.macs.map(macGuiones).join(", "))}">+${e.macs.length - 1}</span>` : ""}</td>`}
+        <td class="col-numero col-opcional">${num(e.aplicadas)}${e.pendientes ? ` <span class="texto-denegado">· ${num(e.pendientes)} pend.</span>` : ""}</td>
+      </tr>`).join("")}</tbody></table></div>${masBoton(lista, todos, conAlertas ? "atencion" : "equipos")}` : `<p class="top-vacio">Ningún equipo.</p>`);
+
+  const cajaAtencion = cont.querySelector("[data-atencion-tabla]");
+  let alertaActual = "todas";
+  const pintarAtencion = (clave, todos = false) => {
+    alertaActual = clave;
+    const lista = a.equipos.filter((e) => (clave === "todas" ? e.alertas.length : e.alertas.includes(clave)))
+      .sort((x, y) => y.alertas.length - x.alertas.length || String(x.nombre).localeCompare(String(y.nombre)));
+    cajaAtencion.innerHTML = tabla(lista, true, todos);
+  };
+  const cajaEquipos = cont.querySelector("[data-equipos-tabla]");
+  let textoActual = "";
+  const pintarEquipos = (texto, todos = false) => {
+    textoActual = texto;
+    const t = texto.trim().toLowerCase().replace(/[:-]/g, "");
+    const lista = !t ? a.equipos : a.equipos.filter((e) => [e.nombre, e.sistema, e.version, ...e.ips, ...e.macs]
+      .some((v) => String(v || "").toLowerCase().replace(/[:-]/g, "").includes(t)));
+    cajaEquipos.innerHTML = tabla(lista, false, todos);
+  };
+  pintarAtencion("todas");
+  pintarEquipos("");
+
+  const tablero = cont.querySelector("[data-tablero]");
+  enlazarTablero(tablero, { linea_tiempo: null }, base);
+  enlazarExportar(cont, () => base);
+  cont.querySelector("[data-buscar-equipo]").addEventListener("input", debounce((ev) => pintarEquipos(ev.target.value), 200));
+  cont.querySelector(".chips-alerta").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-alerta]");
+    if (!b || b.disabled) return;
+    cont.querySelectorAll("[data-alerta]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    pintarAtencion(b.dataset.alerta);
+  });
+  const abrir = (tr) => abrirEvento(Number(tr.dataset.evento), { importaciones: [id] });
+  tablero.addEventListener("click", (ev) => {
+    const mas = ev.target.closest("[data-mas]");
+    if (mas) {
+      if (mas.dataset.mas === "atencion") pintarAtencion(alertaActual, true); else pintarEquipos(textoActual, true);
+      return;
+    }
+    const tr = ev.target.closest("tr[data-evento]");
+    if (tr) abrir(tr);
+  });
+  tablero.addEventListener("keydown", (ev) => {
+    const tr = ev.target.closest?.("tr[data-evento]");
+    if (tr && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); abrir(tr); }
+  });
+  cont.querySelector("[data-editar]").addEventListener("click", async () => {
+    if (await editarDescripcion(imp)) vistaImportacion(cont, [id], ctx);
+  });
+  cont.querySelector("[data-eliminar]").addEventListener("click", async () => {
+    if (await eliminarImportacion(imp)) location.hash = "#/logs/importaciones";
+  });
+}
+
+/* =====================================================================
+   Equipos sin el agente: los equipos registrados en el sistema
+   (Dispositivos de red) comparados con el listado de Microclaudia
+   ===================================================================== */
+export async function vistaCobertura(cont, _params, ctx) {
+  ctx.migas([{ texto: "Equipos sin agente" }]);
+  const listados = await api("logs/importaciones/", { query: { fuente: "MICROCLAUDIA" } });
+  if (!ctx.vigente()) return;
+  const encabezado = `
+    <div class="encabezado">
+      <div class="encabezado-imp">
+        <span class="insignia-log insignia-log--agente">${icono("agente")}</span>
+        <div><h1>Equipos sin el agente de Microclaudia</h1>
+          <p>Los equipos registrados en el sistema (Dispositivos de red), comparados por su IP y su MAC con el listado de equipos
+            que tienen el agente.</p></div>
+      </div>
+      <div class="encabezado__acciones">
+        <a class="btn btn--secundario" href="#/red/dispositivos/nuevo">${icono("mas")}Registrar equipo</a>
+        <button type="button" class="btn btn--secundario" data-exportar-cobertura hidden>${icono("descargar")}Exportar (CSV)</button>
+      </div>
+    </div>`;
+  if (!listados.length) {
+    cont.innerHTML = `${encabezado}<section class="panel">${vacioHTML({
+      icono: "agente", titulo: "Todavía no hay un listado de Microclaudia",
+      texto: "Importe el listado de equipos con el agente para compararlo con los equipos registrados en el sistema.",
+      boton: `<a class="btn btn--primario" href="#/logs/importar/microclaudia">${icono("subir")}Importar equipos de Microclaudia</a>`,
+    })}</section>`;
+    return;
+  }
+  const pedido = Number(ctx.query.get("agentes"));
+  let agentes = listados.some((x) => x.id_importacion === pedido) ? pedido : listados[0].id_importacion;
+  let irA = ctx.query.get("ver");
+  const excluidos = tiposExcluidos();
+  cont.innerHTML = `${encabezado}
+    <section class="panel panel--filtro">
+      <div class="cobertura-controles">
+        <div class="campo"><label for="cb-listado">Listado de Microclaudia</label>
+          <select id="cb-listado" class="control">${listados.map((x) => `<option value="${x.id_importacion}"${x.id_importacion === agentes ? " selected" : ""}>
+            N.º ${x.id_importacion} · ${esc(x.nombre_archivo)} · ${esc(unidades(x.fuente, x.total_eventos))}</option>`).join("")}</select></div>
+        <div class="campo cobertura-controles__tipos"><span class="etiqueta-campo">Tipos de equipo que se comparan</span>
+          <div class="chips-tipos" data-tipos role="group" aria-label="Tipos de equipo que se comparan"></div></div>
+      </div>
+    </section>
+    <div data-cobertura>${cargandoHTML()}</div>`;
+
+  const caja = cont.querySelector("[data-cobertura]");
+  const cajaTipos = cont.querySelector("[data-tipos]");
+  const botonExportar = cont.querySelector("[data-exportar-cobertura]");
+  let datos = null;
+  let consulta = 0;
+  let buscado = "";
+  let todosNoRegistrados = false;
+
+  const conexion = (f) => (f ? `<span class="tramo tramo--${TRAMO_CLASE[f.tramo]}"><i class="muestra muestra--${TRAMO_CLASE[f.tramo]}"></i>${esc(haceTexto(f.horas))}</span>
+    <span class="secundario">${esc(fechaLog(f.ultima_conexion))}</span>` : `<span class="sin-dato">—</span>`);
+  const celdaDispositivo = (d) => `<a href="#/red/dispositivos/${d.id_disp}"><strong>${esc(nombreDispositivo(d))}</strong></a>
+    ${d.edificio ? `<span class="secundario">${esc(d.edificio)}</span>` : ""}`;
+  const celdaAgente = (d) => `<button type="button" class="enlace-boton" data-evento-agente="${d.agente.id_evento}"><strong>${esc(d.agente.nombre)}</strong></button>
+    <span class="secundario">${d.por === "IP" ? "por la IP" : d.por === "MAC" ? "por la MAC" : "por la IP y la MAC"}${d.otros.length ? ` · también ${esc(d.otros.join(", "))}` : ""}</span>`;
+
+  const tablaNoRegistrados = (lista) => {
+    const t = buscado.trim().toLowerCase().replace(/[:-]/g, "");
+    const filtrada = !t ? lista : lista.filter((f) => [f.nombre, f.sistema, f.version, ...f.ips, ...f.macs]
+      .some((v) => String(v || "").toLowerCase().replace(/[:-]/g, "").includes(t)));
+    const vista = todosNoRegistrados ? filtrada : filtrada.slice(0, 25);
+    if (!filtrada.length) return `<p class="top-vacio">${lista.length ? "Ningún equipo coincide con la búsqueda." : "Todos los equipos del listado están registrados en el sistema."}</p>`;
+    return `<div class="tabla-envoltura"><table class="tabla tabla--compacta tabla--equipos">
+      <thead><tr><th>Equipo en Microclaudia</th><th>IP principal</th><th class="col-opcional">MAC</th><th class="col-opcional">Sistema</th>
+        <th>Última conexión</th><th class="col-acciones"></th></tr></thead>
+      <tbody>${vista.map((f) => `<tr class="clicable" data-evento="${f.id_evento}" tabindex="0">
+        <td><strong>${esc(f.nombre)}</strong></td>
+        <td class="dato-mono">${esc(f.ip || "—")}${f.ips.length > 1 ? `<span class="mas-direcciones" title="${esc(f.ips.join(", "))}">+${f.ips.length - 1}</span>` : ""}</td>
+        <td class="dato-mono col-opcional">${esc(macGuiones(f.mac || f.macs[0] || "")) || "—"}${f.macs.length > 1 ? `<span class="mas-direcciones" title="${esc(f.macs.map(macGuiones).join(", "))}">+${f.macs.length - 1}</span>` : ""}</td>
+        <td class="col-opcional">${esc(f.sistema || "—")}</td>
+        <td>${conexion(f)}</td>
+        <td class="col-acciones"><a class="btn btn--secundario btn--sm" href="${rutaRegistrar(f)}">${icono("mas")}Registrar</a></td>
+      </tr>`).join("")}</tbody></table></div>
+      ${filtrada.length > vista.length ? `<div class="mas-filas"><button type="button" class="btn btn--secundario btn--sm" data-mas-no-registrados>Mostrar los ${num(filtrada.length)} equipos</button>
+        <span>Se ven ${num(vista.length)} de ${num(filtrada.length)}.</span></div>` : ""}`;
+  };
+
+  const pintar = () => {
+    const d = datos;
+    const r = resumirCobertura(d, excluidos);
+    const listado = d.importacion;
+    const grupo = (estado) => r.lista.filter((x) => x.estado === estado);
+    const porMac = r.lista.filter((x) => x.estado === "con" && x.por !== "IP").length;
+    cajaTipos.innerHTML = d.tipos.length ? d.tipos.map((t) => {
+      const dentro = !excluidos.has(t.tipo);
+      return `<button type="button" class="chip-alerta" data-tipo="${esc(t.tipo)}" aria-pressed="${dentro}">
+        ${icono(dentro ? "check" : "cerrar", "ic--sm")}${esc(t.tipo)}<b>${num(t.total)}</b></button>`;
+    }).join("") : `<span class="sin-dato">Todavía no hay equipos registrados.</span>`;
+
+    const porTipo = d.tipos.map((t) => {
+      const n = { con: 0, sin: 0, revisar: 0, sin_direcciones: 0 };
+      for (const x of d.dispositivos) if (x.tipo === t.tipo) n[x.estado] += 1;
+      const comparables = n.con + n.sin + n.revisar;
+      return { ...t, ...n, cobertura: comparables ? (100 * n.con) / comparables : null, fuera: excluidos.has(t.tipo) };
+    });
+    const sinAgente = grupo("sin");
+    const revisar = grupo("revisar");
+    const sinDirecciones = grupo("sin_direcciones");
+    const conAgente = grupo("con");
+    const cifra = (valor, texto, extra = "", clase = "") => `<div class="cifra${clase ? ` ${clase}` : ""}"><b>${valor}</b><span>${esc(texto)}</span>${extra}</div>`;
+
+    caja.innerHTML = `
+      ${d.totales.dispositivos ? `
+      <div class="cifras">
+        <div class="cifra cifra--principal cifra--cobertura"><span>Cobertura del agente</span><b>${porcentaje(r.cobertura)}</b>
+          <small>de los ${num(r.comparables)} equipos registrados que tienen IP o MAC${excluidos.size ? " (tipos elegidos)" : ""}</small></div>
+        <div class="cifra cifra--medidor"><span>Equipos registrados en el sistema</span>${r.total ? medidorCobertura(r) : `<p class="top-vacio">Elija al menos un tipo de equipo.</p>`}</div>
+      </div>
+      <div class="cifras cifras--chicas">
+        ${cifra(num(r.total), "Equipos registrados")}
+        ${cifra(num(r.sin), "Sin el agente", "", r.sin ? "cifra--sin" : "")}
+        ${cifra(num(r.con), "Con el agente", porMac ? `<small>${num(porMac)} confirmados por la MAC</small>` : "", "cifra--ok")}
+        ${cifra(num(r.revisar), "Por revisar", "<small>La IP coincide, la MAC no</small>", r.revisar ? "cifra--aviso" : "")}
+        ${cifra(num(r.sin_direcciones), "Sin IP ni MAC registradas", "<small>No se pueden comparar</small>")}
+        ${cifra(num(d.totales.no_registrados), "En el listado, sin registrar", `<small>de ${num(d.totales.agentes)} con el agente</small>`)}
+      </div>` : `<section class="panel">${vacioHTML({
+        icono: "red", titulo: "Todavía no hay equipos registrados en el sistema",
+        texto: "Registre cada equipo en Dispositivos de red con su IP o su MAC; aquí se compara con el listado de Microclaudia. Puede empezar por los de la lista de abajo.",
+        boton: `<a class="btn btn--primario" href="#/red/dispositivos/nuevo">${icono("mas")}Registrar equipo</a>`,
+      })}</section>`}
+      <p class="nota-cobertura">${icono("enlace", "ic--sm")}<span>Listado: <a href="#/logs/importaciones/${listado.id_importacion}">${esc(listado.nombre_archivo)}</a>
+        (${esc(unidades(listado.fuente, listado.total_eventos))}, del ${esc(fechaLog(d.referencia || listado.fecha_hasta))}).
+        Un equipo tiene el agente si una de sus MAC está en el listado, o su IP cuando no tiene MAC registrada.</span></p>
+
+      ${porTipo.length > 1 ? `
+      <section class="panel">
+        <div class="panel__cabeza"><div><h2>${icono("red")} Por tipo de equipo</h2><p>Los tipos que no se comparan quedan fuera de las cifras de arriba.</p></div></div>
+        <div class="tabla-envoltura"><table class="tabla tabla--compacta tabla--tipos">
+          <thead><tr><th>Tipo</th><th class="col-numero">Registrados</th><th class="col-numero">Con el agente</th><th class="col-numero">Sin el agente</th>
+            <th class="col-numero col-opcional">Por revisar</th><th class="col-numero col-opcional">Sin IP ni MAC</th><th>Cobertura</th></tr></thead>
+          <tbody>${porTipo.map((t) => `<tr${t.fuera ? ' class="fila-fuera"' : ""}>
+            <td><strong>${esc(t.tipo)}</strong>${t.fuera ? `<span class="secundario">No se compara</span>` : ""}</td>
+            <td class="col-numero">${num(t.total)}</td><td class="col-numero">${num(t.con)}</td>
+            <td class="col-numero">${t.sin ? `<strong class="texto-denegado">${num(t.sin)}</strong>` : "0"}</td>
+            <td class="col-numero col-opcional">${num(t.revisar)}</td><td class="col-numero col-opcional">${num(t.sin_direcciones)}</td>
+            <td class="col-medidor">${miniCobertura(t)}<span class="secundario">${porcentaje(t.cobertura)}</span></td>
+          </tr>`).join("")}</tbody>
+        </table></div>
+      </section>` : ""}
+
+      ${d.totales.dispositivos ? `
+      <section class="panel panel--sin-agente">
+        <div class="panel__cabeza"><div><h2>${icono("alerta")} Registrados sin el agente (${num(sinAgente.length)})</h2>
+          <p>Ninguna de sus IP o MAC está en el listado de Microclaudia.</p></div></div>
+        ${sinAgente.length ? `<div class="tabla-envoltura"><table class="tabla tabla--compacta">
+          <thead><tr><th>Equipo registrado</th><th>IP y MAC registradas</th><th class="col-acciones"></th></tr></thead>
+          <tbody>${sinAgente.map((x) => `<tr>
+            <td>${celdaDispositivo(x)}</td>
+            <td class="dato-mono col-mac">${direccionesHTML(x.ips, x.macs)}</td>
+            <td class="col-acciones"><a class="btn btn--secundario btn--sm" href="#/red/dispositivos/${x.id_disp}">${icono("red")}Ficha</a></td>
+          </tr>`).join("")}</tbody></table></div>`
+          : `<div class="panel__cuerpo"><p class="top-vacio">${r.comparables ? "Todos los equipos registrados que tienen IP o MAC tienen el agente." : "No hay equipos con IP o MAC para comparar."}</p></div>`}
+      </section>` : ""}
+
+      ${revisar.length ? `
+      <section class="panel panel--revisar">
+        <div class="panel__cabeza"><div><h2>${icono("alerta")} Por revisar (${num(revisar.length)})</h2>
+          <p>Su IP está en el listado, pero con otras MAC: puede ser otro equipo que recibió esa IP, o a este equipo le falta registrar una MAC.</p></div></div>
+        <div class="tabla-envoltura"><table class="tabla tabla--compacta">
+          <thead><tr><th>Equipo registrado</th><th>IP y MAC registradas</th><th>Tiene esa IP en Microclaudia</th><th class="col-opcional">MAC en Microclaudia</th><th>Última conexión</th></tr></thead>
+          <tbody>${revisar.map((x) => `<tr>
+            <td>${celdaDispositivo(x)}</td>
+            <td class="dato-mono col-mac">${direccionesHTML(x.ips, x.macs)}</td>
+            <td>${celdaAgente(x)}</td>
+            <td class="dato-mono col-mac col-opcional">${x.agente.macs.map((m) => esc(macGuiones(m))).join("<br>") || "—"}</td>
+            <td>${conexion(x.agente)}</td>
+          </tr>`).join("")}</tbody></table></div>
+      </section>` : ""}
+
+      ${sinDirecciones.length ? `
+      <section class="panel">
+        <div class="panel__cabeza"><div><h2>${icono("red")} Sin IP ni MAC registradas (${num(sinDirecciones.length)})</h2>
+          <p>No se pueden comparar con el listado. Agregue su IP o su MAC en la ficha del equipo.</p></div></div>
+        <div class="tabla-envoltura"><table class="tabla tabla--compacta">
+          <thead><tr><th>Equipo registrado</th><th class="col-acciones"></th></tr></thead>
+          <tbody>${sinDirecciones.map((x) => `<tr><td>${celdaDispositivo(x)}</td>
+            <td class="col-acciones"><a class="btn btn--secundario btn--sm" href="#/red/dispositivos/${x.id_disp}">${icono("editar")}Agregar IP o MAC</a></td></tr>`).join("")}</tbody>
+        </table></div>
+      </section>` : ""}
+
+      ${conAgente.length ? `
+      <details class="panel panel--plegable">
+        <summary class="panel__cabeza"><div><h2>${icono("check")} Con el agente (${num(conAgente.length)})</h2>
+          <p>Una de sus MAC, o su IP cuando no tiene MAC registrada, está en el listado de Microclaudia.</p></div></summary>
+        <div class="tabla-envoltura"><table class="tabla tabla--compacta">
+          <thead><tr><th>Equipo registrado</th><th>IP y MAC registradas</th><th>Equipo en Microclaudia</th><th>Última conexión</th><th class="col-opcional">Versión</th></tr></thead>
+          <tbody>${conAgente.map((x) => `<tr>
+            <td>${celdaDispositivo(x)}</td>
+            <td class="dato-mono col-mac">${direccionesHTML(x.ips, x.macs)}</td>
+            <td>${celdaAgente(x)}</td>
+            <td>${conexion(x.agente)}</td>
+            <td class="col-opcional">${esc(x.agente.version || "—")}</td>
+          </tr>`).join("")}</tbody></table></div>
+      </details>` : ""}
+
+      <section class="panel" data-no-registrados>
+        <div class="panel__cabeza"><div><h2>${icono("agente")} En el listado de Microclaudia, pero no registrados en el sistema (${num(d.no_registrados.length)})</h2>
+          <p>Tienen el agente, pero ningún equipo registrado tiene su MAC (ni su IP). <strong>Registrar</strong> abre el formulario con su IP y su MAC.</p></div>
+          ${d.no_registrados.length ? `<div class="buscador buscador--equipos">${icono("buscar")}<input type="search" class="control" data-buscar-no-registrado value="${esc(buscado)}" placeholder="Nombre, IP, MAC o sistema" aria-label="Buscar en los equipos sin registrar"></div>` : ""}</div>
+        <div data-tabla-no-registrados>${tablaNoRegistrados(d.no_registrados)}</div>
+      </section>`;
+    activarGlobos(caja);
+    botonExportar.hidden = false;
+    if (irA === "no-registrados") {
+      irA = null;
+      caja.querySelector("[data-no-registrados]")?.scrollIntoView({ block: "start" });
+    }
+  };
+
+  const cargar = async () => {
+    const yo = ++consulta;
+    caja.classList.add("cargando-suave");
+    try {
+      const d = await api("logs/cobertura/", { query: { agentes } });
+      if (!ctx.vigente() || yo !== consulta) return;
+      datos = d;
+      todosNoRegistrados = false;
+      pintar();
+    } catch (e) {
+      if (!ctx.vigente() || yo !== consulta) return;
+      caja.innerHTML = errorHTML(e.message);
+    } finally {
+      caja.classList.remove("cargando-suave");
+    }
+  };
+
+  cont.querySelector("#cb-listado").addEventListener("change", (ev) => {
+    agentes = Number(ev.target.value);
+    reemplazarRuta(rutaLogs("cobertura", { agentes }));
+    cargar();
+  });
+  cajaTipos.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-tipo]");
+    if (!b || !datos) return;
+    const tipo = b.dataset.tipo;
+    if (excluidos.has(tipo)) excluidos.delete(tipo); else excluidos.add(tipo);
+    guardarExcluidos(excluidos);
+    pintar();
+    cajaTipos.querySelector(`[data-tipo="${CSS.escape(tipo)}"]`)?.focus();
+  });
+  caja.addEventListener("input", debounce((ev) => {
+    if (!ev.target.matches("[data-buscar-no-registrado]")) return;
+    buscado = ev.target.value;
+    caja.querySelector("[data-tabla-no-registrados]").innerHTML = tablaNoRegistrados(datos.no_registrados);
+  }, 200));
+  caja.addEventListener("click", (ev) => {
+    if (ev.target.closest("[data-mas-no-registrados]")) {
+      todosNoRegistrados = true;
+      caja.querySelector("[data-tabla-no-registrados]").innerHTML = tablaNoRegistrados(datos.no_registrados);
+      return;
+    }
+    const agente = ev.target.closest("[data-evento-agente]");
+    if (agente) { abrirEvento(Number(agente.dataset.eventoAgente), { importaciones: [agentes] }); return; }
+    const tr = ev.target.closest("tr[data-evento]");
+    if (tr && !ev.target.closest("a")) abrirEvento(Number(tr.dataset.evento), { importaciones: [agentes] });
+  });
+  caja.addEventListener("keydown", (ev) => {
+    const tr = ev.target.closest?.("tr[data-evento]");
+    if (tr && ev.target === tr && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); abrirEvento(Number(tr.dataset.evento), { importaciones: [agentes] }); }
+  });
+  botonExportar.addEventListener("click", () => {
+    if (!datos) return;
+    const celda = (v) => { const t = String(v ?? ""); return /[";\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const filas = [["Estado", "Equipo registrado", "Tipo", "Edificio", "IP registradas", "MAC registradas", "Equipo en Microclaudia",
+      "Coincide por", "IP en Microclaudia", "MAC en Microclaudia", "Última conexión del agente", "Versión del agente"]];
+    for (const x of resumirCobertura(datos, excluidos).lista) {
+      const a = x.agente;
+      filas.push([ESTADOS_COBERTURA[x.estado].texto, nombreDispositivo(x), x.tipo, x.edificio || "", x.ips.join(" "), x.macs.map(macGuiones).join(" "),
+        a ? a.nombre : "", x.por || "", a ? a.ips.join(" ") : "", a ? a.macs.map(macGuiones).join(" ") : "", a ? fechaLog(a.ultima_conexion) : "", a ? a.version || "" : ""]);
+    }
+    for (const f of datos.no_registrados) {
+      filas.push(["En el listado, sin registrar", "", "", "", "", "", f.nombre, "", f.ips.join(" "), f.macs.map(macGuiones).join(" "),
+        fechaLog(f.ultima_conexion), f.version || ""]);
+    }
+    descargarTexto(`﻿${filas.map((f) => f.map(celda).join(";")).join("\r\n")}\r\n`, `equipos_sin_agente_${marcaArchivo()}.csv`);
+    toast("Se descargó el archivo.");
+  });
+  await cargar();
+}

@@ -1,6 +1,6 @@
 """Campos comunes (normalizados) de los logs.
 
-Cada programa (Sophos y, más adelante, otros) llama distinto a lo mismo:
+Cada programa (Sophos, Microclaudia y, más adelante, otros) llama distinto a lo mismo:
 Sophos usa fw_rule_id en el firewall y rule_id en la inspección SSL;
 domain en el filtro web y sni en SSL. Aquí se define un solo nombre para
 cada dato, con su etiqueta, su grupo y su tipo, y los alias de cada
@@ -41,6 +41,8 @@ CAMPOS = [
     ("zona_origen", "Zona de origen", "Origen", "texto", 30),
     ("interfaz_entrada", "Interfaz de entrada", "Origen", "texto", 100),
     ("ip_origen_nat", "IP de origen traducida (NAT)", "Origen", "ip", 45),
+    ("nombre_equipo", "Nombre del equipo", "Origen", "texto", 100),
+    ("sistema_operativo", "Sistema operativo", "Origen", "texto", 150),
     # Destino
     ("ip_destino", "IP de destino", "Destino", "ip", 45),
     ("puerto_destino", "Puerto de destino", "Destino", "puerto", None),
@@ -63,6 +65,10 @@ CAMPOS = [
     ("aplicacion_riesgo", "Riesgo de la aplicación", "Aplicación", "numero", None),
     ("version_tls", "Versión TLS", "Aplicación", "texto", 20),
     ("cifrado", "Cifrado", "Aplicación", "texto", 100),
+    ("version_agente", "Versión del agente", "Aplicación", "texto", 50),
+    ("vacunas_aplicadas", "Vacunas aplicadas", "Aplicación", "numero", None),
+    ("vacunas_pendientes", "Vacunas pendientes", "Aplicación", "numero", None),
+    ("vacunas_error", "Vacunas con error", "Aplicación", "numero", None),
     # Tráfico
     ("protocolo", "Protocolo", "Tráfico", "texto", 20),
     ("bytes_enviados", "Bytes enviados", "Tráfico", "numero", None),
@@ -131,6 +137,23 @@ ALIAS_SOPHOS = [
     ("con_id", "id_conexion", 1), ("connection_id", "id_conexion", 2),
 ]
 
+# Alias de Microclaudia (listado de equipos con el agente de S2 Grupo).
+# ip_principal, mac_principal y producto no vienen en el archivo: los
+# calcula el lector (la primera IPv4 interna y la primera MAC del equipo).
+ALIAS_MICROCLAUDIA = [
+    ("nombre", "nombre_equipo", 1), ("hostname", "nombre_equipo", 2),
+    ("sist_operativo", "sistema_operativo", 1), ("sistema_operativo", "sistema_operativo", 2),
+    ("version", "version_agente", 1),
+    ("total_vacunas_aplicadas", "vacunas_aplicadas", 1),
+    ("total_vacunas_pendientes", "vacunas_pendientes", 1),
+    ("total_vacunas_error", "vacunas_error", 1),
+    ("ip_principal", "ip_origen", 1),
+    ("mac_principal", "mac_origen", 1),
+    ("producto", "aplicacion", 1),
+]
+
+ALIAS_POR_FUENTE = {"SOPHOS": ALIAS_SOPHOS, "MICROCLAUDIA": ALIAS_MICROCLAUDIA}
+
 # Nombres al estilo Wireshark que también entiende el filtro
 ALIAS_FILTRO = {
     "ip.src": "ip_origen", "ip.dst": "ip_destino", "eth.src": "mac_origen", "eth.dst": "mac_destino",
@@ -141,6 +164,8 @@ ALIAS_FILTRO = {
     "frame.time": "fecha", "time": "fecha", "user.name": "usuario", "rule": "regla_nombre",
     "regla": "regla_nombre", "action": "accion", "app": "aplicacion", "category": "categoria",
     "conexion": "id_conexion", "src": "ip_origen", "dst": "ip_destino",
+    "host.name": "nombre_equipo", "hostname": "nombre_equipo", "equipo_nombre": "nombre_equipo",
+    "os": "sistema_operativo", "agente.version": "version_agente",
 }
 
 # Campos virtuales del filtro: valen para origen o destino (ip.addr de Wireshark)
@@ -159,10 +184,11 @@ CAMPOS_AMBOS = {
 
 # Campos con los que se compara entre logs y con el inventario
 CAMPOS_COMPARAR = ["ip_origen", "ip_destino", "dominio", "regla_nombre", "usuario", "mac_origen",
-                   "categoria", "aplicacion", "puerto_destino", "id_conexion"]
+                   "categoria", "aplicacion", "puerto_destino", "id_conexion",
+                   "nombre_equipo", "sistema_operativo", "version_agente"]
 
 # Campos por los que se pueden contar los más frecuentes (tops)
 CAMPOS_TOP = ["ip_origen", "ip_destino", "dominio", "regla_nombre", "categoria", "aplicacion", "usuario",
               "pais_destino", "puerto_destino", "tipo", "accion", "mac_origen", "zona_origen", "zona_destino",
               "politica_web", "protocolo", "id_conexion", "ip_origen_nat", "interfaz_entrada", "interfaz_salida",
-              "categoria_tipo", "actividad", "dispositivo"]
+              "categoria_tipo", "actividad", "dispositivo", "nombre_equipo", "sistema_operativo", "version_agente"]

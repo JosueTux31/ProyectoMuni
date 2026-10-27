@@ -15,8 +15,8 @@ import {
   vistaDispositivo, vistaDispositivoNuevo, vistaDispositivos, vistaEdificios, vistaInicioRed, vistaMarcas,
 } from "./dispositivos.js";
 import {
-  vistaCamposLogs, vistaComparar, vistaEventos, vistaImportacion, vistaImportaciones, vistaImportarSophos, vistaInicioLogs,
-  vistaInventarioLogs, vistaTablero,
+  vistaCamposLogs, vistaCobertura, vistaComparar, vistaEventos, vistaImportacion, vistaImportaciones, vistaImportarMicroclaudia,
+  vistaImportarSophos, vistaInicioLogs, vistaInventarioLogs, vistaTablero,
 } from "./logs.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -191,6 +191,8 @@ const RUTAS = [
   // Módulo de análisis de logs (solo administradores: muestra la navegación del personal)
   { patron: /^logs$/, vista: vistaInicioLogs, soloAdmin: true },
   { patron: /^logs\/importar\/sophos$/, vista: vistaImportarSophos, soloAdmin: true },
+  { patron: /^logs\/importar\/microclaudia$/, vista: vistaImportarMicroclaudia, soloAdmin: true },
+  { patron: /^logs\/cobertura$/, vista: vistaCobertura, soloAdmin: true },
   { patron: /^logs\/importaciones$/, vista: vistaImportaciones, soloAdmin: true },
   { patron: /^logs\/importaciones\/(\d+)$/, vista: vistaImportacion, soloAdmin: true },
   { patron: /^logs\/tablero$/, vista: vistaTablero, soloAdmin: true },
@@ -322,8 +324,8 @@ async function vistaModulos(cont, _params, ctx) {
         ["usuarios activos", "proveedores activos"])}
       ${tarjeta("red", "Modems, firewalls, routers y switches: dónde están, quién les da soporte y sus manuales, firmware, respaldos y configuraciones.",
         ["dispositivos activos", "edificios"])}
-      ${ctx.esAdmin ? tarjeta("logs", "Logs de Sophos Firewall en gráficos: filtro estilo Wireshark, comparación entre logs y cruce con el inventario y el personal.",
-        ["importaciones", "eventos"]) : ""}
+      ${ctx.esAdmin ? tarjeta("logs", "Logs de Sophos Firewall y equipos con el agente de Microclaudia en gráficos: filtro estilo Wireshark, comparación, equipos sin agente y cruce con el inventario.",
+        ["importaciones", "registros"]) : ""}
     </div>
     ${ctx.esAdmin ? "" : `<div class="aviso aviso--ocre" style="margin-top:20px">${icono("candado")}<span>Su rol permite consultar la información de los dos módulos. Los cambios los hace un administrador.</span></div>`}`;
 

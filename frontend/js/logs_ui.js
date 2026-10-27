@@ -313,25 +313,36 @@ export function medidorAcciones(r) {
 }
 
 /** Barras horizontales de lo más frecuente de un campo. Cada fila es un botón. */
-export function listaTopHTML(campo, filas, cat, { limite = 8 } = {}) {
+/**
+ * Barras de lo más frecuente. Cada fila puede traer:
+ *   q      su propio filtro (si no, campo == valor)
+ *   clase  un solo color (tramos de conexión); sin permitidos ni denegados
+ *          la barra es de un solo color neutro (listados de equipos)
+ */
+export function listaTopHTML(campo, filas, cat, { limite = 8, unidad = "Eventos" } = {}) {
   if (!filas?.length) return `<p class="top-vacio">Sin datos en este campo.</p>`;
   const lista = filas.slice(0, limite);
   const max = Math.max(...lista.map((f) => Number(f.cantidad) || 0), 1);
   const mono = esMono(campo, cat);
   return `<ol class="top">${lista.map((f) => {
     const n = Number(f.cantidad) || 0;
+    const neutra = f.clase || (f.permitidos === undefined && f.denegados === undefined);
     const v = partesDe(f);
     const texto = valorCorto(campo, f.valor, cat);
-    const globoTxt = globoHTML(texto, [
-      ["Eventos", num(n)], ["Permitidos", num(v.permitidos), "permitido"], ["Denegados", num(v.denegados), "denegado"],
+    const globoTxt = globoHTML(texto, neutra ? [[unidad, num(n)], ...(f.nota ? [[f.nota, ""]] : [])] : [
+      [unidad, num(n)], ["Permitidos", num(v.permitidos), "permitido"], ["Denegados", num(v.denegados), "denegado"],
       ...(v.otros ? [["Otros", num(v.otros), "otro"]] : []),
       ...(f.primera ? [["Primera vez", fechaLog(f.primera)], ["Última vez", fechaLog(f.ultima)]] : []),
     ]);
-    return `<li><button type="button" class="top__fila" data-top-campo="${esc(campo)}" data-top-valor="${esc(f.valor ?? "")}" data-globo="${globoTxt}"
-        aria-label="${esc(`${texto}: ${eventos(n)}. Ver estos eventos`)}">
-      <span class="top__valor${mono ? " dato-mono" : ""}">${esc(texto)}</span>
+    const destino = f.q !== undefined ? `data-top-q="${esc(f.q)}"` : `data-top-campo="${esc(campo)}" data-top-valor="${esc(f.valor ?? "")}"`;
+    const segmentos = neutra
+      ? `<i class="top__seg top__seg--${esc(f.clase || "valor")}" style="flex-grow:1"></i>`
+      : PARTES.filter(([k]) => v[k] > 0).map(([k, clase]) => `<i class="top__seg top__seg--${clase}" style="flex-grow:${v[k]}"></i>`).join("");
+    return `<li><button type="button" class="top__fila" ${destino} data-globo="${globoTxt}"
+        aria-label="${esc(`${texto}: ${num(n)} ${unidad.toLowerCase()}. Ver el detalle`)}">
+      <span class="top__valor${mono ? " dato-mono" : ""}">${f.clase ? `<i class="muestra muestra--${esc(f.clase)}"></i>` : ""}${esc(texto)}</span>
       <span class="top__pista"><span class="top__barra" style="width:${Math.max(n / max * 100, 1.5).toFixed(1)}%">
-        ${PARTES.filter(([k]) => v[k] > 0).map(([k, clase]) => `<i class="top__seg top__seg--${clase}" style="flex-grow:${v[k]}"></i>`).join("")}
+        ${segmentos}
       </span></span>
       <span class="top__n">${esc(num(n))}</span>
     </button></li>`;
@@ -478,6 +489,8 @@ export const ATAJOS_FILTRO = [
   { texto: "IP internas sin registrar", q: "(ip.src == 10.0.0.0/8 or ip.src == 172.16.0.0/12 or ip.src == 192.168.0.0/16) and not equipo_origen" },
   { texto: "Con usuario", q: "usuario" },
   { texto: "Con conexión", q: "id_conexion" },
+  { texto: "Origen sin agente", q: "fuente == sophos and (ip.src == 10.0.0.0/8 or ip.src == 172.16.0.0/12 or ip.src == 192.168.0.0/16) and not con_agente", clase: "denegado" },
+  { texto: "Equipos de Microclaudia", q: "fuente == microclaudia", clase: "agente" },
 ];
 
 export function barraFiltroHTML({ q = "", atajos = true, textoAplicar = "Aplicar" } = {}) {
@@ -719,6 +732,10 @@ const EJEMPLOS_FILTRO = [
   ["equipo_origen", "El origen es un equipo del inventario"],
   ["not equipo_origen and ip.src == 10.0.0.0/8", "IP internas que no están en el inventario"],
   ["usuario and not persona", "Usuarios del log que no están en el sistema"],
+  ["fuente == sophos and ip.src == 10.0.0.0/8 and not con_agente", "Tráfico de equipos internos sin el agente de Microclaudia"],
+  ["fuente == microclaudia and version_agente != 2.12.0", "Equipos con otra versión del agente"],
+  ["vacunas_pendientes > 0", "Equipos con vacunas pendientes"],
+  ["hostname matches \"^ECOB\"", "Equipos por nombre (Microclaudia)"],
   ["!(regla_id == 53) || dominio", "not / !, and / &&, or / ||, paréntesis"],
   ["google", "Texto suelto: lo busca en los campos principales"],
 ];
@@ -729,8 +746,9 @@ export function guiaFiltroHTML(cat) {
   return `
     <div class="guia-filtro">
       <p>Escriba condiciones como en Wireshark y únalas con <code>and</code>, <code>or</code> y <code>not</code>. Los nombres de campo se pueden escribir
-      de tres formas: el campo común (<code>ip_origen</code>), el estilo Wireshark (<code>ip.src</code>) o el nombre que trae Sophos (<code>src_ip</code>).
-      Haga clic en un ejemplo o en un campo para agregarlo al filtro.</p>
+      de tres formas: el campo común (<code>ip_origen</code>), el estilo Wireshark (<code>ip.src</code>) o el nombre que trae el programa (<code>src_ip</code>).
+      <code>fuente == sophos</code> o <code>fuente == microclaudia</code> limita a un programa, e <code>ip</code> y <code>mac</code> también buscan en
+      todas las direcciones de un equipo de Microclaudia. Haga clic en un ejemplo o en un campo para agregarlo al filtro.</p>
       <h3>Ejemplos</h3>
       <ul class="guia-filtro__ejemplos">${EJEMPLOS_FILTRO.map(([q, t]) =>
         `<li><button type="button" class="guia-filtro__ejemplo" data-insertar="${esc(q)}"><code>${esc(q)}</code><span>${esc(t)}</span></button></li>`).join("")}</ul>
@@ -829,6 +847,8 @@ export async function abrirEvento(idEvento, opciones = {}) {
         try { await navigator.clipboard.writeText(texto); toast("Se copió el evento original."); } catch { toast("No se pudo copiar.", "error"); }
       }
       if (e.target.closest("[data-ver-conexion]")) filtrar(condicion("id_conexion", ev.id_conexion));
+      const irQ = e.target.closest("[data-ir-q]");
+      if (irQ) { d.close(); location.hash = rutaLogs("eventos", { q: irQ.dataset.irQ }); }
     });
   };
 
@@ -886,8 +906,52 @@ function extremoHTML(ev, lado, cat) {
     </div>`;
 }
 
+/** '[a, b, c]' -> ['a', 'b', 'c'] (listas de IP y MAC de Microclaudia) */
+export const listaTexto = (t) => String(t || "").replace(/^\s*\[|\]\s*$/g, "").split(/[,;\s]+/).filter(Boolean);
+export const esAgentes = (cat, fuente) => cat?.clases?.[fuente] === "agentes";
+
+/** Filtro con todas las IPv4 y MAC de un equipo (para ver su tráfico en los logs). */
+export function filtroDirecciones(ips, macs) {
+  const partes = [...ips.map((ip) => `ip == ${ip}`), ...macs.map((m) => `mac == ${m}`)];
+  return partes.length > 1 ? `(${partes.join(" or ")})` : partes[0] || "";
+}
+
+function equipoAgenteHTML(ev) {
+  const d = ev.datos || {};
+  const todas = listaTexto(d.ipaddress);
+  const ips4 = todas.filter((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x));
+  const ips6 = todas.filter((x) => x.includes(":"));
+  const macs = listaTexto(d.macaddress).map((m) => m.replace(/[^0-9A-Fa-f]/g, "").toUpperCase()).filter((m) => m.length === 12);
+  const utiles = ips4.filter((ip) => !ip.startsWith("169.254."));
+  const pendientes = Number(ev.vacunas_pendientes) || 0;
+  const q = filtroDirecciones(utiles, macs);
+  return `
+    <div class="equipo-agente">
+      <div class="equipo-agente__cabeza">
+        <span class="insignia-agente">${icono("agente")}</span>
+        <div><strong>${esc(ev.nombre_equipo || "Equipo")}</strong><span>${esc(ev.sistema_operativo || "Sistema sin dato")}</span></div>
+        <span class="pastilla pastilla--agente pastilla--sin-punto">${icono("check", "ic--sm")}Agente ${esc(ev.version_agente || "")}</span>
+      </div>
+      <dl class="equipo-agente__datos">
+        <div><dt>Última conexión</dt><dd>${esc(fechaLog(ev.fecha))}</dd></div>
+        <div><dt>Alta del agente</dt><dd>${esc(d.fecha_alta || "—")}</dd></div>
+        <div><dt>Vacunas aplicadas</dt><dd>${esc(num(ev.vacunas_aplicadas))}</dd></div>
+        <div><dt>Vacunas pendientes</dt><dd${pendientes ? ' class="texto-denegado"' : ""}>${esc(num(ev.vacunas_pendientes))}</dd></div>
+        <div><dt>Vacunas con error</dt><dd>${esc(num(ev.vacunas_error))}</dd></div>
+        <div><dt>Organismo</dt><dd>${esc(d.organismo || "—")}</dd></div>
+      </dl>
+      <div class="equipo-agente__dirs"><span class="etiqueta-dir">IP</span>
+        ${ips4.map((ip) => `<span class="chip-dir${ip === ev.ip_origen ? " chip-dir--principal" : ""}"${ip === ev.ip_origen ? ' title="IP principal"' : ip.startsWith("169.254.") ? ' title="Sin DHCP (no sirve para cruzar)"' : ""}>${esc(ip)}</span>`).join("") || `<span class="sin-dato">—</span>`}
+        ${ips6.length ? `<small class="sin-dato">y ${ips6.length} IPv6</small>` : ""}</div>
+      <div class="equipo-agente__dirs"><span class="etiqueta-dir">MAC</span>
+        ${macs.map((m) => `<span class="chip-dir${m === ev.mac_origen ? " chip-dir--principal" : ""}">${esc(macGuiones(m))}</span>`).join("") || `<span class="sin-dato">—</span>`}</div>
+      ${q ? `<div class="cajon__pie-seccion"><button type="button" class="btn btn--secundario btn--sm" data-ir-q="${esc(`fuente != microclaudia and ${q}`)}">${icono("filtro")}Ver su tráfico en los logs</button></div>` : ""}
+    </div>`;
+}
+
 function eventoHTML(ev, cat, pestana) {
   const accion = String(ev.accion || "OTRO").toLowerCase();
+  const agente = esAgentes(cat, ev.fuente);
   const origenes = origenDeCampos(ev, cat);
   const datos = ev.datos || {};
   const conexion = ev.conexion || [];
@@ -947,9 +1011,9 @@ function eventoHTML(ev, cat, pestana) {
   const otras = Number(ev.en_otras_importaciones) || 0;
   const pest = (k, texto, n) => `<button type="button" role="tab" data-pestana="${k}" aria-selected="${pestana === k}">${texto}${n !== undefined ? `<span class="contador">${n}</span>` : ""}</button>`;
   return `
-    <div class="cajon__cabeza cajon__cabeza--${accion}">
+    <div class="cajon__cabeza cajon__cabeza--${agente ? "agente" : accion}">
       <div class="cajon__titulo">
-        ${pastillaAccion(ev.accion)}
+        ${agente ? `<span class="pastilla pastilla--agente pastilla--sin-punto">${icono("agente", "ic--sm")}Microclaudia</span>` : pastillaAccion(ev.accion)}
         <h2>${esc(ev.tipo || "Evento")}${ev.subtipo ? ` <span>· ${esc(ev.subtipo)}</span>` : ""}</h2>
         <p><span class="dato-mono">${esc(fechaLog(ev.fecha))}</span> · Evento N.º ${esc(ev.id_evento)} ·
           <a href="#/logs/importaciones/${esc(ev.id_importacion)}">Importación N.º ${esc(ev.id_importacion)}</a>
@@ -958,7 +1022,7 @@ function eventoHTML(ev, cat, pestana) {
       <button type="button" class="btn-icono" data-cerrar aria-label="Cerrar">${icono("cerrar")}</button>
     </div>
     <div class="cajon__cuerpo">
-      <div class="flujo flujo--${accion}">
+      ${agente ? equipoAgenteHTML(ev) : `<div class="flujo flujo--${accion}">
         ${extremoHTML(ev, "origen", cat)}
         <div class="flujo__medio">
           <span class="flujo__flecha">${icono("derecha")}</span>
@@ -966,10 +1030,10 @@ function eventoHTML(ev, cat, pestana) {
           ${ev.regla_nombre || ev.regla_id ? `<span class="flujo__regla">Regla ${esc(ev.regla_id || "")}${ev.regla_nombre ? ` · ${esc(ev.regla_nombre)}` : ""}</span>` : ""}
         </div>
         ${extremoHTML(ev, "destino", cat)}
-      </div>
+      </div>`}
       ${ev.url ? `<p class="cajon__url">${icono("web", "ic--sm")}<span class="dato-url">${esc(ev.url)}</span></p>` : ""}
       <div class="pestanas pestanas--cajon" role="tablist">
-        ${pest("comunes", "Campos comunes")}${pest("originales", "Log original", originales.length)}${pest("conexion", "Misma conexión", conexion.length)}
+        ${pest("comunes", "Campos comunes")}${pest("originales", agente ? "Fila original" : "Log original", originales.length)}${agente ? "" : pest("conexion", "Misma conexión", conexion.length)}
       </div>
       <div data-panel="comunes"${pestana === "comunes" ? "" : " hidden"}>${comunes}</div>
       <div data-panel="originales"${pestana === "originales" ? "" : " hidden"}>${originalesHTML}</div>

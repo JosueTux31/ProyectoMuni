@@ -195,12 +195,16 @@ function frase(e) {
   if (e.tabla === "log_importaciones") {
     const d = e.despues || e.antes || {};
     const archivo = `<strong>${esc(d.nombre_archivo || e.descripcion || "")}</strong>`;
-    const fuente = d.fuente === "SOPHOS" ? " de Sophos" : "";
-    if (e.accion === "INSERTAR") return `importó el archivo de logs${fuente} ${archivo} (<a href="#/logs/importaciones/${esc(e.llave)}">importación N.º ${esc(e.llave)}</a>)`;
-    if (e.accion === "ELIMINAR") {
-      const n = Number(d.total_eventos) || 0;
-      return `eliminó la importación de logs${fuente} ${archivo}${n ? ` con sus ${n.toLocaleString("es-CR")} eventos` : ""}`;
+    const n = Number(d.total_eventos) || 0;
+    const enlace = `(<a href="#/logs/importaciones/${esc(e.llave)}">importación N.º ${esc(e.llave)}</a>)`;
+    if (d.fuente === "MICROCLAUDIA") {
+      if (e.accion === "INSERTAR") return `importó el listado de equipos de Microclaudia ${archivo} ${enlace}`;
+      if (e.accion === "ELIMINAR") return `eliminó el listado de equipos de Microclaudia ${archivo}${n ? ` con sus ${n.toLocaleString("es-CR")} equipos` : ""}`;
+      return `modificó el listado de equipos de Microclaudia ${archivo}`;
     }
+    const fuente = d.fuente === "SOPHOS" ? " de Sophos" : "";
+    if (e.accion === "INSERTAR") return `importó el archivo de logs${fuente} ${archivo} ${enlace}`;
+    if (e.accion === "ELIMINAR") return `eliminó la importación de logs${fuente} ${archivo}${n ? ` con sus ${n.toLocaleString("es-CR")} eventos` : ""}`;
     return `modificó la importación de logs ${archivo}`;
   }
 
@@ -208,9 +212,10 @@ function frase(e) {
     const d = e.despues || e.antes || {};
     const origen = `<strong class="dato-mono">${esc(d.campo_origen || "")}</strong>`;
     const campo = `<strong>${esc(d.campo || "")}</strong>`;
-    if (e.accion === "INSERTAR") return `hizo que el campo ${origen} de los logs se lea como ${campo}`;
-    if (e.accion === "ELIMINAR") return `quitó el alias ${origen} → ${campo} de los logs`;
-    return `cambió el alias ${origen} de los logs (ahora se lee como ${campo})`;
+    const de = d.fuente === "MICROCLAUDIA" ? "del listado de Microclaudia" : d.fuente === "SOPHOS" ? "de los logs de Sophos" : "de los logs";
+    if (e.accion === "INSERTAR") return `hizo que el campo ${origen} ${de} se lea como ${campo}`;
+    if (e.accion === "ELIMINAR") return `quitó el alias ${origen} → ${campo} ${de}`;
+    return `cambió el alias ${origen} ${de} (ahora se lee como ${campo})`;
   }
 
   if (e.tabla === "equipos" || e.tabla === "red_ips_dispositivos" || e.tabla === "red_macs_dispositivos") {

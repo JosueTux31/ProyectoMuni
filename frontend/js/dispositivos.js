@@ -744,9 +744,19 @@ export async function vistaDispositivoNuevo(cont, _params, ctx) {
   const opcionesDoc = [...tiposDoc].sort((a, b) => a.id_doc - b.id_doc)
     .map((t) => `<option value="${t.id_doc}">${esc(t.descripcion)}</option>`).join("");
 
+  // Desde «Equipos sin agente»: #/red/dispositivos/nuevo?ip=&mac=&equipo= trae la IP y la MAC del listado de Microclaudia
+  const q = ctx.query || new URLSearchParams();
+  const previas = {
+    ips: q.get("ip") ? [{ direccion_ip: q.get("ip") }] : [],
+    macs: q.get("mac") ? [{ direccion_mac: q.get("mac") }] : [],
+  };
+  const deListado = q.get("equipo");
+
   cont.innerHTML = `
     <a class="volver" href="#/red/dispositivos">${icono("atras")}Volver a dispositivos</a>
     <div class="encabezado"><div><h1>Nuevo dispositivo</h1><p>Los campos con * son obligatorios.</p></div></div>
+    ${deListado ? `<div class="aviso aviso--info">${icono("enlace")}<span>La IP y la MAC vienen del equipo <strong>${esc(deListado)}</strong> del listado de
+      Microclaudia. Complete el tipo, la marca y la serie.</span></div>` : ""}
     <form class="panel" id="form-dispositivo" novalidate>
       <div class="panel__cuerpo">
         <div data-error hidden style="margin-bottom:18px"></div>
@@ -775,7 +785,7 @@ export async function vistaDispositivoNuevo(cont, _params, ctx) {
   const filasDoc = form.querySelector('[data-repetible="documentos"] .repetible__filas');
   prepararNumeros(form);
   enlazarEdificio(form, base.edificios, ctx.esAdmin);
-  pintarDirecciones(form, {}, false);
+  pintarDirecciones(form, previas, false);
   enlazarDirecciones(form);
   await enlazarEquipo(form, base);
 

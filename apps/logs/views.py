@@ -2,6 +2,7 @@
 los logs muestran la navegación y las conexiones del personal.
 
 - POST importaciones/sophos/      importa un archivo de Sophos (multipart: archivo, descripcion)
+- POST importaciones/microclaudia/ importa el listado de equipos de Microclaudia (.csv o .txt)
 - GET  importaciones/              lista; GET/PUT/DELETE importaciones/<id>/
 - GET  eventos/?q=&importaciones=  busca con el filtro estilo Wireshark (paginado)
 - GET  eventos/<id>/               un evento con todo, su conexión y el inventario
@@ -11,6 +12,8 @@ los logs muestran la navegación y las conexiones del personal.
 - GET  campos/                     campos comunes, sus alias y los del filtro
 - POST comparar/                   compara 2 a 4 conjuntos de eventos
 - GET  inventario/?q=              cruce con equipos (IP/MAC) y personas
+- GET  agentes/?importacion=       tablero del listado de Microclaudia (por defecto el último)
+- GET  cobertura/?agentes=&q=      equipos vistos en los logs sin el agente, y el inventario
 - CRUD mapeo/                      alias de los campos por programa
 """
 import csv
@@ -77,8 +80,10 @@ class ImportacionViewSet(SPViewSet):
         archivo = request.FILES.get("archivo")
         if archivo is None:
             raise ValidationError({"archivo": ["Seleccione el archivo de logs."]})
+        nombre_fuente = srv.FUENTES[fuente]["nombre"]
         if Path(archivo.name).suffix.lower() not in EXT_PERMITIDAS:
-            raise ValidationError({"archivo": ["Use el archivo de texto que exporta Sophos (.txt o .log)."]})
+            raise ValidationError({"archivo": [f"Use el archivo de texto que exporta {nombre_fuente} "
+                                               f"({'.csv o .txt' if fuente == 'MICROCLAUDIA' else '.txt o .log'})."]})
         max_mb = getattr(settings, "MUNI_MAX_MB_LOG", 100)
         if archivo.size > max_mb * 1024 * 1024:
             raise ValidationError({"archivo": [f"El archivo pesa más de {max_mb} MB. Divídalo en partes."]})
@@ -86,9 +91,13 @@ class ImportacionViewSet(SPViewSet):
         id_imp, leidos, avisos = srv.importar(fuente, Path(archivo.name).name[:255], archivo.read(), descripcion,
                                               getattr(request.user, "id", None))
         if id_imp is None:
-            raise ValidationError({"archivo": ["No se encontró ningún evento de Sophos en el archivo. "
-                                               "Debe traer el tipo (Firewall, Web filter...), la fecha y los "
-                                               "campos clave=\"valor\"."], "avisos": avisos[:20]})
+            if srv.FUENTES[fuente]["clase"] == "agentes":
+                mensaje = (f"No se encontró ningún equipo en el listado de {nombre_fuente}. "
+                           f"{avisos[0] if avisos else ''}").strip()
+            else:
+                mensaje = ("No se encontró ningún evento de Sophos en el archivo. Debe traer el tipo "
+                           "(Firewall, Web filter...), la fecha y los campos clave=\"valor\".")
+            raise ValidationError({"archivo": [mensaje], "avisos": avisos[:20]})
         fila = llamar_sp("sp_log_importaciones_obtener", [id_imp])[0][0]
         return Response({**fila, "avisos_detalle": avisos[:50]}, status=status.HTTP_201_CREATED)
 
@@ -221,6 +230,7 @@ class AnalisisViewSet(viewsets.GenericViewSet):
             "virtuales": flt.VIRTUALES,
             "comparables": CAMPOS_COMPARAR,
             "fuentes": {k: v["nombre"] for k, v in srv.FUENTES.items()},
+            "clases": {k: v["clase"] for k, v in srv.FUENTES.items()},
         })
 
     # POST comparar/  {"conjuntos": [{"nombre": "A", "importaciones": [1], "filtro": "..."}], "campos": [...]}
@@ -249,6 +259,34 @@ class AnalisisViewSet(viewsets.GenericViewSet):
     def inventario(self, request):
         where, _ = _filtro(request)
         return Response(srv.cruce_inventario(where))
+
+    def _importacion_agentes(self, request, clave):
+        """La importación de agentes pedida (?clave=) o la última de Microclaudia."""
+        valor = request.query_params.get(clave)
+        if valor:
+            filas, _ = llamar_sp("sp_log_importaciones_obtener", [_entero(request, clave, 0)])
+            if not filas:
+                raise NotFound("La importación no existe.")
+            imp = filas[0]
+            if imp["fuente"] not in srv.FUENTES_AGENTES:
+                raise ValidationError({"detail": "Esa importación no es un listado de equipos con agente."})
+            return imp
+        return srv.ultima_importacion(srv.FUENTES_AGENTES[0])
+
+    # GET agentes/?importacion=<id>  (sin importacion: el último listado)
+    def agentes(self, request):
+        imp = self._importacion_agentes(request, "importacion")
+        if imp is None:
+            return Response({"importacion": None})
+        return Response({"importacion": imp, **srv.tablero_agentes(imp["id_importacion"])})
+
+    # GET cobertura/?agentes=<id>  (sin agentes: el último listado). Compara los
+    # equipos registrados en el sistema (dispositivos activos) con el listado.
+    def cobertura(self, request):
+        imp = self._importacion_agentes(request, "agentes")
+        if imp is None:
+            return Response({"importacion": None})
+        return Response({"importacion": imp, **srv.cobertura(imp["id_importacion"])})
 
 
 # =====================================================================

@@ -12,6 +12,8 @@ urlpatterns = [
     # Importaciones (cada archivo importado)
     path("importaciones/sophos/", IMPORTACION.as_view({"post": "importar"}), {"fuente": "SOPHOS"},
          name="importar-sophos"),
+    path("importaciones/microclaudia/", IMPORTACION.as_view({"post": "importar"}), {"fuente": "MICROCLAUDIA"},
+         name="importar-microclaudia"),
     path("importaciones/", IMPORTACION.as_view({"get": "list"}), name="importaciones-lista"),
     path("importaciones/<int:id_importacion>/",
          IMPORTACION.as_view({"get": "retrieve", "put": "update", "patch": "partial_update", "delete": "destroy"}),
@@ -29,6 +31,10 @@ urlpatterns = [
     path("campos/", ANALISIS.as_view({"get": "campos"}), name="campos"),
     path("comparar/", ANALISIS.as_view({"post": "comparar"}), name="comparar"),
     path("inventario/", ANALISIS.as_view({"get": "inventario"}), name="inventario"),
+
+    # Agente de Microclaudia: tablero del listado y cobertura
+    path("agentes/", ANALISIS.as_view({"get": "agentes"}), name="agentes"),
+    path("cobertura/", ANALISIS.as_view({"get": "cobertura"}), name="cobertura"),
 
     # Alias de los campos de cada programa
     path("mapeo/", v.MapeoViewSet.as_view({"get": "list", "post": "create"}), name="mapeo-lista"),

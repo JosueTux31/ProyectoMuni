@@ -17,7 +17,7 @@ import json
 import re
 from urllib.parse import urlsplit
 
-from .esquema import ALIAS_SOPHOS, CAMPO, NOMBRES
+from .esquema import ALIAS_POR_FUENTE, CAMPO, NOMBRES
 
 _MAC = re.compile(r"[0-9A-Fa-f:.\-]+")
 
@@ -26,8 +26,11 @@ DENEGADO = {"denied", "deny", "drop", "dropped", "reject", "rejected", "block", 
             "bloqueado", "reject and notify", "quarantined"}
 
 
-def alias_por_defecto():
-    return [{"campo_origen": o, "campo": c, "prioridad": p} for o, c, p in ALIAS_SOPHOS]
+def alias_por_defecto(fuente="SOPHOS"):
+    """Alias de fábrica (esquema.py), por si la tabla log_mapeo_campos está vacía."""
+    fuentes = [fuente] if fuente else list(ALIAS_POR_FUENTE)
+    return [{"fuente": f, "campo_origen": o, "campo": c, "prioridad": p}
+            for f in fuentes for o, c, p in ALIAS_POR_FUENTE.get(f, ())]
 
 
 def preparar_alias(filas):
@@ -74,15 +77,19 @@ def accion(*valores):
 
 
 def normalizar(evento, alias, fuente="SOPHOS"):
-    """evento: lo que devuelve sophos.leer(). alias: preparar_alias(...).
-    Devuelve el diccionario que recibe sp_log_eventos_insertar."""
+    """evento: lo que devuelve el lector (sophos.leer, microclaudia.leer).
+    alias: preparar_alias(...). Devuelve el diccionario que recibe
+    sp_log_eventos_insertar (con "direcciones" si el lector las trae)."""
     crudo = evento["campos"]
+    # Valores que calcula el lector (IP principal...): se asignan con los
+    # alias igual que los originales, pero no se guardan como originales
+    buscar = {**crudo, **{k: v for k, v in (evento.get("derivados") or {}).items() if v not in (None, "")}}
     n = {}
     for campo in NOMBRES:
         if campo in ("fecha", "tipo", "accion"):
             continue
         for origen in alias.get(campo, ()):
-            v = crudo.get(origen)
+            v = buscar.get(origen)
             if v not in (None, ""):
                 n[campo] = v
                 break
@@ -111,4 +118,12 @@ def normalizar(evento, alias, fuente="SOPHOS"):
 
     huella = hashlib.md5(json.dumps([fuente, n.get("fecha"), n.get("tipo"), sorted(crudo.items())],
                                     ensure_ascii=False).encode("utf-8")).hexdigest()
-    return {**n, "huella": huella, "datos": crudo}
+    salida = {**n, "huella": huella, "datos": crudo}
+    direcciones = []
+    for tipo, valor in evento.get("direcciones") or ():
+        v = ip(valor) if tipo == "IP" else mac(valor)
+        if v and {"t": tipo, "v": v} not in direcciones:
+            direcciones.append({"t": tipo, "v": v})
+    if direcciones:
+        salida["direcciones"] = direcciones
+    return salida

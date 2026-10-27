@@ -1,10 +1,11 @@
 """Lógica del módulo de logs que usan las vistas: importar un archivo,
-armar el filtro, el tablero, la comparación entre logs y el cruce con el
-inventario. Todo pasa por los procedimientos sp_log_* (sql/logs)."""
+armar el filtro, el tablero, la comparación entre logs, el cruce con el
+inventario, el tablero del agente de Microclaudia y la cobertura del
+agente. Todo pasa por los procedimientos sp_log_* (sql/logs)."""
 import ipaddress
 import json
 import re
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from datetime import datetime, timedelta
 
 from django.db import connection, transaction
@@ -14,10 +15,16 @@ from apps.core.db import llamar_sp
 
 from . import filtro as flt
 from . import normalizar as nz
-from . import sophos
+from . import microclaudia, sophos
 from .esquema import CAMPO, CAMPOS, CAMPOS_COMPARAR, NOMBRES
 
-FUENTES = {"SOPHOS": {"nombre": "Sophos Firewall", "lector": sophos.leer}}
+# clase "logs": eventos de tráfico; clase "agentes": listado de equipos que
+# tienen un agente instalado (cada fila es un equipo)
+FUENTES = {
+    "SOPHOS": {"nombre": "Sophos Firewall", "lector": sophos.leer, "clase": "logs"},
+    "MICROCLAUDIA": {"nombre": "Microclaudia", "lector": microclaudia.leer, "clase": "agentes"},
+}
+FUENTES_AGENTES = [k for k, v in FUENTES.items() if v["clase"] == "agentes"]
 
 # Tops que muestra el tablero de una importación o de un filtro
 TOPS_TABLERO = ["ip_origen", "ip_destino", "dominio", "regla_nombre", "categoria", "aplicacion", "puerto_destino",
@@ -27,13 +34,13 @@ TOPS_TABLERO = ["ip_origen", "ip_destino", "dominio", "regla_nombre", "categoria
 # --------------------------------------------------------------- alias
 def alias(fuente="SOPHOS"):
     filas, _ = llamar_sp("sp_log_mapeo_campos_listar", [fuente])
-    return nz.preparar_alias(filas or nz.alias_por_defecto())
+    return nz.preparar_alias(filas or nz.alias_por_defecto(fuente))
 
 
 def alias_para_filtro(fuente="SOPHOS"):
     """{nombre en el log: campo común} para que el filtro entienda src_ip, fw_rule_id..."""
     filas, _ = llamar_sp("sp_log_mapeo_campos_listar", [None])
-    filas = filas or nz.alias_por_defecto()
+    filas = filas or nz.alias_por_defecto(None)
     salida = {}
     for f in sorted(filas, key=lambda x: x["prioridad"]):
         salida.setdefault(f["campo_origen"].lower(), f["campo"])
@@ -245,3 +252,258 @@ def cargar_datos(f):
 
 def hace(dias):
     return datetime.now() - timedelta(days=dias)
+
+
+# --------------------------------------------------------------- agentes
+PALABRAS_FILTRO = {"and", "or", "not", "in", "contains", "matches", "eq", "ne", "gt", "lt", "ge", "le"}
+
+
+def literal(valor):
+    """Valor escrito en el filtro (igual que literal() de logs_ui.js)."""
+    texto = str(valor)
+    if re.fullmatch(r"[^\s(){},!=<>~\"']+", texto) and texto.lower() not in PALABRAS_FILTRO:
+        return texto
+    return '"' + texto.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def ultima_importacion(fuente):
+    filas, _ = llamar_sp("sp_log_importaciones_listar", [fuente])
+    return filas[0] if filas else None          # ordenadas de la más nueva a la más vieja
+
+
+def numero_version(v):
+    return tuple(int(x) for x in re.findall(r"\d+", v or ""))
+
+
+# Sistemas que Microsoft ya no actualiza (Windows 10 terminó el 14 oct 2025)
+SIN_SOPORTE = re.compile(r"windows\s+(xp|vista|7|8(\.1)?|10)\b|server\s+20(03|08|12)\b", re.I)
+
+RED_VIRTUALBOX = "192.168.56."
+
+# Tramos de la última conexión, contados hacia atrás desde la conexión más
+# reciente del listado (el momento en que se sacó)
+TRAMOS = [("24h", "Últimas 24 horas", 24), ("7d", "1 a 7 días", 24 * 7), ("30d", "8 a 30 días", 24 * 30),
+          ("mas", "Más de 30 días", None)]
+ALERTAS = {
+    "sin_conexion": "Más de 7 días sin conectarse",
+    "version": "Versión anterior del agente",
+    "pendientes": "Vacunas pendientes",
+    "error": "Vacunas con error",
+    "soporte": "Sistema sin soporte",
+    "ip_compartida": "IP repetida en otro equipo",
+}
+
+
+def tramo(horas):
+    if horas is None:
+        return "sin"
+    for clave, _, limite in TRAMOS:
+        if limite is None or horas <= limite:
+            return clave
+    return "mas"
+
+
+def prefijo(nombre):
+    m = re.match(r"[A-Za-z]+", nombre or "")
+    return m.group().upper() if m else (nombre or "?")
+
+
+def red24(ip):
+    try:
+        return str(ipaddress.ip_network(f"{ip}/24", strict=False)) if ip else None
+    except ValueError:
+        return None
+
+
+def _conteo(valores, a_filtro):
+    """[(valor)] -> [{"valor", "cantidad", "q"}] de mayor a menor."""
+    c = Counter(v for v in valores if v)
+    return [{"valor": v, "cantidad": n, "q": a_filtro(v)} for v, n in sorted(c.items(), key=lambda x: (-x[1], str(x[0])))]
+
+
+def tablero_agentes(id_importacion):
+    """Números y listas para el tablero de un listado de Microclaudia."""
+    filas, _ = llamar_sp("sp_log_agentes_listar", [id_importacion])
+    referencia = max((f["ultima_conexion"] for f in filas if f["ultima_conexion"]), default=None)
+    versiones = Counter(f["version_agente"] for f in filas if f["version_agente"])
+    actual = max(versiones, key=numero_version) if versiones else None
+
+    # IP que reportan varios equipos. La red «solo anfitrión» de VirtualBox
+    # (192.168.56.x) se repite en todos los equipos que lo tienen: no cuenta.
+    por_ip = {}
+    for f in filas:
+        for ip in filter(None, (f["ips"] or "").split(",")):
+            if not ip.startswith(RED_VIRTUALBOX):
+                por_ip.setdefault(ip, []).append(f["nombre_equipo"])
+    compartidas = {ip: nombres for ip, nombres in por_ip.items() if len(nombres) > 1}
+
+    equipos = []
+    for f in filas:
+        horas = ((referencia - f["ultima_conexion"]).total_seconds() / 3600
+                 if referencia and f["ultima_conexion"] else None)
+        ips = [x for x in (f["ips"] or "").split(",") if x]
+        t = tramo(horas)
+        alertas = []
+        if t in ("30d", "mas", "sin"):
+            alertas.append("sin_conexion")
+        if actual and f["version_agente"] and f["version_agente"] != actual:
+            alertas.append("version")
+        if (f["vacunas_pendientes"] or 0) > 0:
+            alertas.append("pendientes")
+        if (f["vacunas_error"] or 0) > 0:
+            alertas.append("error")
+        if SIN_SOPORTE.search(f["sistema_operativo"] or ""):
+            alertas.append("soporte")
+        if any(ip in compartidas for ip in ips):
+            alertas.append("ip_compartida")
+        equipos.append({
+            "id_evento": f["id_evento"], "nombre": f["nombre_equipo"], "sistema": f["sistema_operativo"],
+            "version": f["version_agente"], "ultima_conexion": f["ultima_conexion"], "fecha_alta": f["fecha_alta"],
+            "horas": round(horas, 1) if horas is not None else None, "tramo": t,
+            "aplicadas": f["vacunas_aplicadas"], "pendientes": f["vacunas_pendientes"], "errores": f["vacunas_error"],
+            "ip": f["ip_principal"], "ips": ips, "macs": [x for x in (f["macs"] or "").split(",") if x],
+            "prefijo": prefijo(f["nombre_equipo"]), "red": red24(f["ip_principal"]), "alertas": alertas,
+        })
+
+    def limite(h):
+        return (referencia - timedelta(hours=h)).strftime("%Y-%m-%d %H:%M:%S")
+
+    tramos = []
+    for i, (clave, texto, horas) in enumerate(TRAMOS):
+        if referencia is None:
+            q = ""
+        else:
+            desde = f'fecha >= "{limite(horas)}"' if horas else ""
+            hasta = f'fecha < "{limite(TRAMOS[i - 1][2])}"' if i else ""
+            q = " and ".join(x for x in (desde, hasta) if x)
+        tramos.append({"clave": clave, "valor": texto, "cantidad": sum(1 for e in equipos if e["tramo"] == clave), "q": q})
+    sin_fecha = sum(1 for e in equipos if e["tramo"] == "sin")
+    if sin_fecha:
+        tramos.append({"clave": "sin", "valor": "Sin fecha", "cantidad": sin_fecha, "q": "not fecha"})
+
+    cuenta = Counter(a for e in equipos for a in e["alertas"])
+    return {
+        "referencia": referencia,
+        "total": len(equipos),
+        "version_actual": actual,
+        "tramos": tramos,
+        "versiones": _conteo([e["version"] for e in equipos], lambda v: f"version_agente == {literal(v)}"),
+        "sistemas": _conteo([e["sistema"] for e in equipos], lambda v: f"sistema_operativo == {literal(v)}"),
+        "prefijos": _conteo([e["prefijo"] for e in equipos], lambda v: f'nombre_equipo matches "^{v}([^A-Za-z]|$)"'),
+        "redes": _conteo([e["red"] for e in equipos], lambda v: f"ip_origen == {v}"),
+        "alertas": [{"clave": k, "texto": t, "cantidad": cuenta.get(k, 0)} for k, t in ALERTAS.items()],
+        "resumen": {
+            "conectados_24h": sum(1 for e in equipos if e["tramo"] == "24h"),
+            "sin_conexion_7d": cuenta.get("sin_conexion", 0),
+            "desactualizados": cuenta.get("version", 0),
+            "con_pendientes": cuenta.get("pendientes", 0),
+            "con_error": cuenta.get("error", 0),
+            "sin_soporte": cuenta.get("soporte", 0),
+            "servidores": sum(1 for e in equipos if "server" in (e["sistema"] or "").lower()),
+            "vacunas_pendientes": sum(e["pendientes"] or 0 for e in equipos),
+            "ips_compartidas": len(compartidas),
+        },
+        "compartidas": [{"ip": ip, "equipos": n} for ip, n in sorted(compartidas.items(), key=lambda x: -len(x[1]))],
+        "equipos": equipos,
+    }
+
+
+def _ip(texto):
+    """IP escrita como la guarda log_direcciones (10.1.10.5, sin ceros de más)."""
+    texto = (texto or "").strip().lower()
+    try:
+        return str(ipaddress.ip_address(texto))
+    except ValueError:
+        return texto
+
+
+def cobertura(id_agentes):
+    """Equipos registrados en el sistema (red_dispositivos activos) comparados
+    por MAC e IP con el listado de equipos que tienen el agente.
+
+    Estado de cada dispositivo:
+      con             una de sus MAC está en el listado, o su IP cuando no
+                      tiene MAC registrada
+      revisar         su IP está en el listado, pero con otras MAC: puede
+                      ser otro equipo que recibió esa IP del DHCP
+      sin             ninguna de sus IP o MAC está en el listado
+      sin_direcciones no tiene IP ni MAC registradas: no se puede comparar
+    Además devuelve los equipos del listado que no son ningún dispositivo
+    registrado (no_registrados); uno que solo coincide por una IP «por
+    revisar» también se cuenta ahí."""
+    agentes, _ = llamar_sp("sp_log_agentes_listar", [id_agentes])
+    inventario, _ = llamar_sp("sp_log_cobertura_inventario", [id_agentes])
+    referencia = max((a["ultima_conexion"] for a in agentes if a["ultima_conexion"]), default=None)
+
+    por_ip, por_mac, fichas = {}, {}, []
+    for a in agentes:
+        horas = ((referencia - a["ultima_conexion"]).total_seconds() / 3600
+                 if referencia and a["ultima_conexion"] else None)
+        ficha = {
+            "id_evento": a["id_evento"], "nombre": a["nombre_equipo"], "sistema": a["sistema_operativo"],
+            "version": a["version_agente"], "ultima_conexion": a["ultima_conexion"],
+            "horas": round(horas, 1) if horas is not None else None, "tramo": tramo(horas),
+            "ip": a["ip_principal"], "mac": a["mac_principal"],
+            "ips": [x for x in (a["ips"] or "").split(",") if x],
+            "macs": [x for x in (a["macs"] or "").split(",") if x],
+        }
+        fichas.append(ficha)
+        for ip in ficha["ips"]:
+            if not ip.startswith(RED_VIRTUALBOX):      # la comparten muchos equipos
+                por_ip.setdefault(ip, []).append(ficha)
+        for mac in ficha["macs"]:
+            por_mac.setdefault(mac, []).append(ficha)
+
+    def unicos(listas):
+        """Los equipos del listado, sin repetir, del que se conectó último al más viejo."""
+        vistos, salida = set(), []
+        for f in sorted((f for lista in listas for f in lista),
+                        key=lambda f: f["ultima_conexion"] or datetime.min, reverse=True):
+            if f["id_evento"] not in vistos:
+                vistos.add(f["id_evento"])
+                salida.append(f)
+        return salida
+
+    dispositivos, coinciden = [], set()
+    for d in inventario:
+        ips = [_ip(x) for x in (d["ips"] or "").split(",") if x.strip()]
+        macs = [x.strip().upper() for x in (d["macs"] or "").split(",") if x.strip()]
+        por_m = unicos(por_mac.get(m, []) for m in macs)
+        por_i = unicos(por_ip.get(ip, []) for ip in ips)
+        candidatos = unicos([por_m, por_i])
+        coinciden.update(f["id_evento"] for f in por_m)        # la MAC confirma que es ese equipo
+        agente, por = None, None
+        if not ips and not macs:
+            estado = "sin_direcciones"
+        elif por_m:
+            agente = por_m[0]
+            estado = "con"
+            por = "IP y MAC" if any(f["id_evento"] == agente["id_evento"] for f in por_i) else "MAC"
+        elif por_i:
+            agente = por_i[0]
+            estado = "revisar" if macs else "con"
+            por = "IP"
+            if not macs:
+                coinciden.add(agente["id_evento"])
+        else:
+            estado = "sin"
+        dispositivos.append({
+            "id_disp": d["id_disp"], "tipo": d["tipo"], "equipo": d["equipo"], "edificio": d["edificio"],
+            "ips": ips, "macs": macs, "estado": estado, "agente": agente, "por": por,
+            "otros": [f["nombre"] for f in candidatos if agente is None or f["id_evento"] != agente["id_evento"]],
+        })
+
+    no_registrados = [f for f in fichas if f["id_evento"] not in coinciden]
+    cuenta = Counter(x["estado"] for x in dispositivos)
+    tipos = Counter(x["tipo"] for x in dispositivos)
+    return {
+        "referencia": referencia,
+        "tipos": [{"tipo": t, "total": n} for t, n in sorted(tipos.items())],
+        "totales": {
+            "dispositivos": len(dispositivos), "con": cuenta.get("con", 0), "revisar": cuenta.get("revisar", 0),
+            "sin": cuenta.get("sin", 0), "sin_direcciones": cuenta.get("sin_direcciones", 0),
+            "agentes": len(fichas), "no_registrados": len(no_registrados),
+        },
+        "dispositivos": dispositivos,
+        "no_registrados": no_registrados,
+    }
