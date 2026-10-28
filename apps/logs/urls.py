@@ -14,6 +14,8 @@ urlpatterns = [
          name="importar-sophos"),
     path("importaciones/microclaudia/", IMPORTACION.as_view({"post": "importar"}), {"fuente": "MICROCLAUDIA"},
          name="importar-microclaudia"),
+    path("importaciones/dhcp/", IMPORTACION.as_view({"post": "importar"}), {"fuente": "DHCP"},
+         name="importar-dhcp"),
     path("importaciones/", IMPORTACION.as_view({"get": "list"}), name="importaciones-lista"),
     path("importaciones/<int:id_importacion>/",
          IMPORTACION.as_view({"get": "retrieve", "put": "update", "patch": "partial_update", "delete": "destroy"}),
@@ -35,6 +37,9 @@ urlpatterns = [
     # Agente de Microclaudia: tablero del listado y cobertura
     path("agentes/", ANALISIS.as_view({"get": "agentes"}), name="agentes"),
     path("cobertura/", ANALISIS.as_view({"get": "cobertura"}), name="cobertura"),
+
+    # DHCP: concesiones comparadas por MAC con el inventario (intrusos en la red)
+    path("intrusos/", ANALISIS.as_view({"get": "intrusos"}), name="intrusos"),
 
     # Alias de los campos de cada programa
     path("mapeo/", v.MapeoViewSet.as_view({"get": "list", "post": "create"}), name="mapeo-lista"),

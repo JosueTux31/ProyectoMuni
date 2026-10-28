@@ -15,9 +15,12 @@ import {
   vistaDispositivo, vistaDispositivoNuevo, vistaDispositivos, vistaEdificios, vistaInicioRed, vistaMarcas,
 } from "./dispositivos.js";
 import {
-  vistaCamposLogs, vistaCobertura, vistaComparar, vistaEventos, vistaImportacion, vistaImportaciones, vistaImportarMicroclaudia,
-  vistaImportarSophos, vistaInicioLogs, vistaInventarioLogs, vistaTablero,
+  vistaCamposLogs, vistaCobertura, vistaComparar, vistaEventos, vistaImportacion, vistaImportaciones, vistaImportarDhcp,
+  vistaImportarMicroclaudia, vistaImportarSophos, vistaInicioLogs, vistaIntrusos, vistaInventarioLogs, vistaTablero,
 } from "./logs.js";
+import {
+  vistaAviso, vistaAvisos, vistaCompararCorreos, vistaConfigCorreo, vistaEnviarAviso, vistaInicioCorreo, vistaListaCorreos,
+} from "./correo.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -142,6 +145,7 @@ const MODULOS = {
   usuarios: { nombre: "Usuarios y proveedores", inicio: "#/inicio", icono: "usuarios" },
   red: { nombre: "Dispositivos de red", inicio: "#/red", icono: "red" },
   logs: { nombre: "Análisis de logs", inicio: "#/logs", icono: "logs", soloAdmin: true },
+  correo: { nombre: "Correo institucional", inicio: "#/correo", icono: "correo", soloAdmin: true },
 };
 let moduloActual = null;
 
@@ -149,6 +153,7 @@ function moduloDeRuta(r) {
   if (r === "modulos") return null;
   if (r === "red" || r.startsWith("red/")) return "red";
   if (r === "logs" || r.startsWith("logs/")) return "logs";
+  if (r === "correo" || r.startsWith("correo/")) return "correo";
   // Mi perfil se queda en el módulo donde estaba la persona
   if (r === "perfil" || r.startsWith("perfil/")) return moduloActual || "usuarios";
   return "usuarios";
@@ -192,7 +197,9 @@ const RUTAS = [
   { patron: /^logs$/, vista: vistaInicioLogs, soloAdmin: true },
   { patron: /^logs\/importar\/sophos$/, vista: vistaImportarSophos, soloAdmin: true },
   { patron: /^logs\/importar\/microclaudia$/, vista: vistaImportarMicroclaudia, soloAdmin: true },
+  { patron: /^logs\/importar\/dhcp$/, vista: vistaImportarDhcp, soloAdmin: true },
   { patron: /^logs\/cobertura$/, vista: vistaCobertura, soloAdmin: true },
+  { patron: /^logs\/intrusos$/, vista: vistaIntrusos, soloAdmin: true },
   { patron: /^logs\/importaciones$/, vista: vistaImportaciones, soloAdmin: true },
   { patron: /^logs\/importaciones\/(\d+)$/, vista: vistaImportacion, soloAdmin: true },
   { patron: /^logs\/tablero$/, vista: vistaTablero, soloAdmin: true },
@@ -201,6 +208,15 @@ const RUTAS = [
   { patron: /^logs\/inventario$/, vista: vistaInventarioLogs, soloAdmin: true },
   { patron: /^logs\/campos$/, vista: vistaCamposLogs, soloAdmin: true },
   { patron: /^logs\/auditoria$/, vista: vistaAuditoria, soloAdmin: true },
+  // Módulo de correo institucional (solo administradores)
+  { patron: /^correo$/, vista: vistaInicioCorreo, soloAdmin: true },
+  { patron: /^correo\/enviar$/, vista: vistaEnviarAviso, soloAdmin: true },
+  { patron: /^correo\/avisos$/, vista: vistaAvisos, soloAdmin: true },
+  { patron: /^correo\/avisos\/(\d+)$/, vista: vistaAviso, soloAdmin: true },
+  { patron: /^correo\/comparar$/, vista: vistaCompararCorreos, soloAdmin: true },
+  { patron: /^correo\/comparar\/(\d+)$/, vista: vistaListaCorreos, soloAdmin: true },
+  { patron: /^correo\/configuracion$/, vista: vistaConfigCorreo, soloAdmin: true },
+  { patron: /^correo\/auditoria$/, vista: vistaAuditoria, soloAdmin: true },
 ];
 
 let navegacion = 0;
@@ -324,21 +340,25 @@ async function vistaModulos(cont, _params, ctx) {
         ["usuarios activos", "proveedores activos"])}
       ${tarjeta("red", "Modems, firewalls, routers y switches: dónde están, quién les da soporte y sus manuales, firmware, respaldos y configuraciones.",
         ["dispositivos activos", "edificios"])}
-      ${ctx.esAdmin ? tarjeta("logs", "Logs de Sophos Firewall y equipos con el agente de Microclaudia en gráficos: filtro estilo Wireshark, comparación, equipos sin agente y cruce con el inventario.",
+      ${ctx.esAdmin ? tarjeta("logs", "Logs de Sophos Firewall, equipos con el agente de Microclaudia y concesiones del DHCP en gráficos: filtro estilo Wireshark, comparación, equipos sin agente, intrusos en la red y cruce con el inventario.",
         ["importaciones", "registros"]) : ""}
+      ${ctx.esAdmin ? tarjeta("correo", "Avisos al personal desde la cuenta de correo institucional, y comparación de los correos registrados con la lista de cuentas de la municipalidad.",
+        ["avisos enviados", "personas sin correo"]) : ""}
     </div>
-    ${ctx.esAdmin ? "" : `<div class="aviso aviso--ocre" style="margin-top:20px">${icono("candado")}<span>Su rol permite consultar la información de los dos módulos. Los cambios los hace un administrador.</span></div>`}`;
+    ${ctx.esAdmin ? "" : `<div class="aviso aviso--ocre" style="margin-top:20px">${icono("candado")}<span>Su rol permite consultar la información de estos módulos. Los cambios los hace un administrador.</span></div>`}`;
 
   // Cantidades de cada módulo (si una falla, se deja el guion)
   const pintar = (clave, valores) => {
     cont.querySelectorAll(`[data-datos="${clave}"] b`).forEach((b, i) => { b.textContent = valores[i] ?? "—"; });
   };
-  const [usuarios, proveedores, dispositivos, edificios, importaciones] = await Promise.allSettled([
+  const [usuarios, proveedores, dispositivos, edificios, importaciones, envios, personal] = await Promise.allSettled([
     api("usuarios/", { query: { activo: true } }),
     api("proveedores/", { query: { activo: true } }),
     api("dispositivos/", { query: { activo: true } }),
     api("dispositivos/edificios/"),
     ctx.esAdmin ? api("logs/importaciones/") : Promise.resolve([]),
+    ctx.esAdmin ? api("correo/envios/") : Promise.resolve([]),
+    ctx.esAdmin ? api("correo/personal/") : Promise.resolve([]),
   ]);
   if (!ctx.vigente()) return;
   const n = (r) => (r.status === "fulfilled" ? r.value.length : null);
@@ -348,6 +368,7 @@ async function vistaModulos(cont, _params, ctx) {
     const eventos = importaciones.status === "fulfilled"
       ? importaciones.value.reduce((s, x) => s + (Number(x.total_eventos) || 0), 0).toLocaleString("es-CR") : null;
     pintar("logs", [n(importaciones), eventos]);
+    pintar("correo", [n(envios), personal.status === "fulfilled" ? personal.value.filter((p) => !p.correo).length : null]);
   }
 }
 

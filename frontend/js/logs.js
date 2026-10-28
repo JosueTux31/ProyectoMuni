@@ -2,13 +2,15 @@
 //   #/logs                       inicio del módulo
 //   #/logs/importar/sophos       importar archivos de Sophos Firewall
 //   #/logs/importar/microclaudia importar el listado de equipos con el agente de Microclaudia
+//   #/logs/importar/dhcp         importar las concesiones del servidor DHCP
 //   #/logs/importaciones         archivos importados
 //   #/logs/importaciones/<id>    tablero visual de una importación
 //   #/logs/tablero?q=&importaciones=     tablero de cualquier filtro
 //   #/logs/eventos?q=&importaciones=     explorador con filtro estilo Wireshark
 //   #/logs/comparar?importaciones=1,2    comparación de 2 a 4 conjuntos
 //   #/logs/inventario?q=&importaciones=  cruce con equipos y personas
-//   #/logs/cobertura?agentes=&q=&importaciones=  equipos de la red sin el agente de Microclaudia
+//   #/logs/cobertura?agentes=    equipos registrados sin el agente de Microclaudia
+//   #/logs/intrusos?dhcp=&agentes=  concesiones del DHCP comparadas por MAC con el inventario
 //   #/logs/campos                campos comunes y alias de cada programa
 import { api, apiSubir } from "./api.js";
 import { abrirFormulario, cargandoHTML, confirmar, debounce, errorHTML, esc, fecha, icono, toast, vacioHTML } from "./ui.js";
@@ -19,12 +21,24 @@ import {
   rangoFechas, reemplazarRuta, rutaLogs, tablaTiempoHTML, valorCorto,
 } from "./logs_ui.js";
 
-const FUENTES = { SOPHOS: "Sophos Firewall", MICROCLAUDIA: "Microclaudia" };
-// Programas cuyo archivo es un listado de equipos con un agente (cada fila es un equipo)
-const LISTADOS = new Set(["MICROCLAUDIA"]);
-const esListado = (fuente) => LISTADOS.has(fuente);
-const unidades = (fuente, n) => (esListado(fuente) ? `${num(n)} ${Number(n) === 1 ? "equipo" : "equipos"}` : eventos(n));
-const iconoFuente = (fuente) => (esListado(fuente) ? "agente" : "logs");
+const FUENTES = { SOPHOS: "Sophos Firewall", MICROCLAUDIA: "Microclaudia", DHCP: "Servidor DHCP" };
+// logs: eventos de tráfico; agentes: listado de equipos con un agente (cada
+// fila es un equipo); dhcp: concesiones del DHCP (cada fila es una IP entregada)
+const CLASES = { SOPHOS: "logs", MICROCLAUDIA: "agentes", DHCP: "dhcp" };
+const claseFuente = (fuente) => CLASES[fuente] || "logs";
+const esListado = (fuente) => claseFuente(fuente) !== "logs";
+const esDhcp = (fuente) => claseFuente(fuente) === "dhcp";
+const UNIDADES = { logs: ["evento", "eventos"], agentes: ["equipo", "equipos"], dhcp: ["concesión", "concesiones"] };
+const unidad = (fuente, n) => UNIDADES[claseFuente(fuente)][Number(n) === 1 ? 0 : 1];
+const unidades = (fuente, n) => `${num(n)} ${unidad(fuente, n)}`;
+const iconoFuente = (fuente) => ({ agentes: "agente", dhcp: "dhcp" }[claseFuente(fuente)] || "logs");
+/** Sufijo de las clases CSS de cada tipo de fuente (tarjeta-imp--agente, alias--dhcp…) */
+const estiloFuente = (fuente) => ({ agentes: "agente", dhcp: "dhcp" }[claseFuente(fuente)] || "");
+/** Lo que se muestra como período de una importación */
+const periodoImp = (x) => ({
+  agentes: `Listado del ${fechaLog(x.fecha_hasta)}`,
+  dhcp: `Concesiones importadas el ${fecha(x.creado_en)}`,
+}[claseFuente(x.fuente)] || rangoFechas(x.fecha_desde, x.fecha_hasta));
 const MAX_MB = 100;
 
 // Resultado de la última importación (para mostrar los avisos en su tablero)
@@ -39,18 +53,19 @@ export async function vistaInicioLogs(cont, _params, ctx) {
     <div class="encabezado">
       <div>
         <h1>Análisis de logs</h1>
-        <p>Importe los registros del firewall y el listado de equipos con el agente de Microclaudia, y véalos de inmediato en gráficos.
-          Fíltrelos como en Wireshark, compárelos entre sí y crúcelos con el inventario de equipos y con el personal.</p>
+        <p>Importe los registros del firewall, el listado de equipos con el agente de Microclaudia y las concesiones del DHCP, y véalos de
+          inmediato en gráficos. Fíltrelos como en Wireshark, compárelos entre sí y crúcelos con el inventario de equipos y con el personal.</p>
       </div>
       <div class="encabezado__acciones">
         <a class="btn btn--primario" href="#/logs/importar/sophos">${icono("subir")}Logs de Sophos</a>
         <a class="btn btn--secundario" href="#/logs/importar/microclaudia">${icono("agente")}Equipos de Microclaudia</a>
+        <a class="btn btn--secundario" href="#/logs/importar/dhcp">${icono("dhcp")}Concesiones del DHCP</a>
       </div>
     </div>
     <div data-resumen>${cargandoHTML()}</div>
 
     <h2 class="titulo-seccion">Importar desde</h2>
-    <div class="fuentes fuentes--tres">
+    <div class="fuentes fuentes--cuatro">
       <a class="fuente" href="#/logs/importar/sophos">
         <span class="fuente__icono">${icono("firewall")}</span>
         <span class="fuente__texto"><strong>Sophos Firewall</strong>
@@ -61,6 +76,12 @@ export async function vistaInicioLogs(cont, _params, ctx) {
         <span class="fuente__icono">${icono("agente")}</span>
         <span class="fuente__texto"><strong>Microclaudia</strong>
           <span>El listado de equipos con el agente (.csv o .txt). Muestra el estado del agente y qué equipos no lo tienen.</span></span>
+        <span class="fuente__ir">Importar${icono("derecha")}</span>
+      </a>
+      <a class="fuente fuente--dhcp" href="#/logs/importar/dhcp">
+        <span class="fuente__icono">${icono("dhcp")}</span>
+        <span class="fuente__texto"><strong>Servidor DHCP</strong>
+          <span>Las concesiones y reservas (.txt o .csv). Compara cada MAC con los equipos registrados para encontrar intrusos en la red.</span></span>
         <span class="fuente__ir">Importar${icono("derecha")}</span>
       </a>
       <div class="fuente fuente--pronto">
@@ -81,6 +102,7 @@ export async function vistaInicioLogs(cont, _params, ctx) {
         <ul class="atajos">
           ${atajo("#/logs/eventos", "filtro", "Explorar eventos", "Filtro estilo Wireshark, detalle y exportación")}
           ${atajo("#/logs/tablero", "grafico", "Tablero general", "Gráficos de todos los logs o de un filtro")}
+          ${atajo("#/logs/intrusos", "intruso", "Intrusos en la red", "Concesiones del DHCP cuya MAC no está registrada")}
           ${atajo("#/logs/cobertura", "agente", "Equipos sin agente", "Equipos registrados sin el agente de Microclaudia")}
           ${atajo("#/logs/comparar", "comparar", "Comparar logs", "Qué tienen en común y qué solo aparece en uno")}
           ${atajo("#/logs/inventario", "red", "Cruce con el inventario", "Equipos, IP sin registrar y personas")}
@@ -92,21 +114,24 @@ export async function vistaInicioLogs(cont, _params, ctx) {
   const imps = await api("logs/importaciones/");
   if (!ctx.vigente()) return;
   const logs = imps.filter((x) => !esListado(x.fuente));
-  const ultimoListado = imps.find((x) => esListado(x.fuente));
+  const ultimoListado = imps.find((x) => claseFuente(x.fuente) === "agentes");
+  const ultimoDhcp = imps.find((x) => esDhcp(x.fuente));
   const suma = (k) => logs.reduce((s, x) => s + (Number(x[k]) || 0), 0);
   cont.querySelector("[data-resumen]").outerHTML = `
-    <nav class="resumen" aria-label="Resumen">
+    <nav class="resumen resumen--cinco" aria-label="Resumen">
       <a href="#/logs/importaciones"><b>${num(imps.length)}</b><span>Importaciones</span></a>
-      <a href="${rutaLogs("eventos", { q: "fuente != microclaudia" })}"><b>${compacto(suma("total_eventos"))}</b><span>Eventos de los logs</span></a>
+      <a href="${rutaLogs("eventos", { q: "fuente == sophos" })}"><b>${compacto(suma("total_eventos"))}</b><span>Eventos de los logs</span></a>
       <a href="${rutaLogs("eventos", { q: "accion == denegado" })}"><b>${compacto(suma("denegados"))}</b><span>Eventos denegados</span></a>
       <a href="${ultimoListado ? `#/logs/importaciones/${ultimoListado.id_importacion}` : "#/logs/importar/microclaudia"}">
         <b>${ultimoListado ? num(ultimoListado.total_eventos) : "—"}</b><span>Equipos con el agente${ultimoListado ? " (último listado)" : ""}</span></a>
+      <a href="${ultimoDhcp ? rutaLogs("intrusos", { dhcp: ultimoDhcp.id_importacion }) : "#/logs/importar/dhcp"}">
+        <b>${ultimoDhcp ? num(ultimoDhcp.total_eventos) : "—"}</b><span>Concesiones del DHCP${ultimoDhcp ? " (última lista)" : ""}</span></a>
     </nav>`;
 
   const caja = cont.querySelector("[data-recientes]");
   if (!imps.length) {
     caja.innerHTML = vacioHTML({
-      icono: "logs", titulo: "Todavía no hay nada importado", texto: "Importe el primer archivo de Sophos o de Microclaudia para ver su tablero.",
+      icono: "logs", titulo: "Todavía no hay nada importado", texto: "Importe el primer archivo de Sophos, de Microclaudia o del DHCP para ver su tablero.",
       boton: `<a class="btn btn--primario" href="#/logs/importar/sophos">${icono("subir")}Importar logs de Sophos</a>`,
     });
     return;
@@ -121,14 +146,14 @@ const atajo = (href, ic, titulo, texto) =>
 
 function tarjetaImportacion(x) {
   const listado = esListado(x.fuente);
-  return `<li><a class="tarjeta-imp${listado ? " tarjeta-imp--agente" : ""}" href="#/logs/importaciones/${x.id_importacion}">
+  return `<li><a class="tarjeta-imp${listado ? ` tarjeta-imp--${estiloFuente(x.fuente)}` : ""}" href="#/logs/importaciones/${x.id_importacion}">
     <span class="tarjeta-imp__icono">${icono(iconoFuente(x.fuente))}</span>
     <span class="tarjeta-imp__texto">
       <strong>${esc(x.nombre_archivo)}</strong>
-      <small>N.º ${x.id_importacion} · ${esc(FUENTES[x.fuente] || x.fuente)} · ${esc(listado ? `listado del ${fechaLog(x.fecha_hasta)}` : rangoFechas(x.fecha_desde, x.fecha_hasta))}${x.descripcion ? ` · ${esc(x.descripcion)}` : ""}</small>
+      <small>N.º ${x.id_importacion} · ${esc(FUENTES[x.fuente] || x.fuente)} · ${esc(periodoImp(x).replace(/^\S+/, (p) => p.toLowerCase()))}${x.descripcion ? ` · ${esc(x.descripcion)}` : ""}</small>
       ${listado ? "" : miniMedidor(x)}
     </span>
-    <span class="tarjeta-imp__n"><b>${num(x.total_eventos)}</b><small>${listado ? (Number(x.total_eventos) === 1 ? "equipo" : "equipos") : (Number(x.total_eventos) === 1 ? "evento" : "eventos")}</small></span>
+    <span class="tarjeta-imp__n"><b>${num(x.total_eventos)}</b><small>${unidad(x.fuente, x.total_eventos)}</small></span>
   </a></li>`;
 }
 
@@ -189,17 +214,38 @@ const IMPORTADORES = {
       <p class="ayuda-importar__nota">${icono("enlace", "ic--sm")}<span>Importe un listado nuevo cada cierto tiempo y compárelos en
         <a href="#/logs/comparar">Comparar logs</a> por nombre del equipo: verá qué equipos entraron y cuáles salieron.</span></p>`,
   },
+  dhcp: {
+    clave: "DHCP", titulo: "Importar concesiones del DHCP", miga: "Importar concesiones del DHCP",
+    ruta: "logs/importaciones/dhcp/", icono: "dhcp",
+    texto: "La lista de direcciones que entregó el servidor DHCP. Cada MAC se compara con los equipos registrados en el sistema para encontrar intrusos en la red.",
+    zona: "Arrastre aquí la lista de concesiones del DHCP", formatos: ".txt o .csv", accept: ".txt,.csv,.text,text/plain,text/csv",
+    extension: /\.(txt|csv|text)$/i, procesando: "Leyendo y guardando las concesiones…",
+    ejemplo: "Ej.: Ámbito 10.1.10.0, 27 de octubre",
+    ayuda: `
+      <ol class="pasos-ayuda">
+        <li><strong>En el Administrador de DHCP</strong>, abra el servidor, <em>IPv4</em>, el ámbito y <em>Concesiones de direcciones</em>.
+          Clic derecho, <em>Exportar lista…</em> y guárdela como texto delimitado por tabulaciones (<code>.txt</code>) o por comas (<code>.csv</code>).</li>
+        <li><strong>También sirve</strong> copiar las filas de la consola y pegarlas en un <code>.txt</code>: aunque las columnas queden corridas,
+          cada fila se lee por su contenido.</li>
+        <li><strong>Con PowerShell:</strong> <code>Get-DhcpServerv4Lease -ScopeId 10.1.10.0 | Export-Csv dhcp.csv -NoTypeInformation</code>.</li>
+        <li><strong>La MAC</strong> sale del <em>Id. exclusivo</em> de cada concesión, también en los equipos que envían un identificador largo
+          (DUID). Las reservas se importan junto con las concesiones.</li>
+      </ol>
+      <p class="ayuda-importar__nota">${icono("enlace", "ic--sm")}<span>Al importar se abre <a href="#/logs/intrusos">Intrusos en la red</a>:
+        cada MAC se busca en los equipos registrados y en el último listado de Microclaudia.</span></p>`,
+  },
 };
 
 export const vistaImportarSophos = (cont, _params, ctx) => vistaImportar(cont, ctx, IMPORTADORES.sophos);
 export const vistaImportarMicroclaudia = (cont, _params, ctx) => vistaImportar(cont, ctx, IMPORTADORES.microclaudia);
+export const vistaImportarDhcp = (cont, _params, ctx) => vistaImportar(cont, ctx, IMPORTADORES.dhcp);
 
 async function vistaImportar(cont, ctx, def) {
   ctx.migas([{ texto: def.miga }]);
   cont.innerHTML = `
     <div class="encabezado">
       <div class="encabezado-imp">
-        <span class="insignia-log${esListado(def.clave) ? " insignia-log--agente" : ""}">${icono(def.icono)}</span>
+        <span class="insignia-log${esListado(def.clave) ? ` insignia-log--${estiloFuente(def.clave)}` : ""}">${icono(def.icono)}</span>
         <div><h1>${esc(def.titulo)}</h1><p>${esc(def.texto)}</p></div>
       </div>
       <div class="encabezado__acciones"><a class="btn btn--secundario" href="#/logs/importaciones">${icono("capas")}Importaciones</a></div>
@@ -329,10 +375,12 @@ async function vistaImportar(cont, ctx, def) {
             <div class="resultado-importacion__texto">${icono("check")}<div><strong>Se importaron ${listas.length} archivos con ${unidades(def.clave, total)}.</strong>
               <p>${errores.length ? `${errores.length} no se pudieron importar (vea el motivo en la lista). ` : ""}Véalos juntos o compárelos.</p></div></div>
             <div class="encabezado__acciones">
-              ${esListado(def.clave)
+              ${esDhcp(def.clave)
+                ? `<a class="btn btn--primario" href="${rutaLogs("intrusos", { dhcp: ids[ids.length - 1] })}">${icono("intruso")}Intrusos en la red</a>`
+                : esListado(def.clave)
                 ? `<a class="btn btn--primario" href="${rutaLogs("cobertura", { agentes: ids[ids.length - 1] })}">${icono("agente")}Equipos sin agente</a>`
                 : `<a class="btn btn--primario" href="${rutaLogs("tablero", { importaciones: ids })}">${icono("grafico")}Tablero de todos</a>`}
-              <a class="btn btn--secundario" href="${rutaLogs("eventos", { importaciones: ids })}">${icono("filtro")}Explorar ${esListado(def.clave) ? "equipos" : "eventos"}</a>
+              <a class="btn btn--secundario" href="${rutaLogs("eventos", { importaciones: ids })}">${icono("filtro")}Explorar ${UNIDADES[claseFuente(def.clave)][1]}</a>
               ${ids.length >= 2 && ids.length <= 4 ? `<a class="btn btn--secundario" href="${rutaLogs("comparar", { importaciones: ids })}">${icono("comparar")}Comparar</a>` : ""}
             </div>
           </div>
@@ -349,9 +397,10 @@ export async function vistaImportaciones(cont, _params, ctx) {
   ctx.migas([{ texto: "Importaciones" }]);
   cont.innerHTML = `
     <div class="encabezado">
-      <div><h1>Importaciones</h1><p>Cada archivo importado: logs de Sophos y listados de equipos de Microclaudia. Marque varias para explorarlas juntas o compararlas.</p></div>
+      <div><h1>Importaciones</h1><p>Cada archivo importado: logs de Sophos, listados de equipos de Microclaudia y concesiones del DHCP. Marque varias para explorarlas juntas o compararlas.</p></div>
       <div class="encabezado__acciones"><a class="btn btn--primario" href="#/logs/importar/sophos">${icono("subir")}Logs de Sophos</a>
-        <a class="btn btn--secundario" href="#/logs/importar/microclaudia">${icono("agente")}Equipos de Microclaudia</a></div>
+        <a class="btn btn--secundario" href="#/logs/importar/microclaudia">${icono("agente")}Equipos de Microclaudia</a>
+        <a class="btn btn--secundario" href="#/logs/importar/dhcp">${icono("dhcp")}Concesiones del DHCP</a></div>
     </div>
     <section class="panel">
       <div class="barra-seleccion" data-barra-seleccion hidden>
@@ -390,28 +439,31 @@ export async function vistaImportaciones(cont, _params, ctx) {
     pintarSeleccion();
     if (!filas.length) {
       caja.innerHTML = vacioHTML({
-        icono: "logs", titulo: "Todavía no hay nada importado", texto: "Importe logs de Sophos o el listado de equipos de Microclaudia.",
+        icono: "logs", titulo: "Todavía no hay nada importado", texto: "Importe logs de Sophos, el listado de equipos de Microclaudia o las concesiones del DHCP.",
         boton: `<span class="botones-vacio"><a class="btn btn--primario" href="#/logs/importar/sophos">${icono("subir")}Logs de Sophos</a>
-          <a class="btn btn--secundario" href="#/logs/importar/microclaudia">${icono("agente")}Equipos de Microclaudia</a></span>`,
+          <a class="btn btn--secundario" href="#/logs/importar/microclaudia">${icono("agente")}Equipos de Microclaudia</a>
+          <a class="btn btn--secundario" href="#/logs/importar/dhcp">${icono("dhcp")}Concesiones del DHCP</a></span>`,
       });
       return;
     }
     caja.innerHTML = `<div class="tabla-envoltura"><table class="tabla">
-      <thead><tr><th class="col-check"><span class="visualmente-oculto">Elegir</span></th><th>Archivo</th><th class="col-numero">Eventos o equipos</th>
+      <thead><tr><th class="col-check"><span class="visualmente-oculto">Elegir</span></th><th>Archivo</th><th class="col-numero">Registros</th>
         <th>Permitidos / denegados</th><th class="col-opcional">Período</th><th class="col-opcional">Importado</th><th class="col-acciones"><span class="visualmente-oculto">Acciones</span></th></tr></thead>
       <tbody>${filas.map((x) => `
         <tr data-id="${x.id_importacion}">
           <td class="col-check"><input type="checkbox" data-elegir="${x.id_importacion}"${elegidas.has(x.id_importacion) ? " checked" : ""} aria-label="Elegir ${esc(x.nombre_archivo)}"></td>
           <td><a href="#/logs/importaciones/${x.id_importacion}" class="enlace-imp">${icono(iconoFuente(x.fuente), "ic--sm")}<strong>${esc(x.nombre_archivo)}</strong></a>
             <span class="secundario">N.º ${x.id_importacion} · ${esc(FUENTES[x.fuente] || x.fuente)}${x.descripcion ? ` · ${esc(x.descripcion)}` : ""}</span></td>
-          <td class="col-numero"><strong>${num(x.total_eventos)}</strong><span class="secundario">${esListado(x.fuente) ? "equipos" : "eventos"}${x.repetidos ? ` · ${num(x.repetidos)} repetidos` : ""}</span></td>
-          <td class="col-medidor">${esListado(x.fuente) ? `<span class="pastilla pastilla--agente pastilla--sin-punto">${icono("agente", "ic--sm")}Listado de agentes</span>`
+          <td class="col-numero"><strong>${num(x.total_eventos)}</strong><span class="secundario">${unidad(x.fuente, x.total_eventos)}${x.repetidos ? ` · ${num(x.repetidos)} repetidos` : ""}</span></td>
+          <td class="col-medidor">${esDhcp(x.fuente) ? `<span class="pastilla pastilla--dhcp pastilla--sin-punto">${icono("dhcp", "ic--sm")}Concesiones del DHCP</span>`
+            : esListado(x.fuente) ? `<span class="pastilla pastilla--agente pastilla--sin-punto">${icono("agente", "ic--sm")}Listado de agentes</span>`
             : `${miniMedidor(x)}<span class="secundario">${num(x.permitidos)} · ${num(x.denegados)}</span>`}</td>
-          <td class="col-opcional">${esc(esListado(x.fuente) ? `Listado del ${fechaLog(x.fecha_hasta)}` : rangoFechas(x.fecha_desde, x.fecha_hasta))}</td>
+          <td class="col-opcional">${esc(periodoImp(x))}</td>
           <td class="col-opcional"><span>${esc(fecha(x.creado_en))}</span><span class="secundario">${esc(x.importado_por || "")}</span></td>
           <td class="col-acciones"><span class="acciones-fila">
-            ${esListado(x.fuente) ? `<a class="btn-icono" href="${rutaLogs("cobertura", { agentes: x.id_importacion })}" title="Equipos sin agente" aria-label="Equipos sin agente según ${esc(x.nombre_archivo)}">${icono("agente")}</a>` : ""}
-            <a class="btn-icono" href="${rutaLogs("eventos", { importaciones: [x.id_importacion] })}" title="${esListado(x.fuente) ? "Explorar equipos" : "Explorar eventos"}" aria-label="Explorar ${esc(x.nombre_archivo)}">${icono("filtro")}</a>
+            ${esDhcp(x.fuente) ? `<a class="btn-icono" href="${rutaLogs("intrusos", { dhcp: x.id_importacion })}" title="Intrusos en la red" aria-label="Intrusos en la red según ${esc(x.nombre_archivo)}">${icono("intruso")}</a>`
+              : esListado(x.fuente) ? `<a class="btn-icono" href="${rutaLogs("cobertura", { agentes: x.id_importacion })}" title="Equipos sin agente" aria-label="Equipos sin agente según ${esc(x.nombre_archivo)}">${icono("agente")}</a>` : ""}
+            <a class="btn-icono" href="${rutaLogs("eventos", { importaciones: [x.id_importacion] })}" title="Explorar ${UNIDADES[claseFuente(x.fuente)][1]}" aria-label="Explorar ${esc(x.nombre_archivo)}">${icono("filtro")}</a>
             <button type="button" class="btn-icono" data-accion="editar" title="Editar descripción" aria-label="Editar descripción">${icono("editar")}</button>
             <button type="button" class="btn-icono btn-icono--peligro" data-accion="borrar" title="Eliminar" aria-label="Eliminar ${esc(x.nombre_archivo)}">${icono("borrar")}</button>
           </span></td>
@@ -456,7 +508,7 @@ async function editarDescripcion(imp) {
 function eliminarImportacion(imp) {
   return confirmar({
     titulo: "Eliminar la importación",
-    mensaje: `Se eliminarán «${imp.nombre_archivo}» y ${Number(imp.total_eventos) === 1 ? (esListado(imp.fuente) ? "su equipo" : "su evento") : `sus ${unidades(imp.fuente, imp.total_eventos)}`}. El archivo original no se toca; se puede volver a importar.`,
+    mensaje: `Se eliminarán «${imp.nombre_archivo}» y ${Number(imp.total_eventos) === 1 ? `su ${unidad(imp.fuente, 1)}` : `sus ${unidades(imp.fuente, imp.total_eventos)}`}. El archivo original no se toca; se puede volver a importar.`,
     textoBoton: "Eliminar",
     accion: async () => {
       await api(`logs/importaciones/${imp.id_importacion}/`, { metodo: "DELETE" });
@@ -588,6 +640,7 @@ export async function vistaImportacion(cont, [id], ctx) {
   cont.innerHTML = cargandoHTML("Preparando el tablero…");
   const base = { q: "", importaciones: [id] };
   const [imp, cat] = await Promise.all([api(`logs/importaciones/${id}/`), catalogoCampos()]);
+  if (esDhcp(imp.fuente)) return vistaIntrusos(cont, [], ctx, imp);
   if (esListado(imp.fuente)) return vistaListadoAgentes(cont, imp, ctx, cat);
   const [t, inv] = await Promise.all([
     api("logs/eventos/tablero/", { query: { importaciones: id } }),
@@ -893,11 +946,26 @@ function filaAgenteHTML(e) {
   </tr>`;
 }
 
+/** Fila de una concesión o reserva del DHCP dentro del explorador */
+function filaDhcpHTML(e) {
+  const reserva = /^Reserva/.test(e.tipo || "");
+  return `<tr class="fila-log fila-log--dhcp" data-evento="${e.id_evento}" tabindex="0" aria-label="${esc(`${e.tipo || "Concesión"} ${e.ip_origen || ""}`)}">
+    <td class="col-hora">${e.fecha ? `<span class="dato-mono">${esc(horaLog(e.fecha))}</span><small>${esc(diaLog(e.fecha))}</small>` : `<span class="sin-dato">${reserva ? "Reserva" : "—"}</span>`}</td>
+    <td><span class="pastilla pastilla--dhcp">${icono("dhcp", "ic--sm")}DHCP</span></td>
+    <td class="col-tipo"><strong>${esc(e.nombre_equipo || "Sin nombre")}</strong><small>${esc(e.tipo || "Concesión DHCP")}</small></td>
+    <td class="col-ip">${ipPuerto(e.ip_origen)}${e.mac_origen ? `<small class="dato-mono">${esc(macGuiones(e.mac_origen))}</small>` : ""}</td>
+    <td class="col-flecha"></td>
+    <td class="col-ip">${e.equipo_origen ? `<small class="en-inventario" title="Equipo del inventario">${icono("red", "ic--sm")}${esc(e.equipo_origen)}</small>` : `<span class="sin-dato">—</span>`}</td>
+    <td class="col-sitio"><strong>Servidor DHCP</strong>${e.descripcion ? `<small>${esc(e.descripcion)}</small>` : ""}</td>
+  </tr>`;
+}
+
 function tablaEventosHTML(filas, cat) {
   return `<div class="tabla-envoltura"><table class="tabla tabla--eventos">
     <thead><tr><th>Hora</th><th>Acción</th><th>Tipo</th><th>Origen</th><th class="col-flecha"><span class="visualmente-oculto">hacia</span></th>
       <th>Destino</th><th>Sitio o aplicación</th></tr></thead>
     <tbody>${filas.map((e) => {
+      if (esDhcp(e.fuente)) return filaDhcpHTML(e);
       if (esListado(e.fuente)) return filaAgenteHTML(e);
       const accion = String(e.accion || "otro").toLowerCase();
       const sitio = e.dominio || e.aplicacion || "";
@@ -968,7 +1036,7 @@ export async function vistaComparar(cont, _params, ctx) {
         <div class="campo"><span class="etiqueta-campo">Importaciones</span>
           <div class="conjunto__imps">${imps.length ? imps.map((x) => `
             <label class="conjunto__imp"><input type="checkbox" data-imp value="${x.id_importacion}"${c.importaciones.includes(x.id_importacion) ? " checked" : ""}>
-              <span><strong>N.º ${x.id_importacion} · ${esc(x.nombre_archivo)}</strong><small>${esListado(x.fuente) ? `<span class="pastilla pastilla--agente pastilla--mini">${icono("agente", "ic--sm")}Microclaudia</span> ` : ""}${esc(unidades(x.fuente, x.total_eventos))} · ${esc(esListado(x.fuente) ? `listado del ${diaLog(x.fecha_hasta)}` : rangoFechas(x.fecha_desde, x.fecha_hasta))}</small></span></label>`).join("")
+              <span><strong>N.º ${x.id_importacion} · ${esc(x.nombre_archivo)}</strong><small>${esListado(x.fuente) ? `<span class="pastilla pastilla--${claseFuente(x.fuente) === "dhcp" ? "dhcp" : "agente"} pastilla--mini">${icono(iconoFuente(x.fuente), "ic--sm")}${esc(FUENTES[x.fuente] || x.fuente)}</span> ` : ""}${esc(unidades(x.fuente, x.total_eventos))} · ${esc(esDhcp(x.fuente) ? `importada el ${diaLog(x.creado_en)}` : esListado(x.fuente) ? `listado del ${diaLog(x.fecha_hasta)}` : rangoFechas(x.fecha_desde, x.fecha_hasta))}</small></span></label>`).join("")
             : `<p class="top-vacio">No hay importaciones.</p>`}</div></div>
         <div class="campo"><label for="cj-filtro-${i}">Filtro <span class="etiqueta-nota">(opcional)</span></label>
           <input id="cj-filtro-${i}" name="filtro" class="dato-mono" spellcheck="false" autocomplete="off" value="${esc(c.filtro)}" placeholder="p. ej.: accion == denegado"></div>
@@ -1007,7 +1075,12 @@ export async function vistaComparar(cont, _params, ctx) {
       const r = await api("logs/comparar/", { metodo: "POST", datos: { conjuntos: envio } });
       if (!ctx.vigente()) return;
       reemplazarRuta(rutaLogs("comparar", { importaciones: conjuntos.every((c) => c.importaciones.length === 1 && !c.filtro) ? conjuntos.map((c) => c.importaciones[0]) : [] }));
-      const listado = (ids) => ids.length && ids.every((id) => esListado(imps.find((x) => x.id_importacion === id)?.fuente));
+      // Clase de cada conjunto si todas sus importaciones son listados de la misma clase (agentes o dhcp)
+      const listado = (ids) => {
+        const clases = new Set(ids.map((id) => claseFuente(imps.find((x) => x.id_importacion === id)?.fuente)));
+        const [clase] = clases;
+        return ids.length && clases.size === 1 && clase !== "logs" ? clase : false;
+      };
       pintarComparacion(salida, r, envio, cat, envio.map((c) => listado(c.importaciones)));
       if (bajar) salida.scrollIntoView({ behavior: "smooth", block: "start" });
       bajar = true;
@@ -1040,7 +1113,7 @@ function pintarComparacion(salida, r, envio, cat, listados = []) {
   // Solo los campos con algún valor (un listado de equipos no trae dominios ni reglas)
   const conValores = Object.keys(r.campos).filter((c) => r.campos[c].total);
   const campos = conValores.length ? conValores : Object.keys(r.campos);
-  const cuantos = (i, n) => (listados[i] ? `${num(n)} ${Number(n) === 1 ? "equipo" : "equipos"}` : eventos(n));
+  const cuantos = (i, n) => (listados[i] ? `${num(n)} ${UNIDADES[listados[i]][Number(n) === 1 ? 0 : 1]}` : eventos(n));
   let campoActual = campos.find((c) => r.campos[c].total) || campos[0];
   let vista = "todos";
   const todasImps = [...new Set(envio.flatMap((c) => c.importaciones))];
@@ -1052,13 +1125,13 @@ function pintarComparacion(salida, r, envio, cat, listados = []) {
       <div class="panel__cuerpo">
         <div class="conjuntos-resumen">${r.resumenes.map((s, i) => `
           <div class="conjunto-resumen conjunto-resumen--${i + 1}">
-            ${letra(i)}<div><strong>${esc(nombres[i])}</strong><small>${listados[i] ? `${icono("agente", "ic--sm")} ` : ""}${esc(cuantos(i, s.total))} · ${esc(rangoFechas(s.desde, s.hasta))}</small>
+            ${letra(i)}<div><strong>${esc(nombres[i])}</strong><small>${listados[i] ? `${icono(listados[i] === "dhcp" ? "dhcp" : "agente", "ic--sm")} ` : ""}${esc(cuantos(i, s.total))} · ${esc(rangoFechas(s.desde, s.hasta))}</small>
             ${miniMedidor({ total: s.total, permitidos: s.permitidos, denegados: s.denegados })}</div>
           </div>`).join("")}</div>
 
         <div class="tabla-envoltura"><table class="tabla tabla--compacta tabla--comparar">
           <thead><tr><th>Dato</th>${nombres.map((_, i) => `<th class="col-numero">${letra(i)}</th>`).join("")}</tr></thead>
-          <tbody>${METRICAS.map(([clave, texto, f]) => `<tr><td>${esc(clave === "total" && listados.some(Boolean) ? "Eventos o equipos" : texto)}</td>${r.resumenes.map((s) =>
+          <tbody>${METRICAS.map(([clave, texto, f]) => `<tr><td>${esc(clave === "total" && listados.some(Boolean) ? "Registros" : texto)}</td>${r.resumenes.map((s) =>
             `<td class="col-numero">${esc(f(s[clave]))}${clave === "denegados" && Number(s.total) ? ` <small>(${pct(Number(s.denegados), Number(s.total))})</small>` : ""}</td>`).join("")}</tr>`).join("")}</tbody>
         </table></div>
 
@@ -1279,11 +1352,12 @@ export async function vistaCamposLogs(cont, _params, ctx) {
   cont.innerHTML = `
     <div class="encabezado">
       <div><h1>Campos y alias</h1>
-        <p>Cada programa llama distinto a lo mismo: Sophos dice <code>src_ip</code> y Microclaudia <code>ipaddress</code>. Al importar, cada nombre se asigna
+        <p>Cada programa llama distinto a lo mismo: Sophos dice <code>src_ip</code>, Microclaudia <code>ipaddress</code> y el DHCP <code>ip_cliente</code>. Al importar, cada nombre se asigna
           solo a un campo común, así todos los archivos se pueden filtrar y comparar entre sí.</p></div>
       <div class="encabezado__acciones"><button type="button" class="btn btn--primario" data-nuevo-alias>${icono("mas")}Agregar alias</button></div>
     </div>
-    <ul class="leyenda leyenda--alias"><li><span class="alias__fuente">SF</span>Sophos Firewall</li><li><span class="alias__fuente alias__fuente--agente">MC</span>Microclaudia</li></ul>
+    <ul class="leyenda leyenda--alias"><li><span class="alias__fuente">SF</span>Sophos Firewall</li><li><span class="alias__fuente alias__fuente--agente">MC</span>Microclaudia</li>
+      <li><span class="alias__fuente alias__fuente--dhcp">DH</span>Servidor DHCP</li></ul>
     <div class="aviso aviso--info">${icono("enlace")}<span>Un alias nuevo o cambiado se usa en las próximas importaciones. Lo ya importado conserva cómo se leyó,
       pero todos sus campos originales siguen guardados y se pueden filtrar con <code>datos.nombre</code>.</span></div>
     <div data-campos>${cargandoHTML()}</div>`;
@@ -1309,8 +1383,8 @@ export async function vistaCamposLogs(cont, _params, ctx) {
             <td><strong>${esc(c.etiqueta)}</strong><span class="secundario dato-mono">${esc(c.campo)}</span></td>
             <td class="col-opcional">${esc(TIPOS[c.tipo] || c.tipo)}</td>
             <td><div class="alias-lista">${(porCampo[c.campo] || []).sort((a, b) => a.prioridad - b.prioridad).map((a) => `
-              <span class="alias${esListado(a.fuente) ? " alias--agente" : ""}">
-                <span class="alias__fuente" title="${esc(FUENTES[a.fuente] || a.fuente)}">${esc(a.fuente === "MICROCLAUDIA" ? "MC" : a.fuente === "SOPHOS" ? "SF" : a.fuente.slice(0, 2))}</span>
+              <span class="alias${esListado(a.fuente) ? ` alias--${estiloFuente(a.fuente)}` : ""}">
+                <span class="alias__fuente" title="${esc(FUENTES[a.fuente] || a.fuente)}">${esc({ MICROCLAUDIA: "MC", SOPHOS: "SF", DHCP: "DH" }[a.fuente] || a.fuente.slice(0, 2))}</span>
                 <span class="dato-mono">${esc(a.campo_origen)}</span><small title="Prioridad: si el log trae varios, se usa el de número menor">${a.prioridad}</small>
                 <button type="button" class="alias__boton" data-editar-alias="${esc(a.fuente)}|${esc(a.campo_origen)}" aria-label="Editar alias ${esc(a.campo_origen)}" title="Editar">${icono("editar", "ic--sm")}</button>
                 <button type="button" class="alias__boton alias__boton--peligro" data-borrar-alias="${esc(a.fuente)}|${esc(a.campo_origen)}" aria-label="Quitar alias ${esc(a.campo_origen)}" title="Quitar">${icono("cerrar", "ic--sm")}</button>
@@ -1942,5 +2016,296 @@ export async function vistaCobertura(cont, _params, ctx) {
     descargarTexto(`﻿${filas.map((f) => f.map(celda).join(";")).join("\r\n")}\r\n`, `equipos_sin_agente_${marcaArchivo()}.csv`);
     toast("Se descargó el archivo.");
   });
+  await cargar();
+}
+
+/* =====================================================================
+   Intrusos en la red: las concesiones del DHCP comparadas por MAC con
+   los equipos registrados en el sistema (Dispositivos de red)
+   ===================================================================== */
+const ESTADOS_INTRUSOS = {
+  intruso: { texto: "Posibles intrusos", clase: "denegado" },
+  inactivo: { texto: "Registrados como inactivos", clase: "t30d" },
+  municipal: { texto: "Municipales sin registrar", clase: "revisar" },
+  registrado: { texto: "Registrados en el inventario", clase: "permitido" },
+  sin_mac: { texto: "Sin MAC", clase: "otro" },
+};
+// Señales de cada concesión: buena = indica que es un equipo de la municipalidad
+const PISTAS = {
+  agente: { texto: "Tiene el agente", clase: "buena", ayuda: "Su MAC o su nombre está en el listado de Microclaudia" },
+  dominio: { texto: "En el dominio", clase: "buena", ayuda: "Su nombre termina con el dominio de la red" },
+  reserva: { texto: "Reserva del DHCP", clase: "buena", ayuda: "Alguien de TI le reservó esta IP en el DHCP" },
+  aleatoria: { texto: "MAC aleatoria", clase: "mala", ayuda: "Dirección privada: la usan los celulares y portátiles personales en el Wi-Fi" },
+  sin_nombre: { texto: "Sin nombre", clase: "mala", ayuda: "El equipo no le dijo su nombre al DHCP" },
+  nueva: { texto: "MAC nueva", clase: "mala", ayuda: "No estaba en la lista anterior del DHCP" },
+  ip_de_otro: { texto: "IP de otro equipo", clase: "mala", ayuda: "Esa IP está registrada a otro dispositivo" },
+  virtual: { texto: "Máquina virtual", clase: "neutra", ayuda: "La MAC es de un adaptador virtual" },
+};
+
+const pistaHTML = (k, extra = "") => {
+  const p = PISTAS[k];
+  return p ? `<span class="pista pista--${p.clase}" title="${esc(p.ayuda + extra)}">${esc(p.texto)}</span>` : "";
+};
+function pistasHTML(c, { solo } = {}) {
+  const lista = c.pistas.filter((k) => k !== "virtual" || !c.parece).filter((k) => !solo || PISTAS[k]?.clase === solo);
+  const parece = c.parece && !solo ? `<span class="pista pista--neutra" title="Por el nombre del equipo">Parece ${esc(c.parece)}</span>` : "";
+  return `<span class="pistas">${lista.map((k) => pistaHTML(k, k === "ip_de_otro" && c.ip_de ? `: ${c.ip_de.equipo || `N.º ${c.ip_de.id_disp}`}` : "")).join("")}${parece}</span>`;
+}
+const malas = (c) => c.pistas.filter((k) => PISTAS[k]?.clase === "mala").length;
+const expiraTexto = (c) => (c.tipo === "Reserva DHCP activa" ? "Reserva activa" : c.tipo === "Reserva DHCP inactiva" ? "Reserva inactiva"
+  : c.expira ? fechaLog(c.expira) : c.tipo || "—");
+const rutaRegistrarDhcp = (c) => `#/red/dispositivos/nuevo?${new URLSearchParams(
+  Object.entries({ ip: c.ip, mac: c.mac, equipo: c.nombre_corto }).filter(([, v]) => v))}`;
+
+export async function vistaIntrusos(cont, _params, ctx, impDirecta = null) {
+  ctx.migas(impDirecta ? [{ texto: "Importaciones", href: "#/logs/importaciones" }, { texto: impDirecta.nombre_archivo }] : [{ texto: "Intrusos en la red" }]);
+  const [listas, listados] = await Promise.all([
+    api("logs/importaciones/", { query: { fuente: "DHCP" } }),
+    api("logs/importaciones/", { query: { fuente: "MICROCLAUDIA" } }),
+  ]);
+  if (!ctx.vigente()) return;
+  const encabezado = `
+    <div class="encabezado">
+      <div class="encabezado-imp">
+        <span class="insignia-log insignia-log--dhcp">${icono("intruso")}</span>
+        <div><h1>Intrusos en la red</h1>
+          <p>Las direcciones que entregó el servidor DHCP, comparadas por su MAC con los equipos registrados en el sistema
+            (Dispositivos de red). Lo que no está registrado y no tiene ninguna señal de ser de la municipalidad es un posible intruso.</p></div>
+      </div>
+      <div class="encabezado__acciones">
+        <a class="btn btn--secundario" href="#/logs/importar/dhcp">${icono("subir")}Importar DHCP</a>
+        <a class="btn btn--secundario" data-explorar hidden>${icono("filtro")}Explorar concesiones</a>
+        <button type="button" class="btn btn--secundario" data-exportar-intrusos hidden>${icono("descargar")}Exportar (CSV)</button>
+        ${impDirecta ? `<button type="button" class="btn-icono" data-editar title="Editar descripción" aria-label="Editar descripción">${icono("editar")}</button>
+        <button type="button" class="btn-icono btn-icono--peligro" data-eliminar title="Eliminar importación" aria-label="Eliminar importación">${icono("borrar")}</button>` : ""}
+      </div>
+    </div>`;
+  if (!listas.length) {
+    cont.innerHTML = `${encabezado}<section class="panel">${vacioHTML({
+      icono: "dhcp", titulo: "Todavía no hay una lista del DHCP",
+      texto: "Importe las concesiones del servidor DHCP para comparar cada MAC con los equipos registrados en el sistema.",
+      boton: `<a class="btn btn--primario" href="#/logs/importar/dhcp">${icono("subir")}Importar concesiones del DHCP</a>`,
+    })}</section>`;
+    return;
+  }
+  const pedido = impDirecta ? impDirecta.id_importacion : Number(ctx.query.get("dhcp"));
+  let dhcp = listas.some((x) => x.id_importacion === pedido) ? pedido : listas[0].id_importacion;
+  const pedidoAg = ctx.query.get("agentes");
+  let agentes = pedidoAg === "0" ? 0 : listados.some((x) => x.id_importacion === Number(pedidoAg)) ? Number(pedidoAg) : listados[0]?.id_importacion || 0;
+  const nueva = impDirecta ? recienImportadas.get(dhcp) : null;
+  if (nueva) recienImportadas.delete(dhcp);
+  const avisos = nueva?.avisos_detalle || [];
+
+  cont.innerHTML = `${encabezado}
+    ${nueva ? `
+      <div class="aviso aviso--exito">${icono("check")}<div><strong>Importación lista: ${unidades("DHCP", nueva.total_eventos)} guardadas.</strong>
+        ${nueva.repetidos ? ` ${num(nueva.repetidos)} filas estaban repetidas y se guardaron una sola vez.` : ""}
+        ${avisos.length ? `<details class="avisos-imp"><summary>${num(nueva.avisos)} filas tuvieron avisos</summary><ul>${avisos.map((a) => `<li>${esc(a)}</li>`).join("")}</ul></details>` : ""}
+      </div></div>` : ""}
+    <section class="panel panel--filtro">
+      <div class="cobertura-controles">
+        <div class="campo"><label for="in-dhcp">Lista del DHCP</label>
+          <select id="in-dhcp" class="control">${listas.map((x) => `<option value="${x.id_importacion}"${x.id_importacion === dhcp ? " selected" : ""}>
+            N.º ${x.id_importacion} · ${esc(x.nombre_archivo)} · ${esc(unidades(x.fuente, x.total_eventos))} · ${esc(fecha(x.creado_en))}</option>`).join("")}</select></div>
+        <div class="campo"><label for="in-agentes">Listado de Microclaudia <span class="etiqueta-nota">(señal de equipo municipal)</span></label>
+          <select id="in-agentes" class="control"><option value="0"${agentes ? "" : " selected"}>Sin listado</option>${listados.map((x) => `<option value="${x.id_importacion}"${x.id_importacion === agentes ? " selected" : ""}>
+            N.º ${x.id_importacion} · ${esc(x.nombre_archivo)} · ${esc(unidades(x.fuente, x.total_eventos))}</option>`).join("")}</select></div>
+      </div>
+    </section>
+    <div data-intrusos>${cargandoHTML("Comparando con el inventario…")}</div>`;
+
+  const caja = cont.querySelector("[data-intrusos]");
+  const botonExportar = cont.querySelector("[data-exportar-intrusos]");
+  const explorar = cont.querySelector("[data-explorar]");
+  let datos = null;
+  let consulta = 0;
+  let buscado = "";
+  let todos = false;
+
+  const celdaMac = (c) => (c.mac ? `<span class="dato-mono">${esc(macGuiones(c.mac))}</span>` : `<span class="sin-dato">—</span>`);
+  const celdaNombre = (c) => `<strong>${esc(c.nombre || "Sin nombre")}</strong>${c.descripcion ? `<span class="secundario">${esc(c.descripcion)}</span>` : ""}`;
+  const celdaDispositivo = (d) => `<a href="#/red/dispositivos/${d.id_disp}"><strong>${esc(d.equipo || `Dispositivo N.º ${d.id_disp}`)}</strong></a>
+    <span class="secundario">${esc([d.tipo, d.edificio].filter(Boolean).join(" · "))}</span>`;
+  const fila = (c, columnas) => `<tr class="clicable${c.presente ? "" : " fila-ausente"}" data-evento="${c.id_evento}" tabindex="0">${columnas.map((f) => f(c)).join("")}</tr>`;
+  const colIp = (c) => `<td class="dato-mono">${esc(c.ip || "—")}</td>`;
+  const colMac = (c) => `<td class="col-mac">${celdaMac(c)}</td>`;
+  const colNombre = (c) => `<td>${celdaNombre(c)}</td>`;
+  const colExpira = (c) => `<td class="col-opcional col-fecha"><span class="${c.presente ? "" : "sin-dato"}">${esc(expiraTexto(c))}</span></td>`;
+  const colRegistrar = (c) => `<td class="col-acciones">${c.mac ? `<a class="btn btn--secundario btn--sm" href="${rutaRegistrarDhcp(c)}">${icono("mas")}Registrar</a>` : ""}</td>`;
+
+  const tablaMunicipales = (lista) => {
+    const t = buscado.trim().toLowerCase().replace(/[:-]/g, "");
+    const filtrada = !t ? lista : lista.filter((c) => [c.ip, c.mac, c.nombre, c.descripcion, c.agente?.nombre]
+      .some((v) => String(v || "").toLowerCase().replace(/[:-]/g, "").includes(t)));
+    const vista = todos ? filtrada : filtrada.slice(0, 25);
+    if (!filtrada.length) return `<p class="top-vacio">${lista.length ? "Ninguna concesión coincide con la búsqueda." : "Todos los equipos municipales que aparecen en el DHCP están registrados."}</p>`;
+    return `<div class="tabla-envoltura"><table class="tabla tabla--compacta tabla--equipos">
+      <thead><tr><th>IP</th><th>MAC</th><th>Nombre en el DHCP</th><th>Por qué parece municipal</th><th class="col-opcional">Expira</th><th class="col-acciones"></th></tr></thead>
+      <tbody>${vista.map((c) => fila(c, [colIp, colMac, colNombre, (x) => `<td>${pistasHTML(x)}</td>`, colExpira, colRegistrar])).join("")}</tbody></table></div>
+      ${filtrada.length > vista.length ? `<div class="mas-filas"><button type="button" class="btn btn--secundario btn--sm" data-mas-municipales>Mostrar las ${num(filtrada.length)} concesiones</button>
+        <span>Se ven ${num(vista.length)} de ${num(filtrada.length)}.</span></div>` : ""}`;
+  };
+
+  const pintar = () => {
+    const d = datos;
+    const tt = d.totales;
+    const grupo = (estado) => d.concesiones.filter((c) => c.estado === estado);
+    const intrusos = grupo("intruso").sort((a, b) => malas(b) - malas(a) || Number(b.presente) - Number(a.presente));
+    const inactivos = grupo("inactivo");
+    const municipales = grupo("municipal");
+    const registrados = grupo("registrado");
+    const sinMac = grupo("sin_mac");
+    const imp = d.importacion;
+    const cifra = (valor, texto, extra = "", clase = "") => `<div class="cifra${clase ? ` ${clase}` : ""}"><b>${valor}</b><span>${esc(texto)}</span>${extra}</div>`;
+    const medidor = medidorPartes(Object.entries(ESTADOS_INTRUSOS).filter(([k]) => tt[k] || ["intruso", "municipal", "registrado"].includes(k))
+      .map(([k, e]) => ({ texto: e.texto, cantidad: tt[k], clase: e.clase })), "Concesiones");
+    const p = tt.pistas || {};
+    explorar.hidden = false;
+    explorar.href = rutaLogs("eventos", { importaciones: [imp.id_importacion] });
+
+    caja.innerHTML = `
+      <div class="cifras">
+        <div class="cifra cifra--principal cifra--intruso${tt.intruso ? "" : " cifra--intruso-cero"}"><span>Posibles intrusos</span><b>${num(tt.intruso)}</b>
+          <small>${tt.intruso ? "MAC sin registrar y sin ninguna señal de ser de la municipalidad" : "Toda MAC del DHCP está registrada o tiene una señal de ser municipal"}</small></div>
+        <div class="cifra cifra--medidor"><span>Concesiones y reservas del DHCP</span>${medidor}</div>
+      </div>
+      <div class="cifras cifras--chicas">
+        ${cifra(num(tt.presentes), "Conectadas", `<small>${num(tt.reservas_activas)} reservas activas · ${num(tt.reservas_inactivas)} inactivas</small>`)}
+        ${cifra(num(tt.registrado), "Registradas en el inventario", tt.ip_distinta ? `<small>${num(tt.ip_distinta)} con otra IP que la registrada</small>` : "", "cifra--ok")}
+        ${cifra(num(tt.municipal), "Municipales sin registrar", "<small>Agente, dominio o reserva</small>", tt.municipal ? "cifra--aviso" : "")}
+        ${cifra(num(p.aleatoria || 0), "Con MAC aleatoria", "<small>Celulares y portátiles personales</small>", p.aleatoria ? "cifra--sin" : "")}
+        ${cifra(num(p.ip_de_otro || 0), "Con la IP de otro equipo", "<small>Registrada a otro dispositivo</small>", p.ip_de_otro ? "cifra--aviso" : "")}
+        ${cifra(num(tt.no_vistos), "Registrados que no aparecen", `<small>de ${num(tt.inventario_con_mac)} activos con MAC</small>`)}
+      </div>
+      <p class="nota-cobertura">${icono("enlace", "ic--sm")}<span>Lista: <a href="${rutaLogs("eventos", { importaciones: [imp.id_importacion] })}">${esc(imp.nombre_archivo)}</a>
+        (${esc(unidades(imp.fuente, imp.total_eventos))}, importada el ${esc(fecha(imp.creado_en))}).
+        ${d.dominio ? `Dominio de la red: <strong>${esc(d.dominio)}</strong>.` : "Ningún nombre trae el dominio de la red."}
+        ${d.agentes ? `Microclaudia: <a href="#/logs/importaciones/${d.agentes.id_importacion}">${esc(d.agentes.nombre_archivo)}</a>.` : "Sin listado de Microclaudia."}
+        ${d.anterior ? `Las MAC que no estaban en la lista anterior (N.º ${d.anterior.id_importacion}) se marcan como nuevas.` : ""}</span></p>
+
+      <section class="panel panel--intrusos">
+        <div class="panel__cabeza"><div><h2>${icono("intruso")} Posibles intrusos (${num(intrusos.length)})</h2>
+          <p>${esc(["Su MAC no está registrada en el sistema", d.dominio && `su nombre no es del dominio ${d.dominio}`, "no es una reserva del DHCP",
+            d.agentes && "no tiene el agente de Microclaudia"].filter(Boolean).join(", ").replace(/, ([^,]+)$/, " y $1"))}.
+            Revise primero los que tienen más señales en rojo.</p></div></div>
+        ${intrusos.length ? `<div class="tabla-envoltura"><table class="tabla tabla--compacta tabla--equipos">
+          <thead><tr><th>IP</th><th>MAC</th><th>Nombre en el DHCP</th><th>Señales</th><th class="col-opcional">Expira</th><th class="col-acciones"></th></tr></thead>
+          <tbody>${intrusos.map((c) => fila(c, [colIp, colMac, colNombre, (x) => `<td>${pistasHTML(x)}</td>`, colExpira, colRegistrar])).join("")}</tbody></table></div>`
+          : `<div class="panel__cuerpo"><p class="cobertura-resumen__ok">${icono("check")}<span>Ninguna concesión es un posible intruso.</span></p></div>`}
+      </section>
+
+      ${inactivos.length ? `
+      <section class="panel panel--sin-agente">
+        <div class="panel__cabeza"><div><h2>${icono("alerta")} Registrados como inactivos que están en la red (${num(inactivos.length)})</h2>
+          <p>Su MAC es de un dispositivo marcado como inactivo (dado de baja), pero recibió una IP del DHCP.</p></div></div>
+        <div class="tabla-envoltura"><table class="tabla tabla--compacta">
+          <thead><tr><th>Dispositivo registrado</th><th>IP entregada</th><th>MAC</th><th>Nombre en el DHCP</th><th class="col-opcional">Expira</th></tr></thead>
+          <tbody>${inactivos.map((c) => fila(c, [(x) => `<td>${celdaDispositivo(x.dispositivo)}</td>`, colIp, colMac, colNombre, colExpira])).join("")}</tbody></table></div>
+      </section>` : ""}
+
+      <section class="panel panel--revisar" data-municipales>
+        <div class="panel__cabeza"><div><h2>${icono("red")} Municipales sin registrar (${num(municipales.length)})</h2>
+          <p>No están en el inventario, pero tienen el agente, son del dominio o tienen una reserva. <strong>Registrar</strong> abre el formulario con su IP y su MAC.</p></div>
+          ${municipales.length ? `<div class="buscador buscador--equipos">${icono("buscar")}<input type="search" class="control" data-buscar-municipal value="${esc(buscado)}" placeholder="Nombre, IP o MAC" aria-label="Buscar en los municipales sin registrar"></div>` : ""}</div>
+        <div data-tabla-municipales>${tablaMunicipales(municipales)}</div>
+      </section>
+
+      ${sinMac.length ? `
+      <section class="panel">
+        <div class="panel__cabeza"><div><h2>${icono("alerta")} Sin MAC (${num(sinMac.length)})</h2>
+          <p>Del Id. exclusivo no se pudo sacar una MAC, así que no se pueden comparar con el inventario.</p></div></div>
+        <div class="tabla-envoltura"><table class="tabla tabla--compacta">
+          <thead><tr><th>IP</th><th>Nombre en el DHCP</th><th>Id. exclusivo</th><th class="col-opcional">Expira</th></tr></thead>
+          <tbody>${sinMac.map((c) => fila(c, [colIp, colNombre, (x) => `<td class="dato-mono">${esc(x.id_exclusivo || "—")}</td>`, colExpira])).join("")}</tbody></table></div>
+      </section>` : ""}
+
+      ${registrados.length ? `
+      <details class="panel panel--plegable">
+        <summary class="panel__cabeza"><div><h2>${icono("check")} Registrados en el inventario (${num(registrados.length)})</h2>
+          <p>Su MAC es de un dispositivo activo registrado en el sistema.</p></div></summary>
+        <div class="tabla-envoltura"><table class="tabla tabla--compacta">
+          <thead><tr><th>Dispositivo registrado</th><th>IP entregada</th><th>MAC</th><th class="col-opcional">Nombre en el DHCP</th></tr></thead>
+          <tbody>${registrados.map((c) => fila(c, [(x) => `<td>${celdaDispositivo(x.dispositivo)}</td>`,
+            (x) => `<td><span class="dato-mono">${esc(x.ip)}</span>${x.ip_distinta ? `<span class="secundario" title="IP registradas: ${esc(x.dispositivo.ips.join(", "))}">Registrada: ${esc(x.dispositivo.ips.join(", "))}</span>` : ""}</td>`,
+            colMac, (x) => `<td class="col-opcional">${celdaNombre(x)}</td>`])).join("")}</tbody></table></div>
+      </details>` : ""}
+
+      ${d.no_vistos.length ? `
+      <details class="panel panel--plegable">
+        <summary class="panel__cabeza"><div><h2>${icono("red")} Registrados que no aparecen en el DHCP (${num(d.no_vistos.length)})</h2>
+          <p>Dispositivos activos con MAC registrada que no recibieron IP de este DHCP: tienen IP fija, estaban apagados, están en otra red
+            o su MAC registrada no es la de la tarjeta que usan.</p></div></summary>
+        <div class="tabla-envoltura"><table class="tabla tabla--compacta">
+          <thead><tr><th>Dispositivo registrado</th><th>IP y MAC registradas</th><th class="col-acciones"></th></tr></thead>
+          <tbody>${d.no_vistos.map((x) => `<tr><td>${celdaDispositivo(x)}</td><td class="dato-mono col-mac">${direccionesHTML(x.ips, x.macs)}</td>
+            <td class="col-acciones"><a class="btn btn--secundario btn--sm" href="#/red/dispositivos/${x.id_disp}">${icono("red")}Ficha</a></td></tr>`).join("")}</tbody></table></div>
+      </details>` : ""}`;
+    activarGlobos(caja);
+    botonExportar.hidden = false;
+  };
+
+  const cargar = async () => {
+    const yo = ++consulta;
+    caja.classList.add("cargando-suave");
+    try {
+      const d = await api("logs/intrusos/", { query: { dhcp, agentes } });
+      if (!ctx.vigente() || yo !== consulta) return;
+      datos = d;
+      todos = false;
+      pintar();
+    } catch (e) {
+      if (!ctx.vigente() || yo !== consulta) return;
+      caja.innerHTML = errorHTML(e.message);
+    } finally {
+      caja.classList.remove("cargando-suave");
+    }
+  };
+  const actualizarRuta = () => reemplazarRuta(rutaLogs("intrusos", { dhcp, agentes: agentes || "0" }));
+
+  cont.querySelector("#in-dhcp").addEventListener("change", (ev) => { dhcp = Number(ev.target.value); actualizarRuta(); cargar(); });
+  cont.querySelector("#in-agentes").addEventListener("change", (ev) => { agentes = Number(ev.target.value); actualizarRuta(); cargar(); });
+  caja.addEventListener("input", debounce((ev) => {
+    if (!ev.target.matches("[data-buscar-municipal]") || !datos) return;
+    buscado = ev.target.value;
+    caja.querySelector("[data-tabla-municipales]").innerHTML = tablaMunicipales(datos.concesiones.filter((c) => c.estado === "municipal"));
+  }, 200));
+  const abrir = (tr) => abrirEvento(Number(tr.dataset.evento), { importaciones: [dhcp] });
+  caja.addEventListener("click", (ev) => {
+    if (ev.target.closest("[data-mas-municipales]")) {
+      todos = true;
+      caja.querySelector("[data-tabla-municipales]").innerHTML = tablaMunicipales(datos.concesiones.filter((c) => c.estado === "municipal"));
+      return;
+    }
+    const tr = ev.target.closest("tr[data-evento]");
+    if (tr && !ev.target.closest("a")) abrir(tr);
+  });
+  caja.addEventListener("keydown", (ev) => {
+    const tr = ev.target.closest?.("tr[data-evento]");
+    if (tr && ev.target === tr && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); abrir(tr); }
+  });
+  botonExportar.addEventListener("click", () => {
+    if (!datos) return;
+    const celda = (v) => { const t = String(v ?? ""); return /[";\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const filas = [["Estado", "IP", "MAC", "Nombre en el DHCP", "Descripción", "Tipo", "Expira", "Señales", "Parece",
+      "Dispositivo registrado", "IP registradas", "Equipo en Microclaudia"]];
+    for (const c of datos.concesiones) {
+      filas.push([datos.estados?.[c.estado] || c.estado, c.ip, macGuiones(c.mac || ""), c.nombre || "", c.descripcion || "",
+        c.tipo, c.expira ? fechaLog(c.expira) : "", c.pistas.map((k) => PISTAS[k]?.texto || k).join(", "), c.parece || "",
+        c.dispositivo?.equipo || "", c.dispositivo?.ips.join(" ") || "", c.agente?.nombre || ""]);
+    }
+    for (const x of datos.no_vistos) {
+      filas.push(["Registrado que no aparece en el DHCP", x.ips.join(" "), x.macs.map(macGuiones).join(" "), "", "", "", "", "", "", x.equipo || "", x.ips.join(" "), ""]);
+    }
+    descargarTexto(`﻿${filas.map((f) => f.map(celda).join(";")).join("\r\n")}\r\n`, `intrusos_dhcp_${marcaArchivo()}.csv`);
+    toast("Se descargó el archivo.");
+  });
+  if (impDirecta) {
+    cont.querySelector("[data-editar]").addEventListener("click", async () => {
+      if (await editarDescripcion(impDirecta)) vistaImportacion(cont, [impDirecta.id_importacion], ctx);
+    });
+    cont.querySelector("[data-eliminar]").addEventListener("click", async () => {
+      if (await eliminarImportacion(impDirecta)) location.hash = "#/logs/importaciones";
+    });
+  }
   await cargar();
 }

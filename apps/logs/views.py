@@ -3,6 +3,7 @@ los logs muestran la navegación y las conexiones del personal.
 
 - POST importaciones/sophos/      importa un archivo de Sophos (multipart: archivo, descripcion)
 - POST importaciones/microclaudia/ importa el listado de equipos de Microclaudia (.csv o .txt)
+- POST importaciones/dhcp/         importa las concesiones del DHCP de Windows (.txt o .csv)
 - GET  importaciones/              lista; GET/PUT/DELETE importaciones/<id>/
 - GET  eventos/?q=&importaciones=  busca con el filtro estilo Wireshark (paginado)
 - GET  eventos/<id>/               un evento con todo, su conexión y el inventario
@@ -13,7 +14,8 @@ los logs muestran la navegación y las conexiones del personal.
 - POST comparar/                   compara 2 a 4 conjuntos de eventos
 - GET  inventario/?q=              cruce con equipos (IP/MAC) y personas
 - GET  agentes/?importacion=       tablero del listado de Microclaudia (por defecto el último)
-- GET  cobertura/?agentes=&q=      equipos vistos en los logs sin el agente, y el inventario
+- GET  cobertura/?agentes=        equipos registrados sin el agente de Microclaudia
+- GET  intrusos/?dhcp=&agentes=    concesiones del DHCP comparadas por MAC con el inventario
 - CRUD mapeo/                      alias de los campos por programa
 """
 import csv
@@ -81,9 +83,10 @@ class ImportacionViewSet(SPViewSet):
         if archivo is None:
             raise ValidationError({"archivo": ["Seleccione el archivo de logs."]})
         nombre_fuente = srv.FUENTES[fuente]["nombre"]
+        clase = srv.FUENTES[fuente]["clase"]
         if Path(archivo.name).suffix.lower() not in EXT_PERMITIDAS:
             raise ValidationError({"archivo": [f"Use el archivo de texto que exporta {nombre_fuente} "
-                                               f"({'.csv o .txt' if fuente == 'MICROCLAUDIA' else '.txt o .log'})."]})
+                                               f"({'.txt o .log' if clase == 'logs' else '.csv o .txt'})."]})
         max_mb = getattr(settings, "MUNI_MAX_MB_LOG", 100)
         if archivo.size > max_mb * 1024 * 1024:
             raise ValidationError({"archivo": [f"El archivo pesa más de {max_mb} MB. Divídalo en partes."]})
@@ -91,8 +94,11 @@ class ImportacionViewSet(SPViewSet):
         id_imp, leidos, avisos = srv.importar(fuente, Path(archivo.name).name[:255], archivo.read(), descripcion,
                                               getattr(request.user, "id", None))
         if id_imp is None:
-            if srv.FUENTES[fuente]["clase"] == "agentes":
+            if clase == "agentes":
                 mensaje = (f"No se encontró ningún equipo en el listado de {nombre_fuente}. "
+                           f"{avisos[0] if avisos else ''}").strip()
+            elif clase == "dhcp":
+                mensaje = (f"No se encontró ninguna concesión en la lista del DHCP. "
                            f"{avisos[0] if avisos else ''}").strip()
             else:
                 mensaje = ("No se encontró ningún evento de Sophos en el archivo. Debe traer el tipo "
@@ -287,6 +293,26 @@ class AnalisisViewSet(viewsets.GenericViewSet):
         if imp is None:
             return Response({"importacion": None})
         return Response({"importacion": imp, **srv.cobertura(imp["id_importacion"])})
+
+    # GET intrusos/?dhcp=<id>&agentes=<id>  (sin dhcp: la última lista del DHCP;
+    # sin agentes: el último listado de Microclaudia; agentes=0: sin listado).
+    # Compara por MAC las concesiones del DHCP con los equipos registrados.
+    def intrusos(self, request):
+        valor = request.query_params.get("dhcp")
+        if valor:
+            filas, _ = llamar_sp("sp_log_importaciones_obtener", [_entero(request, "dhcp", 0)])
+            if not filas:
+                raise NotFound("La importación no existe.")
+            imp = filas[0]
+            if imp["fuente"] not in srv.FUENTES_DHCP:
+                raise ValidationError({"detail": "Esa importación no es una lista de concesiones del DHCP."})
+        else:
+            imp = srv.ultima_importacion(srv.FUENTES_DHCP[0])
+        if imp is None:
+            return Response({"importacion": None})
+        agentes = None if request.query_params.get("agentes") == "0" else self._importacion_agentes(request, "agentes")
+        resultado = srv.intrusos(imp["id_importacion"], agentes["id_importacion"] if agentes else None)
+        return Response({"importacion": imp, "agentes": agentes, **resultado})
 
 
 # =====================================================================

@@ -1420,7 +1420,7 @@ a.fuente--agente:hover { border-color: var(--agente); }
 .chip-alerta b { padding: 0 7px; border-radius: 999px; background: var(--linea-2); color: var(--tinta); font-size: 12.5px; }
 .chip-alerta .ic { color: var(--tinta-3); }
 .chip-alerta:hover:not(:disabled) { border-color: var(--agente); color: var(--agente); }
-.chip-alerta[aria-pressed="true"] { border-color: var(--agente); background: var(--agente); color: #fff; }
+.chip-alerta[aria-pressed="true"], .chip-alerta[aria-pressed="true"]:hover:not(:disabled) { border-color: var(--agente); background: var(--agente); color: #fff; }
 .chip-alerta[aria-pressed="true"] .ic { color: #fff; }
 .chip-alerta[aria-pressed="true"] b { background: rgba(255, 255, 255, .22); color: #fff; }
 .chip-alerta:disabled { opacity: .5; cursor: default; }
@@ -1496,7 +1496,7 @@ a.cobertura-resumen__dato:hover { box-shadow: inset 0 0 0 2px currentColor; }
   .cobertura-resumen__ok { grid-column: 1 / -1; }
 }
 @media (max-width: 900px) {
-  .fuentes--tres { grid-template-columns: 1fr; }
+  .fuentes--tres, .fuentes--cuatro { grid-template-columns: 1fr; }
   .cobertura-resumen__cuerpo { grid-template-columns: 1fr; }
   .ips-sin-agente { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -1504,6 +1504,187 @@ a.cobertura-resumen__dato:hover { box-shadow: inset 0 0 0 2px currentColor; }
   .chips-alerta { padding: 0 14px 12px; }
   .cobertura-controles { padding: 14px; }
   .equipo-agente__datos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* =====================================================================
+   DHCP e intrusos en la red. Identidad del DHCP en verde azulado; los
+   posibles intrusos en rojo; las señales a favor en verde y en contra
+   en rojo (siempre con texto).
+   ===================================================================== */
+:root {
+  --dhcp: #0F6B66;
+  --dhcp-100: #E0F1EF;
+  --dhcp-200: #B8DDD8;
+}
+.pastilla--dhcp { display: inline-flex; align-items: center; gap: 5px; background: var(--dhcp-100); color: var(--dhcp); }
+.pastilla--dhcp::before { display: none; }
+.pastilla--dhcp .ic { width: 14px; height: 14px; }
+.fuentes--cuatro { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fuente--dhcp .fuente__icono, .tarjeta-imp--dhcp .tarjeta-imp__icono, .insignia-log--dhcp { background: var(--dhcp-100); color: var(--dhcp); }
+a.fuente--dhcp:hover { border-color: var(--dhcp); }
+.tarjeta-imp--dhcp:hover { background: var(--dhcp-100); }
+.fila-log--dhcp td:first-child { box-shadow: inset 4px 0 0 var(--dhcp); }
+.fila-log--dhcp:hover td { background: var(--dhcp-100); }
+.cajon__cabeza--dhcp { border-top-color: var(--dhcp); }
+.atajo-filtro--dhcp::before { background: var(--dhcp); }
+.equipo-agente--dhcp { border-color: var(--dhcp-200); background: linear-gradient(180deg, var(--dhcp-100), var(--superficie) 70%); }
+.insignia-agente--dhcp { background: var(--dhcp); }
+.equipo-agente--dhcp .cajon__nota { margin: 0; }
+.equipo-agente__dirs .btn--sm { margin-left: 4px; }
+.alias--dhcp, .leyenda--alias .alias__fuente--dhcp { border-color: var(--dhcp-200); }
+.alias--dhcp .alias__fuente, .alias__fuente--dhcp { background: var(--dhcp-100); color: var(--dhcp); }
+
+.cifra--intruso { border-top-color: var(--denegado); background: var(--denegado-100); }
+.cifra--intruso > b { color: var(--rojo-700); }
+.cifra--intruso-cero { border-top-color: var(--permitido); background: var(--permitido-100); }
+.cifra--intruso-cero > b { color: #1E5233; }
+.muestra--t30d, .medidor__parte--t30d { background: var(--t-30d); }
+.panel--intrusos { border-top: 4px solid var(--denegado); }
+.panel--intrusos .panel__cabeza h2 .ic { color: var(--denegado); }
+[data-intrusos] > .panel, [data-intrusos] > .panel--plegable { margin-top: 16px; }
+[data-intrusos] > .panel:first-child { margin-top: 0; }
+.pistas { display: flex; flex-wrap: wrap; gap: 4px; }
+.pista { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; cursor: help; }
+.pista--buena { background: var(--permitido-100); color: #1E5233; }
+.pista--mala { background: var(--rojo-100); color: var(--rojo-700); }
+.pista--neutra { background: var(--linea-2); color: var(--tinta-2); }
+.fila-ausente td { color: var(--tinta-3); }
+.col-fecha { white-space: nowrap; }
+
+/* =====================================================================
+   Correo institucional. Identidad en el verde del sistema; el estado de
+   cada envío con los mismos colores de permitido / denegado / por revisar.
+   ===================================================================== */
+.resumen--cinco { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.modulo--correo .modulo__icono { background: var(--verde-100); color: var(--verde-700); }
+.insignia-log--correo { background: var(--verde-100); color: var(--verde-700); }
+.aviso--accion { align-items: center; margin-bottom: 18px; }
+.aviso--accion > span { flex: 1; }
+.aviso--accion .btn { flex: none; }
+.texto-ok { color: #1E5233; font-weight: 700; }
+.texto-ok .ic, .cuenta-correo .texto-denegado .ic { width: 14px; height: 14px; vertical-align: -2px; margin-right: 3px; }
+.estado-envio { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; }
+.estado-envio--denegado { color: var(--rojo-700); }
+.estado-envio--permitido { color: #1E5233; }
+.estado-envio--revisar { color: #7A4F09; }
+.estado-envio--otro { color: var(--tinta-2); }
+.estado-envio .ic { width: 14px; height: 14px; }
+
+.cuenta-correo { margin-bottom: 0; }
+.cuenta-correo__cuerpo { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 18px; padding: 16px 20px; }
+.cuenta-correo__icono { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: var(--r-md); background: var(--verde-700); color: #fff; }
+.cuenta-correo__texto { display: flex; flex-direction: column; flex: 1 1 260px; min-width: 0; }
+.cuenta-correo__texto small { font-size: 12.5px; color: var(--tinta-3); }
+.cuenta-correo__texto strong { font-size: 16px; overflow-wrap: anywhere; }
+.cuenta-correo__texto > span { font-size: 13.5px; color: var(--tinta-2); }
+.cuenta-correo__hoy { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+.cuenta-correo__hoy b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.cuenta-correo__hoy span { font-size: 12.5px; color: var(--tinta-3); }
+
+.lista-avisos { list-style: none; margin: 0; padding: 8px; }
+.item-aviso { display: flex; align-items: center; gap: 14px; padding: 12px; border-radius: var(--r-md); color: inherit; text-decoration: none; }
+.item-aviso:hover { background: var(--verde-50); }
+.item-aviso__texto { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.item-aviso__texto strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-aviso__texto small { font-size: 13px; color: var(--tinta-3); }
+.item-aviso__texto small .ic { width: 13px; height: 13px; vertical-align: -2px; }
+.item-aviso__estado { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.item-aviso__estado small { font-size: 12.5px; color: var(--tinta-3); }
+.lista-sin-correo { list-style: none; margin: 0; padding: 14px 20px; display: flex; flex-direction: column; gap: 8px; }
+.lista-sin-correo li { display: flex; flex-direction: column; padding-left: 10px; border-left: 3px solid var(--ocre-cl); font-size: 14px; }
+.lista-sin-correo small { color: var(--tinta-3); font-size: 12.5px; }
+.tabla .recorte { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; max-width: 520px; }
+
+/* Escribir aviso: formulario y vista previa */
+.redactar { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.redactar .panel + .panel { margin-top: 0; }
+.redactar__pie { justify-content: space-between; flex-wrap: wrap; }
+.etiqueta-campo { font-weight: 700; font-size: 14px; color: var(--tinta); }
+.para-elegir { display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--linea-2); border-radius: var(--r-md); background: var(--verde-50); }
+.buscador-personas { position: relative; }
+.resultados-personas { position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 4px); list-style: none; margin: 0; padding: 6px; max-height: 300px; overflow: auto;
+  background: var(--superficie); border: 1px solid var(--linea); border-radius: var(--r-md); box-shadow: 0 8px 24px rgba(15, 42, 32, .14); }
+.resultados-personas button { display: flex; flex-direction: column; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r-sm); background: none; font: inherit; text-align: left; cursor: pointer; }
+.resultados-personas button:hover, .resultados-personas button:focus-visible { background: var(--verde-50); }
+.resultados-personas small { color: var(--tinta-3); font-size: 12.5px; }
+.resultados-personas .sin-dato { padding: 8px 10px; }
+.personas-elegidas { display: flex; flex-wrap: wrap; gap: 6px; }
+.personas-elegidas:empty { display: none; }
+.persona-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 11px; border: 1px solid var(--verde-600); border-radius: 999px; background: var(--superficie); font-size: 13px; font-weight: 700; color: var(--verde-800); }
+.persona-chip--sin { border-color: var(--ocre); color: #6B4A0B; }
+.persona-chip button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; color: inherit; cursor: pointer; }
+.persona-chip button:hover { background: var(--linea-2); }
+.persona-chip .ic { width: 13px; height: 13px; }
+.resumen-para { display: flex; gap: 8px; margin: 2px 0 0; font-size: 13.5px; color: var(--tinta-2); }
+.resumen-para > .ic { flex: none; margin-top: 2px; color: var(--verde-700); }
+.adjuntar { align-self: flex-start; }
+.campo input.visualmente-oculto { width: 1px; height: 1px; min-height: 0; padding: 0; border: 0; }
+#av-adjuntos:focus-visible + .adjuntar { box-shadow: var(--foco); }
+.adjuntos-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.adjuntos-lista:empty { display: none; }
+.adjuntos-lista li { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.adjuntos-lista li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adjuntos-lista li small { color: var(--tinta-3); }
+.adjuntos-lista .btn-icono { margin-left: auto; width: 30px; height: 30px; }
+.vista-correo { position: sticky; top: 84px; }
+.vista-correo__cuerpo { padding: 0 20px 20px; }
+.vista-correo__cabeza { display: flex; flex-direction: column; gap: 6px; margin: 0 0 14px; font-size: 13.5px; }
+.vista-correo__cabeza div { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; }
+.vista-correo__cabeza dt { color: var(--tinta-3); }
+.vista-correo__cabeza dd { margin: 0; overflow-wrap: anywhere; }
+.vista-correo__mensaje { padding: 0 18px 16px; border: 1px solid var(--linea); border-radius: var(--r-md); background: var(--superficie); font-size: 14.5px; overflow-wrap: anywhere; }
+.vista-correo__mensaje p { margin: 0 0 12px; line-height: 1.5; }
+.vista-correo__mensaje a { color: var(--verde-700); }
+.vista-correo__mensaje--plano { border: 0; padding: 4px 20px 18px; }
+.vista-correo__banda { margin: 0 -18px 14px; padding: 12px 18px 8px; border-top: 4px solid var(--verde-700); border-radius: var(--r-md) var(--r-md) 0 0; font-weight: 700; color: var(--verde-700); }
+.vista-correo__firma { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--linea); font-size: 13px; color: var(--tinta-2); }
+.vista-correo__adjuntos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.vista-correo__adjuntos .chip-dir { display: inline-flex; align-items: center; gap: 5px; font-family: var(--fuente); }
+.chip-dir--boton { cursor: pointer; font: inherit; }
+.chip-dir--boton:hover { border-color: var(--verde-600); background: var(--verde-50); }
+.chip-dir small { color: var(--tinta-3); }
+.marcador { padding: 0 4px; border-radius: 4px; background: var(--ocre-100); color: #6B4A0B; font-style: normal; font-family: var(--mono); font-size: .92em; }
+
+/* Envío en curso y resultado */
+.envio-en-curso { border-top: 4px solid var(--ocre); }
+.envio-terminado { border-top: 4px solid var(--permitido); }
+.envio-terminado .panel__cuerpo { display: flex; flex-direction: column; gap: 16px; }
+.envio-terminado--errores, .envio-terminado--error { border-top-color: var(--denegado); }
+.envio-terminado--errores .resultado-importacion__texto > .ic, .envio-terminado--error .resultado-importacion__texto > .ic { color: var(--rojo); }
+.avance-envio { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.avance-envio .progreso__barra { height: 10px; }
+.avance-envio__cifras { font-size: 14px; color: var(--tinta-2); }
+.avance-envio__cifras b { color: var(--tinta); font-size: 18px; }
+.cifras--aviso { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.cifras--aviso .cifra .estado-envio { order: -1; font-size: 16px; margin-bottom: 4px; }
+.aviso-detalle { display: flex; flex-direction: column; gap: 20px; }
+.aviso-detalle .panel + .panel { margin-top: 0; }
+.aviso-detalle .vista-correo__mensaje--plano { max-width: 760px; }
+.tabla .col-resultado { min-width: 220px; }
+.tabla .error-envio { color: var(--rojo-700); overflow-wrap: anywhere; max-width: 460px; }
+
+/* Configuración */
+.config-correo { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.config-correo .panel + .panel { margin-top: 20px; }
+.config-correo > .panel { margin-top: 0; }
+.rejilla--tres { grid-template-columns: minmax(0, 2fr) minmax(0, .8fr) minmax(0, 1.3fr); }
+.interruptor--chico { min-height: 30px; font-weight: 400; font-size: 13.5px; }
+.cifras--seis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+
+@media (max-width: 1180px) {
+  .redactar, .config-correo { grid-template-columns: 1fr; }
+  .vista-correo { position: static; }
+  .cifras--aviso { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 1080px) {
+  .resumen--cinco { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .cifras--aviso { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rejilla--tres { grid-template-columns: 1fr; }
+  .cuenta-correo__hoy { align-items: flex-start; }
+  .redactar__pie .btn { flex: 1 1 100%; }
+  .aviso--accion { flex-wrap: wrap; }
 }
 
 /* ---------- Responsive del módulo de logs */

@@ -1,6 +1,6 @@
 """Campos comunes (normalizados) de los logs.
 
-Cada programa (Sophos, Microclaudia y, más adelante, otros) llama distinto a lo mismo:
+Cada programa (Sophos, Microclaudia, el DHCP y, más adelante, otros) llama distinto a lo mismo:
 Sophos usa fw_rule_id en el firewall y rule_id en la inspección SSL;
 domain en el filtro web y sni en SSL. Aquí se define un solo nombre para
 cada dato, con su etiqueta, su grupo y su tipo, y los alias de cada
@@ -18,6 +18,7 @@ CAMPOS = [
     ("tipo_log", "Clase", "General", "texto", 60),
     ("componente", "Componente", "General", "texto", 60),
     ("subtipo", "Resultado", "General", "texto", 60),
+    ("descripcion", "Descripción", "General", "texto", 255),
     ("dispositivo", "Firewall que lo registró", "General", "texto", 100),
     ("id_mensaje", "Código del mensaje", "General", "texto", 20),
     ("severidad", "Severidad", "General", "texto", 30),
@@ -152,7 +153,17 @@ ALIAS_MICROCLAUDIA = [
     ("producto", "aplicacion", 1),
 ]
 
-ALIAS_POR_FUENTE = {"SOPHOS": ALIAS_SOPHOS, "MICROCLAUDIA": ALIAS_MICROCLAUDIA}
+# Alias del DHCP de Windows (concesiones y reservas). ip_principal,
+# mac_principal y producto los calcula el lector (la MAC sale del Id. exclusivo).
+ALIAS_DHCP = [
+    ("nombre", "nombre_equipo", 1),
+    ("descripcion", "descripcion", 1),
+    ("ip_principal", "ip_origen", 1),
+    ("mac_principal", "mac_origen", 1),
+    ("producto", "aplicacion", 1),
+]
+
+ALIAS_POR_FUENTE = {"SOPHOS": ALIAS_SOPHOS, "MICROCLAUDIA": ALIAS_MICROCLAUDIA, "DHCP": ALIAS_DHCP}
 
 # Nombres al estilo Wireshark que también entiende el filtro
 ALIAS_FILTRO = {

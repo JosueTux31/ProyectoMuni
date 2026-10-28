@@ -38,6 +38,9 @@ const TABLAS = {
   cat_tipos_documentos: { art: "el", nom: "tipo de documento", grupo: "Dispositivos de red", filtro: "Tipos de documento" },
   log_importaciones: { art: "la", nom: "importación de logs", grupo: "Análisis de logs", filtro: "Importaciones de logs" },
   log_mapeo_campos: { art: "el", nom: "alias de campo", grupo: "Análisis de logs", filtro: "Alias de campos de logs" },
+  cor_configuracion: { art: "la", nom: "cuenta de correo institucional", grupo: "Correo institucional", filtro: "Cuenta de correo" },
+  cor_envios: { art: "el", nom: "aviso", grupo: "Correo institucional", filtro: "Avisos al personal" },
+  cor_listas: { art: "la", nom: "lista de correos", grupo: "Correo institucional", filtro: "Listas de correos" },
 };
 
 const ACCIONES = {
@@ -67,6 +70,10 @@ const ETIQUETAS = {
   id_doc: "Tipo de documento", path_docs: "Archivo",
   fuente: "Programa", nombre_archivo: "Archivo", total_eventos: "Eventos", id_importacion: "Importación",
   campo_origen: "Nombre en el log", campo: "Campo común", prioridad: "Prioridad",
+  servidor: "Servidor", puerto: "Puerto", seguridad: "Seguridad", usuario: "Usuario de la cuenta", clave: "Clave",
+  correo_remitente: "Correo del remitente", nombre_remitente: "Nombre del remitente", responder_a: "Respuestas a",
+  firma: "Firma", limite_diario: "Límite diario", asunto: "Asunto", destinatarios: "Para", estado: "Estado",
+  total: "Destinatarios", enviados: "Enviados", errores: "Errores", dominio: "Dominio",
 };
 
 // Campo → catálogo para mostrar la descripción en lugar del código
@@ -111,6 +118,7 @@ function valorLegible(campo, valor) {
   if (campo === "imagen_path" || campo === "archivo_path") return esc(String(valor).split("/").pop());
   if (campo === "path_docs") return esc(nombreDocumento(valor));
   if (campo === "direccion_mac") return esc(macConGuiones(valor));
+  if (campo === "clave") return "guardada (cifrada)";
   return esc(valor);
 }
 
@@ -202,17 +210,55 @@ function frase(e) {
       if (e.accion === "ELIMINAR") return `eliminó el listado de equipos de Microclaudia ${archivo}${n ? ` con sus ${n.toLocaleString("es-CR")} equipos` : ""}`;
       return `modificó el listado de equipos de Microclaudia ${archivo}`;
     }
+    if (d.fuente === "DHCP") {
+      if (e.accion === "INSERTAR") return `importó las concesiones del DHCP ${archivo} ${enlace}`;
+      if (e.accion === "ELIMINAR") return `eliminó la lista del DHCP ${archivo}${n ? ` con sus ${n.toLocaleString("es-CR")} concesiones` : ""}`;
+      return `modificó la lista del DHCP ${archivo}`;
+    }
     const fuente = d.fuente === "SOPHOS" ? " de Sophos" : "";
     if (e.accion === "INSERTAR") return `importó el archivo de logs${fuente} ${archivo} ${enlace}`;
     if (e.accion === "ELIMINAR") return `eliminó la importación de logs${fuente} ${archivo}${n ? ` con sus ${n.toLocaleString("es-CR")} eventos` : ""}`;
     return `modificó la importación de logs ${archivo}`;
   }
 
+  if (e.tabla === "cor_configuracion") {
+    if (e.accion === "INSERTAR") return `configuró la cuenta de correo institucional ${desc}`;
+    const cambios = camposCambiados(e);
+    if (cambios.length === 1 && cambios[0] === "clave") return `cambió la clave de la cuenta de correo institucional ${desc}`;
+    if (cambios.length === 1 && cambios[0] === "activo") return `${Number(e.despues?.activo) ? "reanudó" : "pausó"} el envío de avisos`;
+    return `modificó la cuenta de correo institucional ${desc}`;
+  }
+
+  if (e.tabla === "cor_envios") {
+    const d = e.despues || e.antes || {};
+    const enlace = `(<a href="#/correo/avisos/${esc(e.llave)}">aviso N.º ${esc(e.llave)}</a>)`;
+    const para = d.destinatarios ? ` para ${esc(String(d.destinatarios).toLowerCase())}` : "";
+    if (e.accion === "INSERTAR") return `escribió el aviso ${desc}${para} ${enlace}`;
+    if (e.accion === "ELIMINAR") return `eliminó el aviso ${desc}, que no se había enviado`;
+    const n = (k) => Number(d[k] || 0).toLocaleString("es-CR");
+    switch (d.estado) {
+      case "ENVIANDO": return `empezó a enviar el aviso ${desc} ${enlace}`;
+      case "ENVIADO": return `terminó de enviar el aviso ${desc} a ${n("enviados")} ${Number(d.enviados) === 1 ? "persona" : "personas"} ${enlace}`;
+      case "CON_ERRORES": return `envió el aviso ${desc} a ${n("enviados")} de ${n("total")}; ${n("errores")} no se pudieron enviar ${enlace}`;
+      case "CANCELADO": return `detuvo el envío del aviso ${desc} (${n("enviados")} de ${n("total")} enviados) ${enlace}`;
+      default: return `modificó el aviso ${desc} ${enlace}`;
+    }
+  }
+
+  if (e.tabla === "cor_listas") {
+    const d = e.despues || e.antes || {};
+    const n = Number(d.total) || 0;
+    const enlace = `(<a href="#/correo/comparar/${esc(e.llave)}">lista N.º ${esc(e.llave)}</a>)`;
+    if (e.accion === "INSERTAR") return `importó la lista de correos ${desc}${n ? ` con ${n.toLocaleString("es-CR")} correos` : ""} ${enlace}`;
+    if (e.accion === "ELIMINAR") return `eliminó la lista de correos ${desc}`;
+    return `cambió la descripción de la lista de correos ${desc} ${enlace}`;
+  }
+
   if (e.tabla === "log_mapeo_campos") {
     const d = e.despues || e.antes || {};
     const origen = `<strong class="dato-mono">${esc(d.campo_origen || "")}</strong>`;
     const campo = `<strong>${esc(d.campo || "")}</strong>`;
-    const de = d.fuente === "MICROCLAUDIA" ? "del listado de Microclaudia" : d.fuente === "SOPHOS" ? "de los logs de Sophos" : "de los logs";
+    const de = { MICROCLAUDIA: "del listado de Microclaudia", SOPHOS: "de los logs de Sophos", DHCP: "de la lista del DHCP" }[d.fuente] || "de los logs";
     if (e.accion === "INSERTAR") return `hizo que el campo ${origen} ${de} se lea como ${campo}`;
     if (e.accion === "ELIMINAR") return `quitó el alias ${origen} → ${campo} ${de}`;
     return `cambió el alias ${origen} ${de} (ahora se lee como ${campo})`;

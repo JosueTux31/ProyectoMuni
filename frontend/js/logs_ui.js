@@ -491,6 +491,7 @@ export const ATAJOS_FILTRO = [
   { texto: "Con conexión", q: "id_conexion" },
   { texto: "Origen sin agente", q: "fuente == sophos and (ip.src == 10.0.0.0/8 or ip.src == 172.16.0.0/12 or ip.src == 192.168.0.0/16) and not con_agente", clase: "denegado" },
   { texto: "Equipos de Microclaudia", q: "fuente == microclaudia", clase: "agente" },
+  { texto: "Concesiones del DHCP", q: "fuente == dhcp", clase: "dhcp" },
 ];
 
 export function barraFiltroHTML({ q = "", atajos = true, textoAplicar = "Aplicar" } = {}) {
@@ -736,6 +737,8 @@ const EJEMPLOS_FILTRO = [
   ["fuente == microclaudia and version_agente != 2.12.0", "Equipos con otra versión del agente"],
   ["vacunas_pendientes > 0", "Equipos con vacunas pendientes"],
   ["hostname matches \"^ECOB\"", "Equipos por nombre (Microclaudia)"],
+  ["fuente == dhcp and not equipo_origen", "Concesiones del DHCP de equipos que no están en el inventario"],
+  ["fuente == dhcp and tipo contains Reserva", "Reservas del DHCP"],
   ["!(regla_id == 53) || dominio", "not / !, and / &&, or / ||, paréntesis"],
   ["google", "Texto suelto: lo busca en los campos principales"],
 ];
@@ -747,7 +750,7 @@ export function guiaFiltroHTML(cat) {
     <div class="guia-filtro">
       <p>Escriba condiciones como en Wireshark y únalas con <code>and</code>, <code>or</code> y <code>not</code>. Los nombres de campo se pueden escribir
       de tres formas: el campo común (<code>ip_origen</code>), el estilo Wireshark (<code>ip.src</code>) o el nombre que trae el programa (<code>src_ip</code>).
-      <code>fuente == sophos</code> o <code>fuente == microclaudia</code> limita a un programa, e <code>ip</code> y <code>mac</code> también buscan en
+      <code>fuente == sophos</code>, <code>fuente == microclaudia</code> o <code>fuente == dhcp</code> limita a un programa, e <code>ip</code> y <code>mac</code> también buscan en
       todas las direcciones de un equipo de Microclaudia. Haga clic en un ejemplo o en un campo para agregarlo al filtro.</p>
       <h3>Ejemplos</h3>
       <ul class="guia-filtro__ejemplos">${EJEMPLOS_FILTRO.map(([q, t]) =>
@@ -848,7 +851,9 @@ export async function abrirEvento(idEvento, opciones = {}) {
       }
       if (e.target.closest("[data-ver-conexion]")) filtrar(condicion("id_conexion", ev.id_conexion));
       const irQ = e.target.closest("[data-ir-q]");
-      if (irQ) { d.close(); location.hash = rutaLogs("eventos", { q: irQ.dataset.irQ }); }
+      if (irQ) { d.close(); location.hash = rutaLogs("eventos", { q: irQ.dataset.irQ }); return; }
+      // Un enlace a otra pantalla (la ficha del equipo, Registrar) cierra el cajón
+      if (e.target.closest('a[href^="#/"]')) d.close();
     });
   };
 
@@ -909,6 +914,9 @@ function extremoHTML(ev, lado, cat) {
 /** '[a, b, c]' -> ['a', 'b', 'c'] (listas de IP y MAC de Microclaudia) */
 export const listaTexto = (t) => String(t || "").replace(/^\s*\[|\]\s*$/g, "").split(/[,;\s]+/).filter(Boolean);
 export const esAgentes = (cat, fuente) => cat?.clases?.[fuente] === "agentes";
+export const esDhcp = (cat, fuente) => cat?.clases?.[fuente] === "dhcp";
+/** MAC administrada localmente (2.º dígito 2, 6, A o E): celulares y portátiles con dirección privada */
+export const macAleatoria = (m) => /^[0-9A-F][26AE][0-9A-F]{10}$/i.test(m || "");
 
 /** Filtro con todas las IPv4 y MAC de un equipo (para ver su tráfico en los logs). */
 export function filtroDirecciones(ips, macs) {
@@ -945,13 +953,48 @@ function equipoAgenteHTML(ev) {
         ${ips6.length ? `<small class="sin-dato">y ${ips6.length} IPv6</small>` : ""}</div>
       <div class="equipo-agente__dirs"><span class="etiqueta-dir">MAC</span>
         ${macs.map((m) => `<span class="chip-dir${m === ev.mac_origen ? " chip-dir--principal" : ""}">${esc(macGuiones(m))}</span>`).join("") || `<span class="sin-dato">—</span>`}</div>
-      ${q ? `<div class="cajon__pie-seccion"><button type="button" class="btn btn--secundario btn--sm" data-ir-q="${esc(`fuente != microclaudia and ${q}`)}">${icono("filtro")}Ver su tráfico en los logs</button></div>` : ""}
+      ${q ? `<div class="cajon__pie-seccion"><button type="button" class="btn btn--secundario btn--sm" data-ir-q="${esc(`fuente == sophos and ${q}`)}">${icono("filtro")}Ver su tráfico en los logs</button></div>` : ""}
+    </div>`;
+}
+
+/** Ficha de una concesión o reserva del DHCP: la MAC es la que identifica al equipo */
+function concesionDhcpHTML(ev) {
+  const d = ev.datos || {};
+  const reserva = /^Reserva/.test(ev.tipo || "");
+  const q = filtroDirecciones(ev.ip_origen ? [ev.ip_origen] : [], ev.mac_origen ? [ev.mac_origen] : []);
+  const registrar = `#/red/dispositivos/nuevo?${new URLSearchParams(Object.entries({
+    ip: ev.ip_origen, mac: ev.mac_origen, equipo: String(ev.nombre_equipo || "").split(".")[0],
+  }).filter(([, v]) => v))}`;
+  return `
+    <div class="equipo-agente equipo-agente--dhcp">
+      <div class="equipo-agente__cabeza">
+        <span class="insignia-agente insignia-agente--dhcp">${icono("dhcp")}</span>
+        <div><strong>${esc(ev.nombre_equipo || "Sin nombre")}</strong><span>${esc(ev.descripcion || (reserva ? "Reserva sin descripción" : "Concesión del DHCP"))}</span></div>
+        <span class="pastilla pastilla--dhcp pastilla--sin-punto">${esc(reserva ? (/inactiva/.test(ev.tipo) ? "Reserva inactiva" : "Reserva activa") : "Concesión")}</span>
+      </div>
+      <dl class="equipo-agente__datos">
+        <div><dt>IP entregada</dt><dd class="dato-mono">${esc(ev.ip_origen || "—")}</dd></div>
+        <div><dt>MAC</dt><dd class="dato-mono">${esc(macGuiones(ev.mac_origen || "")) || "—"}</dd></div>
+        <div><dt>Expira</dt><dd>${esc(ev.fecha ? fechaLog(ev.fecha) : reserva ? "No expira (reserva)" : "—")}</dd></div>
+        <div><dt>Tipo de cliente</dt><dd>${esc(d.tipo || "—")}</dd></div>
+        <div><dt>Id. exclusivo</dt><dd class="dato-mono">${esc(d.id_exclusivo || "—")}</dd></div>
+        <div><dt>Directiva</dt><dd>${esc(d.directiva || "—")}</dd></div>
+      </dl>
+      ${macAleatoria(ev.mac_origen) ? `<p class="cajon__nota">${icono("alerta", "ic--sm")}<span>Es una MAC aleatoria (dirección privada): la usan los celulares y
+        portátiles en el Wi-Fi. Suele ser un equipo personal.</span></p>` : ""}
+      <div class="equipo-agente__dirs"><span class="etiqueta-dir">Inventario</span>
+        ${ev.id_disp_mac ? `<a class="insignia-inventario" href="#/red/dispositivos/${esc(ev.id_disp_mac)}" title="Dispositivo registrado con esta MAC">${icono("red", "ic--sm")}<span>${esc(ev.equipo_mac || `Dispositivo N.º ${ev.id_disp_mac}`)}</span></a>`
+          : `<span class="insignia-inventario insignia-inventario--no">${icono("alerta", "ic--sm")}<span>Su MAC no está registrada</span></span>
+             ${ev.mac_origen ? `<a class="btn btn--secundario btn--sm" href="${registrar}">${icono("mas")}Registrar</a>` : ""}`}
+      </div>
+      ${q ? `<div class="cajon__pie-seccion"><button type="button" class="btn btn--secundario btn--sm" data-ir-q="${esc(`fuente == sophos and ${q}`)}">${icono("filtro")}Ver su tráfico en los logs</button></div>` : ""}
     </div>`;
 }
 
 function eventoHTML(ev, cat, pestana) {
   const accion = String(ev.accion || "OTRO").toLowerCase();
-  const agente = esAgentes(cat, ev.fuente);
+  const dhcp = esDhcp(cat, ev.fuente);
+  const agente = esAgentes(cat, ev.fuente) || dhcp;
   const origenes = origenDeCampos(ev, cat);
   const datos = ev.datos || {};
   const conexion = ev.conexion || [];
@@ -1011,9 +1054,10 @@ function eventoHTML(ev, cat, pestana) {
   const otras = Number(ev.en_otras_importaciones) || 0;
   const pest = (k, texto, n) => `<button type="button" role="tab" data-pestana="${k}" aria-selected="${pestana === k}">${texto}${n !== undefined ? `<span class="contador">${n}</span>` : ""}</button>`;
   return `
-    <div class="cajon__cabeza cajon__cabeza--${agente ? "agente" : accion}">
+    <div class="cajon__cabeza cajon__cabeza--${dhcp ? "dhcp" : agente ? "agente" : accion}">
       <div class="cajon__titulo">
-        ${agente ? `<span class="pastilla pastilla--agente pastilla--sin-punto">${icono("agente", "ic--sm")}Microclaudia</span>` : pastillaAccion(ev.accion)}
+        ${dhcp ? `<span class="pastilla pastilla--dhcp pastilla--sin-punto">${icono("dhcp", "ic--sm")}Servidor DHCP</span>`
+          : agente ? `<span class="pastilla pastilla--agente pastilla--sin-punto">${icono("agente", "ic--sm")}Microclaudia</span>` : pastillaAccion(ev.accion)}
         <h2>${esc(ev.tipo || "Evento")}${ev.subtipo ? ` <span>· ${esc(ev.subtipo)}</span>` : ""}</h2>
         <p><span class="dato-mono">${esc(fechaLog(ev.fecha))}</span> · Evento N.º ${esc(ev.id_evento)} ·
           <a href="#/logs/importaciones/${esc(ev.id_importacion)}">Importación N.º ${esc(ev.id_importacion)}</a>
@@ -1022,7 +1066,7 @@ function eventoHTML(ev, cat, pestana) {
       <button type="button" class="btn-icono" data-cerrar aria-label="Cerrar">${icono("cerrar")}</button>
     </div>
     <div class="cajon__cuerpo">
-      ${agente ? equipoAgenteHTML(ev) : `<div class="flujo flujo--${accion}">
+      ${dhcp ? concesionDhcpHTML(ev) : agente ? equipoAgenteHTML(ev) : `<div class="flujo flujo--${accion}">
         ${extremoHTML(ev, "origen", cat)}
         <div class="flujo__medio">
           <span class="flujo__flecha">${icono("derecha")}</span>

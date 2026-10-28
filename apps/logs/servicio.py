@@ -1,7 +1,8 @@
 """Lógica del módulo de logs que usan las vistas: importar un archivo,
 armar el filtro, el tablero, la comparación entre logs, el cruce con el
-inventario, el tablero del agente de Microclaudia y la cobertura del
-agente. Todo pasa por los procedimientos sp_log_* (sql/logs)."""
+inventario, el tablero del agente de Microclaudia, la cobertura del
+agente y los intrusos en la red (DHCP contra el inventario). Todo pasa
+por los procedimientos sp_log_* (sql/logs)."""
 import ipaddress
 import json
 import re
@@ -15,16 +16,19 @@ from apps.core.db import llamar_sp
 
 from . import filtro as flt
 from . import normalizar as nz
-from . import microclaudia, sophos
+from . import dhcp, microclaudia, sophos
 from .esquema import CAMPO, CAMPOS, CAMPOS_COMPARAR, NOMBRES
 
 # clase "logs": eventos de tráfico; clase "agentes": listado de equipos que
-# tienen un agente instalado (cada fila es un equipo)
+# tienen un agente instalado (cada fila es un equipo); clase "dhcp":
+# concesiones y reservas del servidor DHCP (cada fila es una IP entregada)
 FUENTES = {
     "SOPHOS": {"nombre": "Sophos Firewall", "lector": sophos.leer, "clase": "logs"},
     "MICROCLAUDIA": {"nombre": "Microclaudia", "lector": microclaudia.leer, "clase": "agentes"},
+    "DHCP": {"nombre": "Servidor DHCP", "lector": dhcp.leer, "clase": "dhcp"},
 }
 FUENTES_AGENTES = [k for k, v in FUENTES.items() if v["clase"] == "agentes"]
+FUENTES_DHCP = [k for k, v in FUENTES.items() if v["clase"] == "dhcp"]
 
 # Tops que muestra el tablero de una importación o de un filtro
 TOPS_TABLERO = ["ip_origen", "ip_destino", "dominio", "regla_nombre", "categoria", "aplicacion", "puerto_destino",
@@ -506,4 +510,182 @@ def cobertura(id_agentes):
         },
         "dispositivos": dispositivos,
         "no_registrados": no_registrados,
+    }
+
+
+# --------------------------------------------------------------- intrusos (DHCP)
+# Prefijos de MAC (OUI) de adaptadores de máquinas virtuales
+OUI_VIRTUALES = {"00155D": "Hyper-V", "080027": "VirtualBox", "0A0027": "VirtualBox", "005056": "VMware",
+                 "000C29": "VMware", "001C14": "VMware", "00163E": "Xen", "525400": "QEMU/KVM"}
+PRESENTES = {dhcp.CONCESION, dhcp.RESERVA_ACTIVA}
+ESTADOS_INTRUSOS = {
+    "registrado": "Registrado en el inventario",
+    "inactivo": "Registrado como inactivo",
+    "municipal": "Municipal sin registrar",
+    "intruso": "Posible intruso",
+    "sin_mac": "Sin MAC",
+}
+
+
+# Qué parece ser el equipo, por su nombre (solo para ayudar a revisar)
+PARECE = [
+    ("impresora", re.compile(r"^(EPSON|NPI[0-9A-F]|HP[0-9A-F]{6}|BRN|BRW|KM[0-9A-F]|KONICA|RICOH|XEROX|CANON|LEXMARK|IMP[-_ ])", re.I)),
+    ("celular", re.compile(r"^(ANDROID|IPHONE|IPAD|GALAXY|REDMI|XIAOMI|HUAWEI|HONOR|MOTO|OPPO|VIVO|SM-|POCO)|PHONE|CELULAR", re.I)),
+    ("servidor", re.compile(r"^(IDRAC|ILO|SRV|SERVER|ESXI|NAS)|-SRV|SERVER", re.I)),
+    ("cámara", re.compile(r"^(IPCAM|HIKVISION|DAHUA|CAM[-_ ]|AXIS)", re.I)),
+]
+
+
+def parece(nombre, mac):
+    for tipo, patron in PARECE:
+        if nombre and patron.search(nombre):
+            return tipo
+    if mac and mac[:6] in OUI_VIRTUALES:
+        return "máquina virtual"
+    return None
+
+
+def mac_aleatoria(mac):
+    """MAC administrada localmente (segundo dígito 2, 6, A o E): la usan los
+    celulares y portátiles con «dirección privada» en el Wi-Fi."""
+    return bool(mac) and len(mac) == 12 and int(mac[1], 16) & 2 == 2
+
+
+def partes_nombre(nombre):
+    """'EACU-09.mgrecia.net' -> ('EACU-09', 'mgrecia.net')"""
+    nombre = (nombre or "").strip()
+    if "." in nombre and " " not in nombre:
+        corto, dominio = nombre.split(".", 1)
+        if re.fullmatch(r"[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+", dominio):
+            return corto, dominio.lower()
+    return nombre, None
+
+
+def _dispositivo(d):
+    return {"id_disp": d["id_disp"], "equipo": d["equipo"], "tipo": d["tipo"], "edificio": d["edificio"],
+            "activo": bool(d["activo"]), "ips": d["_ips"], "macs": d["_macs"]}
+
+
+def ultima_dhcp_anterior(id_dhcp):
+    filas, _ = llamar_sp("sp_log_importaciones_listar", [FUENTES_DHCP[0]])
+    return next((f for f in filas if f["id_importacion"] < id_dhcp), None)
+
+
+def intrusos(id_dhcp, id_agentes=None):
+    """Concesiones y reservas del DHCP comparadas por MAC con los equipos
+    registrados en el sistema (Dispositivos de red).
+
+    Estado de cada concesión:
+      registrado  su MAC es de un dispositivo activo del inventario
+      inactivo    su MAC es de un dispositivo marcado como inactivo
+      municipal   no está registrada, pero hay señales de que es un equipo
+                  de la municipalidad: tiene el agente de Microclaudia, su
+                  nombre es del dominio de la red o es una reserva del DHCP
+      intruso     no está registrada y no hay ninguna de esas señales
+      sin_mac     el Id. exclusivo no trae una MAC
+    Pistas: agente, dominio, reserva (a favor); aleatoria, sin_nombre,
+    virtual, ip_de_otro y nueva (MAC que no estaba en el DHCP anterior)."""
+    filas, _ = llamar_sp("sp_log_dhcp_listar", [id_dhcp])
+    inventario, _ = llamar_sp("sp_log_red_inventario", [])
+    por_mac, por_ip = {}, {}
+    for d in inventario:
+        d["_ips"] = [_ip(x) for x in (d["ips"] or "").split(",") if x.strip()]
+        d["_macs"] = [x.strip().upper() for x in (d["macs"] or "").split(",") if x.strip()]
+        for m in d["_macs"]:
+            # Si la MAC está en un activo y en uno inactivo, gana el activo
+            if m not in por_mac or (d["activo"] and not por_mac[m]["activo"]):
+                por_mac[m] = d
+        for ip in d["_ips"]:
+            if ip not in por_ip or (d["activo"] and not por_ip[ip]["activo"]):
+                por_ip[ip] = d
+
+    # Equipos con el agente de Microclaudia, por MAC y por nombre
+    agentes_mac, agentes_nombre = {}, {}
+    if id_agentes:
+        for a in llamar_sp("sp_log_agentes_listar", [id_agentes])[0]:
+            ficha = {"id_evento": a["id_evento"], "nombre": a["nombre_equipo"], "ultima_conexion": a["ultima_conexion"]}
+            for m in filter(None, (a["macs"] or "").split(",")):
+                agentes_mac.setdefault(m, ficha)
+            if a["nombre_equipo"]:
+                agentes_nombre.setdefault(a["nombre_equipo"].strip().upper(), ficha)
+
+    # La MAC estaba en la importación del DHCP anterior?
+    anterior = ultima_dhcp_anterior(id_dhcp)
+    macs_antes = ({f["mac"] for f in llamar_sp("sp_log_dhcp_listar", [anterior["id_importacion"]])[0] if f["mac"]}
+                  if anterior else None)
+
+    # Dominio de la red: el sufijo que más se repite en los nombres
+    dominios = Counter(partes_nombre(f["nombre"])[1] for f in filas)
+    dominios.pop(None, None)
+    dominio = dominios.most_common(1)[0][0] if dominios else None
+
+    concesiones, vistas = [], set()
+    for f in filas:
+        mac = (f["mac"] or "").upper() or None
+        ip = _ip(f["ip"])
+        corto, sufijo = partes_nombre(f["nombre"])
+        d = por_mac.get(mac) if mac else None
+        otro = por_ip.get(ip)
+        agente = (agentes_mac.get(mac) if mac else None) or (agentes_nombre.get(corto.upper()) if corto else None)
+        reserva = f["tipo"] in (dhcp.RESERVA_ACTIVA, dhcp.RESERVA_INACTIVA)
+        pistas = []
+        if agente:
+            pistas.append("agente")
+        if dominio and sufijo == dominio:
+            pistas.append("dominio")
+        if reserva:
+            pistas.append("reserva")
+        if mac_aleatoria(mac):
+            pistas.append("aleatoria")
+        if mac and mac[:6] in OUI_VIRTUALES:
+            pistas.append("virtual")
+        if not (f["nombre"] or "").strip():
+            pistas.append("sin_nombre")
+        if otro and (d is None or otro["id_disp"] != d["id_disp"]):
+            pistas.append("ip_de_otro")
+        if macs_antes is not None and mac and mac not in macs_antes and not d:
+            pistas.append("nueva")
+        if not mac:
+            estado = "sin_mac"
+        elif d:
+            estado = "registrado" if d["activo"] else "inactivo"
+            vistas.add(d["id_disp"])
+        elif {"agente", "dominio", "reserva"} & set(pistas):
+            estado = "municipal"
+        else:
+            estado = "intruso"
+        concesiones.append({
+            "id_evento": f["id_evento"], "tipo": f["tipo"], "presente": f["tipo"] in PRESENTES,
+            "expira": f["expira"], "ip": ip, "mac": mac, "nombre": f["nombre"], "nombre_corto": corto,
+            "descripcion": f["descripcion"], "tipo_cliente": f["tipo_cliente"], "estado": estado, "pistas": pistas,
+            "virtual": OUI_VIRTUALES.get(mac[:6]) if mac else None,
+            "parece": parece(corto, mac),
+            "dispositivo": _dispositivo(d) if d else None,
+            "ip_distinta": bool(d and d["_ips"] and ip not in d["_ips"]),
+            "ip_de": _dispositivo(otro) if "ip_de_otro" in pistas else None,
+            "agente": agente,
+        })
+
+    # Registrados activos con MAC que no aparecen en el DHCP (IP fija o apagados)
+    no_vistos = [_dispositivo(d) for d in inventario if d["activo"] and d["_macs"] and d["id_disp"] not in vistas]
+    cuenta = Counter(c["estado"] for c in concesiones)
+    pistas = Counter(p for c in concesiones for p in c["pistas"])
+    tipos = Counter(c["tipo"] for c in concesiones)
+    return {
+        "dominio": dominio,
+        "anterior": anterior,
+        "estados": ESTADOS_INTRUSOS,
+        "totales": {
+            "concesiones": len(concesiones),
+            "presentes": sum(1 for c in concesiones if c["presente"]),
+            "reservas_activas": tipos.get(dhcp.RESERVA_ACTIVA, 0),
+            "reservas_inactivas": tipos.get(dhcp.RESERVA_INACTIVA, 0),
+            **{k: cuenta.get(k, 0) for k in ESTADOS_INTRUSOS},
+            "pistas": dict(pistas),
+            "ip_distinta": sum(1 for c in concesiones if c["ip_distinta"]),
+            "inventario_con_mac": sum(1 for d in inventario if d["activo"] and d["_macs"]),
+            "no_vistos": len(no_vistos),
+        },
+        "concesiones": concesiones,
+        "no_vistos": no_vistos,
     }

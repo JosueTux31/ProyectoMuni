@@ -71,6 +71,9 @@
       <symbol id="i-abajo" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
       <symbol id="i-punto-lleno" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="currentColor"/></symbol>
       <symbol id="i-agente" viewBox="0 0 24 24"><rect x="2.5" y="3.5" width="19" height="13" rx="2"/><path d="M9 20.5h6M12 16.5v4"/><path d="M12 6.3 8.6 7.6v2.6c0 2.1 1.4 3.5 3.4 4.2 2-.7 3.4-2.1 3.4-4.2V7.6L12 6.3Z"/></symbol>
+      <symbol id="i-dhcp" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="6.5" rx="1.5"/><path d="M7.5 6.25h.01M11 6.25h5.5"/><path d="M12 9.5V14M5 20.5V17h14v3.5M12 14v6.5"/></symbol>
+      <symbol id="i-intruso" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6.4-6.4"/><circle cx="16.2" cy="15.6" r="1.3" fill="currentColor"/></symbol>
+      <symbol id="i-enviar" viewBox="0 0 24 24"><path d="M21 3 10.5 13.5"/><path d="M21 3 14.5 21l-4-7.5L3 9.5 21 3Z"/></symbol>
       <symbol id="i-escudo" viewBox="0 0 24 24"><path d="M12 2.5 4 5.5v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10v-6l-8-3Z"/><path d="M7.5 14.5l2.8-3.6 1.9 2.3 3-4.2 3.3 5.5"/></symbol>
     </defs>
   </svg>
@@ -137,6 +140,7 @@
           <a href="#/inicio"><svg class="ic"><use href="#i-usuarios"/></svg>Usuarios y proveedores</a>
           <a href="#/red"><svg class="ic"><use href="#i-red"/></svg>Dispositivos de red</a>
           <a href="#/logs" data-solo-admin><svg class="ic"><use href="#i-logs"/></svg>Análisis de logs</a>
+          <a href="#/correo" data-solo-admin><svg class="ic"><use href="#i-correo"/></svg>Correo institucional</a>
         </div>
 
         <!-- Módulo de usuarios y proveedores -->
@@ -198,11 +202,13 @@
           <p class="nav__grupo">Importar</p>
           <a href="#/logs/importar/sophos" data-ruta="logs/importar/sophos"><svg class="ic"><use href="#i-firewall"/></svg>Logs de Sophos</a>
           <a href="#/logs/importar/microclaudia" data-ruta="logs/importar/microclaudia"><svg class="ic"><use href="#i-agente"/></svg>Equipos de Microclaudia</a>
+          <a href="#/logs/importar/dhcp" data-ruta="logs/importar/dhcp"><svg class="ic"><use href="#i-dhcp"/></svg>Concesiones del DHCP</a>
 
           <p class="nav__grupo">Análisis</p>
           <a href="#/logs/eventos" data-ruta="logs/eventos"><svg class="ic"><use href="#i-filtro"/></svg>Eventos</a>
           <a href="#/logs/tablero" data-ruta="logs/tablero"><svg class="ic"><use href="#i-grafico"/></svg>Tablero</a>
           <a href="#/logs/comparar" data-ruta="logs/comparar"><svg class="ic"><use href="#i-comparar"/></svg>Comparar logs</a>
+          <a href="#/logs/intrusos" data-ruta="logs/intrusos"><svg class="ic"><use href="#i-intruso"/></svg>Intrusos en la red</a>
           <a href="#/logs/cobertura" data-ruta="logs/cobertura"><svg class="ic"><use href="#i-agente"/></svg>Equipos sin agente</a>
           <a href="#/logs/inventario" data-ruta="logs/inventario"><svg class="ic"><use href="#i-red"/></svg>Cruce con el inventario</a>
 
@@ -212,6 +218,22 @@
 
           <p class="nav__grupo">Control</p>
           <a href="#/logs/auditoria" data-ruta="logs/auditoria"><svg class="ic"><use href="#i-historial"/></svg>Auditoría</a>
+        </div>
+
+        <!-- Módulo de correo institucional (solo administradores) -->
+        <div class="nav__modulo" data-modulo="correo" hidden>
+          <a href="#/correo" data-ruta="correo"><svg class="ic"><use href="#i-inicio"/></svg>Inicio</a>
+
+          <p class="nav__grupo">Avisos al personal</p>
+          <a href="#/correo/enviar" data-ruta="correo/enviar"><svg class="ic"><use href="#i-enviar"/></svg>Escribir aviso</a>
+          <a href="#/correo/avisos" data-ruta="correo/avisos"><svg class="ic"><use href="#i-documento"/></svg>Avisos enviados</a>
+
+          <p class="nav__grupo">Correos del personal</p>
+          <a href="#/correo/comparar" data-ruta="correo/comparar"><svg class="ic"><use href="#i-comparar"/></svg>Comparar correos</a>
+
+          <p class="nav__grupo">Cuenta</p>
+          <a href="#/correo/configuracion" data-ruta="correo/configuracion"><svg class="ic"><use href="#i-llave"/></svg>Configuración</a>
+          <a href="#/correo/auditoria" data-ruta="correo/auditoria"><svg class="ic"><use href="#i-historial"/></svg>Auditoría</a>
         </div>
       </nav>
 
