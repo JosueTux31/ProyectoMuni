@@ -143,7 +143,7 @@ document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") menuMovi
    ===================================================================== */
 const MODULOS = {
   usuarios: { nombre: "Usuarios y proveedores", inicio: "#/inicio", icono: "usuarios" },
-  red: { nombre: "Dispositivos de red", inicio: "#/red", icono: "red" },
+  red: { nombre: "Equipos municipales", inicio: "#/red", icono: "red" },
   logs: { nombre: "Análisis de logs", inicio: "#/logs", icono: "logs", soloAdmin: true },
   correo: { nombre: "Correo institucional", inicio: "#/correo", icono: "correo", soloAdmin: true },
 };
@@ -184,7 +184,7 @@ const RUTAS = [
   { patron: /^auditoria$/, vista: vistaAuditoria, soloAdmin: true },
   { patron: /^catalogos\/([\w-]+)$/, vista: vistaCatalogo },
   { patron: /^geografia\/([\w-]+)$/, vista: vistaGeografia },
-  // Módulo de dispositivos de red
+  // Módulo de equipos municipales (rutas #/red/...)
   { patron: /^red$/, vista: vistaInicioRed },
   { patron: /^red\/dispositivos$/, vista: vistaDispositivos },
   { patron: /^red\/dispositivos\/nuevo$/, vista: vistaDispositivoNuevo, soloAdmin: true },
@@ -338,8 +338,8 @@ async function vistaModulos(cont, _params, ctx) {
     <div class="modulos">
       ${tarjeta("usuarios", "Personal municipal, proveedores con sus contactos y catálogos de servicios, catálogos del sistema y división territorial.",
         ["usuarios activos", "proveedores activos"])}
-      ${tarjeta("red", "Modems, firewalls, routers y switches: dónde están, quién les da soporte y sus manuales, firmware, respaldos y configuraciones.",
-        ["dispositivos activos", "edificios"])}
+      ${tarjeta("red", "Equipos de red, computadoras, servidores, celulares, impresoras, UPS y más: a quién están asignados, dónde están, quién les da soporte y sus documentos.",
+        ["equipos activos", "edificios"])}
       ${ctx.esAdmin ? tarjeta("logs", "Logs de Sophos Firewall, equipos con el agente de Microclaudia y concesiones del DHCP en gráficos: filtro estilo Wireshark, comparación, equipos sin agente, intrusos en la red y cruce con el inventario.",
         ["importaciones", "registros"]) : ""}
       ${ctx.esAdmin ? tarjeta("correo", "Avisos al personal desde la cuenta de correo institucional, y comparación de los correos registrados con la lista de cuentas de la municipalidad.",

@@ -33,27 +33,41 @@ export const CATALOGOS = {
     descripcion: "Tipo de bien o servicio que ofrece cada proveedor. Cada proveedor tiene una categoría.",
   },
 
-  // Módulo de dispositivos de red (api = ruta propia; modulo = dónde se administra)
+  // Módulo de equipos municipales (api = ruta propia; modulo = dónde se administra)
   "tipos-dispositivos": {
-    titulo: "Tipos de dispositivo", singular: "tipo de dispositivo", llave: "tipo_disp", max: 100, icono: "red",
-    descripcion: "Modem, firewall, router, switch… Cada marca y cada dispositivo pertenecen a un tipo.",
-    api: "dispositivos/tipos", modulo: "red", grupo: "Catálogos de red",
-    enUso: "Si tiene marcas o dispositivos, no se podrá eliminar.",
+    titulo: "Tipos de equipo", singular: "tipo de equipo", llave: "tipo_disp", max: 100, icono: "equipo",
+    descripcion: "Laptop, impresora, celular, switch… Cada tipo es de una categoría, que decide qué datos se piden al registrar sus equipos. Cada marca y cada equipo pertenecen a un tipo.",
+    api: "dispositivos/tipos", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si tiene marcas o equipos, no se podrá eliminar.",
+    // Además de la descripción: la categoría (lista fija)
+    extra: async () => {
+      const categorias = [...await filasCatalogo("categorias-dispositivos")].sort((a, b) => a.id_categoria - b.id_categoria);
+      const nombre = (t) => String(t || "").charAt(0) + String(t || "").slice(1).toLowerCase();
+      return {
+        campos: [{
+          nombre: "id_categoria", etiqueta: "Categoría", tipo: "select", requerido: true, entero: true,
+          opciones: categorias.map((c) => ({ valor: c.id_categoria, texto: nombre(c.descripcion) })),
+          ayuda: "Decide qué datos se piden al registrar sus equipos: puertos, procesador y memoria, IMEI y línea, impresión…",
+        }],
+        columnas: [{ titulo: "Categoría", html: (f) => `${esc(nombre(f.categoria))}<span class="secundario">${f.cantidad_dispositivos || 0} ${f.cantidad_dispositivos === 1 ? "equipo" : "equipos"}</span>` }],
+      };
+    },
   },
   "sistemas-operativos": {
     titulo: "Sistemas operativos", singular: "sistema operativo", llave: "id_os", max: 100, icono: "sistema",
-    descripcion: "Sistema operativo de cada dispositivo. N/D es para los que no aplica o no se conoce.",
-    api: "dispositivos/sistemas-operativos", modulo: "red", grupo: "Catálogos de red",
+    descripcion: "Sistema operativo de cada equipo (Windows, Linux, Android, iOS, firmware…). N/D es para los que no aplica o no se conoce.",
+    api: "dispositivos/sistemas-operativos", modulo: "red", grupo: "Catálogos de equipos",
     enUso: "Si algún dispositivo lo usa, no se podrá eliminar.",
   },
   "tipos-documentos": {
     titulo: "Tipos de documento", singular: "tipo de documento", llave: "id_doc", max: 100, icono: "documento",
-    descripcion: "Clasificación de los archivos de cada dispositivo: manuales, imágenes, firmware, respaldos y configuración.",
-    api: "dispositivos/tipos-documentos", modulo: "red", grupo: "Catálogos de red",
+    descripcion: "Clasificación de los archivos de cada equipo: manuales, imágenes, firmware, respaldos, configuración, facturas y actas de entrega.",
+    api: "dispositivos/tipos-documentos", modulo: "red", grupo: "Catálogos de equipos",
     enUso: "Si algún dispositivo tiene documentos de este tipo, no se podrá eliminar.",
   },
   // Solo para mostrar nombres (tienen su propia pantalla)
   marcas: { titulo: "Marcas", llave: "id_marca", api: "dispositivos/marcas", modulo: "red", soloDatos: true },
+  "categorias-dispositivos": { titulo: "Categorías de equipo", llave: "id_categoria", api: "dispositivos/categorias", modulo: "red", soloDatos: true },
   edificios: { titulo: "Edificios", llave: "id_predio", api: "dispositivos/edificios", modulo: "red", soloDatos: true },
 };
 

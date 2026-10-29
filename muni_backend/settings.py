@@ -51,6 +51,8 @@ INSTALLED_APPS = [
     'apps.proveedores',
     'apps.auditoria',
     'apps.dispositivos',
+    'apps.logs',
+    'apps.correo',
 ]
 
 MIDDLEWARE = [
@@ -143,7 +145,7 @@ MUNI_TOKEN_HORAS = 8
 FRONTEND_DIR = BASE_DIR / 'frontend'
 
 # Archivos subidos (fotos, imágenes y catálogos de proveedores, documentos
-# de los dispositivos de red).
+# de los equipos municipales, adjuntos de los avisos por correo).
 # No se publican directamente: se descargan por la API con sesión iniciada.
 MEDIA_ROOT = BASE_DIR / 'archivos'
 
@@ -151,9 +153,15 @@ MEDIA_ROOT = BASE_DIR / 'archivos'
 MUNI_MAX_MB_CATALOGO = 20
 MUNI_MAX_MB_IMAGEN = 5
 MUNI_MAX_MB_FOTO = 5
-# Documentos de los dispositivos de red (manuales, firmware, respaldos...).
+# Documentos de los equipos municipales (manuales, firmware, respaldos...).
 # Los firmware pueden pesar varios cientos de MB.
 MUNI_MAX_MB_DOCUMENTO_RED = 1024
+# Cada archivo de logs que se importa (Sophos, Microclaudia, DHCP)
+MUNI_MAX_MB_LOG = 100
+# Máximo de eventos que se exportan de una vez a CSV
+MUNI_MAX_EXPORTAR_LOGS = 100000
+# Total de los adjuntos de un aviso por correo
+MUNI_MAX_MB_CORREO = 15
 
 # Auditoría: True solo si Django está detrás de un proxy (Nginx, Apache) que
 # envía la IP real del cliente en X-Forwarded-For.

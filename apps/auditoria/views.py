@@ -15,7 +15,7 @@ ACCIONES = ("INSERTAR", "ACTUALIZAR", "ELIMINAR", "INICIO_SESION", "CIERRE_SESIO
 class FiltrosSerializer(serializers.Serializer):
     id_usuario = serializers.IntegerField(required=False, allow_null=True)
     id_persona = serializers.IntegerField(required=False, allow_null=True)
-    tabla = serializers.RegexField(r"^[a-z_]{1,64}$", required=False, allow_blank=True)
+    tabla = serializers.RegexField(r"^[A-Za-z_]{1,64}$", required=False, allow_blank=True)   # equiposMuni lleva mayúscula
     accion = serializers.ChoiceField(ACCIONES, required=False, allow_blank=True)
     desde = serializers.DateField(required=False, allow_null=True)
     hasta = serializers.DateField(required=False, allow_null=True)

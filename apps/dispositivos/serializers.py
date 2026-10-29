@@ -1,4 +1,6 @@
-"""Validación de los datos que llegan a las APIs de dispositivos de red."""
+"""Validación de los datos que llegan a las APIs de equipos municipales
+(antes dispositivos de red)."""
+import datetime
 import ipaddress
 import re
 
@@ -50,6 +52,18 @@ def _texto_o_nulo(valor):
 # ------------------------------------------------------------- catálogos
 class Descripcion100Serializer(serializers.Serializer):
     descripcion = serializers.CharField(max_length=100)
+
+
+class TipoDispositivoSerializer(serializers.Serializer):
+    descripcion = serializers.CharField(max_length=100)
+    # Categoría (decide qué datos se piden a sus equipos). Vacía al crear:
+    # la que dice el nombre (LAPTOP -> computadoras) o «otros equipos»;
+    # vacía al modificar: se queda la que tenía.
+    id_categoria = serializers.IntegerField(min_value=1, **OPCIONAL)
+
+
+class TipoFiltrosSerializer(serializers.Serializer):
+    id_categoria = serializers.IntegerField(**OPCIONAL)
 
 
 class MarcaSerializer(serializers.Serializer):
@@ -144,17 +158,81 @@ def mac_con_guiones(mac):
     return "-".join(mac[i:i + 2] for i in range(0, 12, 2)) if mac and len(mac) == 12 else mac
 
 
+# Valores de las listas del formulario (iguales a los que acepta la base)
+TECNOLOGIAS_IMPRESION = ["LÁSER", "TINTA", "TINTA CONTINUA", "TÉRMICA", "MATRIZ DE PUNTO"]
+TIPOS_ALMACENAMIENTO = ["SSD", "NVME", "HDD", "EMMC"]
+_NOMBRE_RED = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+_TELEFONO = re.compile(r"\+?[0-9][0-9 -]{3,18}")
+
+
+def _entero(maximo, minimo=1):
+    return {"min_value": minimo, "max_value": maximo, "required": False, "allow_null": True}
+
+
+def imei_valido(texto):
+    """Los 15 dígitos del IMEI (sin espacios ni guiones). El último es un
+    dígito verificador (Luhn), así se detecta un número mal copiado.
+    Vacío = None. Lanza ValueError si no es un IMEI."""
+    texto = (texto or "").strip()
+    if not texto:
+        return None
+    digitos = re.sub(r"[\s-]", "", texto)
+    if not re.fullmatch(r"[0-9]{15}", digitos):
+        raise ValueError("El IMEI tiene 15 dígitos (en el celular: marque *#06#).")
+    suma = 0
+    for i, c in enumerate(digitos[:14]):
+        n = int(c) * (2 if i % 2 else 1)
+        suma += n - 9 if n > 9 else n
+    if (10 - suma % 10) % 10 != int(digitos[14]):
+        raise ValueError("Ese IMEI no es válido: revise que los 15 dígitos estén bien copiados.")
+    return digitos
+
+
 class DispositivoSerializer(serializers.Serializer):
     serie = serializers.CharField(max_length=100)
     tipo_disp = serializers.IntegerField()
     id_marca = serializers.IntegerField()
     id_modelo = serializers.IntegerField(**OPCIONAL)
+    # Identificación: nombre en la red (se compara con el DHCP y
+    # Microclaudia) y placa (número de activo)
+    nombre_equipo = serializers.CharField(max_length=100, **TEXTO_OPCIONAL)
+    placa = serializers.CharField(max_length=50, **TEXTO_OPCIONAL)
+    # Equipos de red y servidores
     cant_ptos_ethernet = serializers.IntegerField(**PUERTOS)
     cant_ptos_sfp = serializers.IntegerField(**PUERTOS)
-    id_os = serializers.IntegerField(**OPCIONAL)            # vacío = N/D
+    # Sistema operativo (vacío = N/D) y su versión o la del firmware
+    id_os = serializers.IntegerField(**OPCIONAL)
+    version_os = serializers.CharField(max_length=100, **TEXTO_OPCIONAL)
+    # Computadoras, servidores y móviles
+    procesador = serializers.CharField(max_length=150, **TEXTO_OPCIONAL)
+    memoria_gb = serializers.IntegerField(**_entero(4096))
+    almacenamiento_gb = serializers.IntegerField(**_entero(1_000_000))
+    tipo_almacenamiento = serializers.ChoiceField(TIPOS_ALMACENAMIENTO, **TEXTO_OPCIONAL)
+    # Móviles y telefonía
+    imei = serializers.CharField(max_length=30, **TEXTO_OPCIONAL)
+    imei2 = serializers.CharField(max_length=30, **TEXTO_OPCIONAL)
+    numero_linea = serializers.CharField(max_length=20, **TEXTO_OPCIONAL)
+    operador = serializers.CharField(max_length=50, **TEXTO_OPCIONAL)
+    extension = serializers.CharField(max_length=10, **TEXTO_OPCIONAL)
+    # Impresión
+    tecnologia_impresion = serializers.ChoiceField(TECNOLOGIAS_IMPRESION, **TEXTO_OPCIONAL)
+    a_color = serializers.BooleanField(**OPCIONAL)
+    consumible = serializers.CharField(max_length=100, **TEXTO_OPCIONAL)
+    # Pantallas, cámaras, UPS y grabadores
+    pulgadas = serializers.DecimalField(max_digits=4, decimal_places=1, min_value=1, max_value=150, **OPCIONAL)
+    resolucion = serializers.CharField(max_length=20, **TEXTO_OPCIONAL)
+    capacidad_va = serializers.IntegerField(**_entero(1_000_000))
+    autonomia_min = serializers.IntegerField(**_entero(9999))
+    canales = serializers.IntegerField(**_entero(512))
+    # Ubicación, asignación y soporte
     id_predio = serializers.IntegerField(**OPCIONAL)        # edificio (su mapa es el del edificio)
     ubicacion = serializers.CharField(max_length=255, **TEXTO_OPCIONAL)
+    cod_departamento = serializers.IntegerField(**OPCIONAL)
+    id_asignado = serializers.IntegerField(**OPCIONAL)      # funcionario responsable
     id_proveedor = serializers.IntegerField(**OPCIONAL)
+    fecha_compra = serializers.DateField(**OPCIONAL)
+    garantia_hasta = serializers.DateField(**OPCIONAL)
+    observaciones = serializers.CharField(max_length=500, **TEXTO_OPCIONAL)
     # Todas las IP y MAC del dispositivo; se guardan junto con él. Si no
     # vienen (o vienen en null) no se tocan las que ya tiene.
     ips = serializers.ListField(child=serializers.DictField(), required=False, allow_null=True)
@@ -169,6 +247,43 @@ class DispositivoSerializer(serializers.Serializer):
     def validate_ubicacion(self, valor):
         return _texto_o_nulo(valor)
 
+    def validate_nombre_equipo(self, valor):
+        valor = _texto_o_nulo(valor)
+        if valor and not _NOMBRE_RED.fullmatch(valor):
+            raise serializers.ValidationError(
+                "El nombre en la red lleva letras, números, guion, punto o guion bajo, sin espacios (por ejemplo PC-FIN-01).")
+        return valor
+
+    def validate_imei(self, valor):
+        try:
+            return imei_valido(valor)
+        except ValueError as e:
+            raise serializers.ValidationError(str(e))
+
+    validate_imei2 = validate_imei
+
+    def validate_numero_linea(self, valor):
+        valor = _texto_o_nulo(valor)
+        if valor and not _TELEFONO.fullmatch(valor):
+            raise serializers.ValidationError("Escriba el número de la línea con sus dígitos (por ejemplo 8888-8888).")
+        return valor
+
+    def validate_extension(self, valor):
+        valor = _texto_o_nulo(valor)
+        if valor and not valor.isdigit():
+            raise serializers.ValidationError("La extensión lleva solo números.")
+        return valor
+
+    def validate_resolucion(self, valor):
+        valor = _texto_o_nulo(valor)
+        # 1920 x 1080 -> 1920X1080
+        return re.sub(r"\s*[xX×]\s*", "X", valor) if valor else valor
+
+    def validate_fecha_compra(self, valor):
+        if valor and valor > datetime.date.today():
+            raise serializers.ValidationError("La fecha de compra no puede ser posterior a hoy.")
+        return valor
+
     def validate_ips(self, filas):
         return _validar_direcciones(filas, IpSerializer, "direccion_ip", "IP")
 
@@ -179,14 +294,32 @@ class DispositivoSerializer(serializers.Serializer):
         viejos = [c for c in CAMPOS_VIEJOS if c in (self.initial_data or {})]
         if viejos:
             raise serializers.ValidationError(MENSAJE_PAGINA_VIEJA)
+        # Textos vacíos = NULL; las listas en mayúscula (la base las guarda así)
+        for campo in ("placa", "version_os", "procesador", "operador", "consumible", "observaciones"):
+            if campo in datos:
+                datos[campo] = _texto_o_nulo(datos[campo])
+        for campo in ("tipo_almacenamiento", "tecnologia_impresion"):
+            if campo in datos:
+                datos[campo] = datos[campo] or None
+        errores = {}
+        if datos.get("imei") and datos.get("imei") == datos.get("imei2"):
+            errores["imei2"] = ["El segundo IMEI es igual al primero."]
+        compra, garantia = datos.get("fecha_compra"), datos.get("garantia_hasta")
+        if compra and garantia and garantia < compra:
+            errores["garantia_hasta"] = ["La garantía no puede terminar antes de la fecha de compra."]
+        if errores:
+            raise serializers.ValidationError(errores)
         return datos
 
 
 class DispositivoFiltrosSerializer(serializers.Serializer):
     activo = serializers.BooleanField(default=None, **OPCIONAL)
+    id_categoria = serializers.IntegerField(**OPCIONAL)
     tipo_disp = serializers.IntegerField(**OPCIONAL)
     id_marca = serializers.IntegerField(**OPCIONAL)
     id_predio = serializers.IntegerField(**OPCIONAL)
+    cod_departamento = serializers.IntegerField(**OPCIONAL)
+    id_asignado = serializers.IntegerField(**OPCIONAL)
     id_proveedor = serializers.IntegerField(**OPCIONAL)
     buscar = serializers.CharField(max_length=150, **TEXTO_OPCIONAL)
 

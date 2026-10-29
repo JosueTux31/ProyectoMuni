@@ -24,18 +24,20 @@ const TABLAS = {
   geo_provincias: { art: "la", nom: "provincia", grupo: "Territorio", filtro: "Provincias" },
   geo_cantones: { art: "el", nom: "cantón", grupo: "Territorio", filtro: "Cantones" },
   geo_distritos: { art: "el", nom: "distrito", grupo: "Territorio", filtro: "Distritos" },
-  red_dispositivos: { art: "el", nom: "dispositivo", grupo: "Dispositivos de red", filtro: "Dispositivos" },
-  equipos: { art: "la", nom: "dirección IP", grupo: "Dispositivos de red", filtro: "Direcciones IP" },
+  equiposMuni: { art: "el", nom: "equipo", grupo: "Equipos municipales", filtro: "Equipos" },
+  // Nombre anterior de la tabla equiposMuni: solo para mostrar la auditoría vieja
+  red_dispositivos: { art: "el", nom: "equipo", grupo: "Equipos municipales", filtro: "Equipos", anterior: true },
+  equipos: { art: "la", nom: "dirección IP", grupo: "Equipos municipales", filtro: "Direcciones IP" },
   // Nombre anterior de la tabla equipos: solo para mostrar la auditoría vieja
-  red_ips_dispositivos: { art: "la", nom: "dirección IP", grupo: "Dispositivos de red", filtro: "Direcciones IP", anterior: true },
-  red_macs_dispositivos: { art: "la", nom: "dirección MAC", grupo: "Dispositivos de red", filtro: "Direcciones MAC" },
-  red_documentos_dispositivos: { art: "el", nom: "documento", grupo: "Dispositivos de red", filtro: "Documentos de dispositivos" },
-  cat_edificios: { art: "el", nom: "edificio", grupo: "Dispositivos de red", filtro: "Edificios" },
-  cat_marcas: { art: "la", nom: "marca", grupo: "Dispositivos de red", filtro: "Marcas" },
-  cat_modelos: { art: "el", nom: "modelo", grupo: "Dispositivos de red", filtro: "Modelos" },
-  cat_tipos_dispositivos: { art: "el", nom: "tipo de dispositivo", grupo: "Dispositivos de red", filtro: "Tipos de dispositivo" },
-  cat_sistemas_operativos: { art: "el", nom: "sistema operativo", grupo: "Dispositivos de red", filtro: "Sistemas operativos" },
-  cat_tipos_documentos: { art: "el", nom: "tipo de documento", grupo: "Dispositivos de red", filtro: "Tipos de documento" },
+  red_ips_dispositivos: { art: "la", nom: "dirección IP", grupo: "Equipos municipales", filtro: "Direcciones IP", anterior: true },
+  red_macs_dispositivos: { art: "la", nom: "dirección MAC", grupo: "Equipos municipales", filtro: "Direcciones MAC" },
+  red_documentos_dispositivos: { art: "el", nom: "documento", grupo: "Equipos municipales", filtro: "Documentos de dispositivos" },
+  cat_edificios: { art: "el", nom: "edificio", grupo: "Equipos municipales", filtro: "Edificios" },
+  cat_marcas: { art: "la", nom: "marca", grupo: "Equipos municipales", filtro: "Marcas" },
+  cat_modelos: { art: "el", nom: "modelo", grupo: "Equipos municipales", filtro: "Modelos" },
+  cat_tipos_dispositivos: { art: "el", nom: "tipo de equipo", grupo: "Equipos municipales", filtro: "Tipos de equipo" },
+  cat_sistemas_operativos: { art: "el", nom: "sistema operativo", grupo: "Equipos municipales", filtro: "Sistemas operativos" },
+  cat_tipos_documentos: { art: "el", nom: "tipo de documento", grupo: "Equipos municipales", filtro: "Tipos de documento" },
   log_importaciones: { art: "la", nom: "importación de logs", grupo: "Análisis de logs", filtro: "Importaciones de logs" },
   log_mapeo_campos: { art: "el", nom: "alias de campo", grupo: "Análisis de logs", filtro: "Alias de campos de logs" },
   cor_configuracion: { art: "la", nom: "cuenta de correo institucional", grupo: "Correo institucional", filtro: "Cuenta de correo" },
@@ -63,7 +65,14 @@ const ETIQUETAS = {
   correo: "Correo", url_web: "Página web", num_linea: "Línea", id_usuario: "Persona", fecha_registro: "Fecha",
   descripcion: "Descripción", nombre_pais: "Nombre", nombre_provincia: "Nombre", nombre_canton: "Nombre",
   nombre_distrito: "Nombre", motivo: "Motivo",
-  serie: "Serie", tipo_disp: "Tipo de dispositivo", id_marca: "Marca", id_modelo: "Modelo",
+  serie: "Serie", tipo_disp: "Tipo de equipo", id_marca: "Marca", id_modelo: "Modelo", id_categoria: "Categoría",
+  nombre_equipo: "Nombre en la red", placa: "Placa", version_os: "Versión del sistema o firmware", procesador: "Procesador",
+  memoria_gb: "Memoria RAM (GB)", almacenamiento_gb: "Almacenamiento (GB)", tipo_almacenamiento: "Tipo de disco",
+  imei: "IMEI", imei2: "IMEI 2", numero_linea: "Número de línea", operador: "Operador", extension: "Extensión",
+  tecnologia_impresion: "Tecnología de impresión", a_color: "Imprime a color", consumible: "Tóner o cartucho",
+  pulgadas: "Pulgadas", resolucion: "Resolución", capacidad_va: "Capacidad (VA)", autonomia_min: "Autonomía (minutos)",
+  canales: "Canales de video", id_asignado: "Funcionario responsable", fecha_compra: "Fecha de compra",
+  garantia_hasta: "Garantía hasta", observaciones: "Observaciones",
   cant_ptos_ethernet: "Puertos Ethernet", cant_ptos_sfp: "Puertos SFP", id_os: "Sistema operativo",
   gps: "Coordenadas", id_predio: "Edificio", id_edificio: "Edificio", ubicacion: "Ubicación en el edificio",
   id_proveedor: "Proveedor", direccion_ip: "Dirección IP", direccion_mac: "Dirección MAC", interfaz: "Interfaz",
@@ -82,9 +91,10 @@ const CAMPO_CATALOGO = {
   cod_tipo_auth: "tipos-autenticaciones", cod_categoria: "categorias-proveedores",
   cod_telefono: "tipos-telefonos", cod_correo: "tipos-correos",
   tipo_disp: "tipos-dispositivos", id_marca: "marcas", id_os: "sistemas-operativos", id_doc: "tipos-documentos",
+  id_categoria: "categorias-dispositivos",
   id_predio: "edificios", id_edificio: "edificios",
 };
-const BOOLEANOS = new Set(["activo", "es_whatsapp", "es_proveedor"]);
+const BOOLEANOS = new Set(["activo", "es_whatsapp", "es_proveedor", "a_color"]);
 const OCULTOS = new Set(["id", "id_usuario", "num_linea", "id_disp"]);
 
 /** AABBCCDDEEFF (o AA:BB:...) -> AA-BB-CC-DD-EE-FF */
@@ -96,17 +106,31 @@ const macConGuiones = (m) => {
 /** dispositivos/5/manual-1a2b3c4d.pdf -> manual.pdf */
 const nombreDocumento = (r) => String(r || "").split("/").pop().replace(/-[0-9a-f]{8}(?=\.[^.]+$|$)/, "");
 
+// Campos con una persona: se muestra su nombre (funcionario responsable y proveedor del equipo)
+const CAMPO_PERSONA = { id_asignado: "usuarios/", id_proveedor: "proveedores/" };
+const nombrePersona = (p) => [p.nombre, p.apellido1, p.apellido2].filter(Boolean).join(" ");
+
 let catalogos = null;
 async function cargarCatalogos() {
   if (catalogos) return catalogos;
-  const pares = await Promise.all(Object.entries(CAMPO_CATALOGO).map(async ([campo, slug]) => {
-    try {
-      const filas = await filasCatalogo(slug);
-      return [campo, new Map(filas.map((f) => [String(f[CATALOGOS[slug].llave]), f.descripcion]))];
-    } catch {
-      return [campo, new Map()];
-    }
-  }));
+  const pares = await Promise.all([
+    ...Object.entries(CAMPO_CATALOGO).map(async ([campo, slug]) => {
+      try {
+        const filas = await filasCatalogo(slug);
+        return [campo, new Map(filas.map((f) => [String(f[CATALOGOS[slug].llave]), f.descripcion]))];
+      } catch {
+        return [campo, new Map()];
+      }
+    }),
+    ...Object.entries(CAMPO_PERSONA).map(async ([campo, recurso]) => {
+      try {
+        const filas = await api(recurso, { query: { activo: "" } });
+        return [campo, new Map(filas.map((f) => [String(f.id), nombrePersona(f)]))];
+      } catch {
+        return [campo, new Map()];
+      }
+    }),
+  ]);
   catalogos = Object.fromEntries(pares);
   return catalogos;
 }
@@ -180,14 +204,20 @@ function frase(e) {
     return propio ? "modificó sus datos" : `modificó ${quien} ${destino}`;
   }
 
-  if (e.tabla === "red_dispositivos") {
+  // equiposMuni se llamaba red_dispositivos: los cambios viejos se muestran igual
+  if (e.tabla === "equiposMuni" || e.tabla === "red_dispositivos") {
     const disp = e.accion === "ELIMINAR" ? desc
       : `<a href="#/red/dispositivos/${esc(e.llave)}">${esc(e.descripcion || `N.º ${e.llave}`)}</a>`;
-    if (e.accion === "INSERTAR") return `registró el dispositivo ${disp}`;
-    if (e.accion === "ELIMINAR") return `eliminó definitivamente el dispositivo ${disp}`;
+    if (e.accion === "INSERTAR") return `registró el equipo ${disp}`;
+    if (e.accion === "ELIMINAR") return `eliminó definitivamente el equipo ${disp}`;
     const cambios = camposCambiados(e);
-    if (cambios.length === 1 && cambios[0] === "activo") return `${Number(e.despues.activo) ? "activó" : "desactivó"} el dispositivo ${disp}`;
-    return `modificó el dispositivo ${disp}`;
+    if (cambios.length === 1 && cambios[0] === "activo") return `${Number(e.despues.activo) ? "activó" : "desactivó"} el equipo ${disp}`;
+    if (cambios.length === 1 && cambios[0] === "id_asignado") {
+      if (!e.despues.id_asignado) return `quitó la persona asignada al equipo ${disp}`;
+      const quien = catalogos?.id_asignado?.get(String(e.despues.id_asignado));
+      return `asignó el equipo ${disp} a ${quien ? `<a href="#/usuarios/${esc(e.despues.id_asignado)}">${esc(quien)}</a>` : "otra persona"}`;
+    }
+    return `modificó el equipo ${disp}`;
   }
 
   if (e.tabla === "red_documentos_dispositivos") {

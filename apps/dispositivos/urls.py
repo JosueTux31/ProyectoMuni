@@ -10,7 +10,10 @@ DISPOSITIVO = "<int:id_disp>/"
 DOCUMENTO = DISPOSITIVO + "documentos/<int:num_linea>/"
 
 urlpatterns = [
-    # Catálogos del módulo
+    # Catálogos del módulo (las categorías son fijas: solo se consultan)
+    path("categorias/", v.CategoriaDispositivoViewSet.as_view({"get": "list"}), name="categorias-lista"),
+    path("categorias/<int:id_categoria>/", v.CategoriaDispositivoViewSet.as_view({"get": "retrieve"}),
+         name="categorias-detalle"),
     *rutas_crud("tipos/", "<int:tipo_disp>/", v.TipoDispositivoViewSet, "tipos"),
     *rutas_crud("marcas/", "<int:id_marca>/", v.MarcaViewSet, "marcas"),
     *rutas_crud("modelos/", "<int:id_marca>/<int:id_modelo>/", v.ModeloViewSet, "modelos"),

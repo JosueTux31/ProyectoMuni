@@ -421,25 +421,33 @@ def _ip(texto):
         return texto
 
 
-def cobertura(id_agentes):
-    """Equipos registrados en el sistema (red_dispositivos activos) comparados
-    por MAC e IP con el listado de equipos que tienen el agente.
+def nombre_corto(nombre):
+    """'eacu-09.mgrecia.net' -> 'EACU-09' (para comparar nombres de equipo)."""
+    return (nombre or "").strip().split(".")[0].upper() or None
 
-    Estado de cada dispositivo:
+
+def cobertura(id_agentes):
+    """Equipos registrados en el sistema (equiposMuni activos) comparados por
+    MAC, IP y nombre en la red con el listado de equipos que tienen el agente.
+
+    Estado de cada equipo:
       con             una de sus MAC está en el listado, o su IP cuando no
-                      tiene MAC registrada
-      revisar         su IP está en el listado, pero con otras MAC: puede
-                      ser otro equipo que recibió esa IP del DHCP
-      sin             ninguna de sus IP o MAC está en el listado
-      sin_direcciones no tiene IP ni MAC registradas: no se puede comparar
-    Además devuelve los equipos del listado que no son ningún dispositivo
+                      tiene MAC registrada (o su IP y su nombre), o su
+                      nombre en la red cuando no coincide por IP ni MAC
+      revisar         su IP está en el listado, pero con otras MAC y otro
+                      nombre: puede ser otro equipo que recibió esa IP del DHCP
+      sin             ninguna de sus IP, MAC ni su nombre está en el listado
+      sin_direcciones no tiene IP, MAC ni nombre registrados: no se puede comparar
+    lleva_agente dice si por su categoría se espera que tenga el agente
+    (computadoras y servidores): la página deja fuera a los demás.
+    Además devuelve los equipos del listado que no son ningún equipo
     registrado (no_registrados); uno que solo coincide por una IP «por
     revisar» también se cuenta ahí."""
     agentes, _ = llamar_sp("sp_log_agentes_listar", [id_agentes])
     inventario, _ = llamar_sp("sp_log_cobertura_inventario", [id_agentes])
     referencia = max((a["ultima_conexion"] for a in agentes if a["ultima_conexion"]), default=None)
 
-    por_ip, por_mac, fichas = {}, {}, []
+    por_ip, por_mac, por_nombre, fichas = {}, {}, {}, []
     for a in agentes:
         horas = ((referencia - a["ultima_conexion"]).total_seconds() / 3600
                  if referencia and a["ultima_conexion"] else None)
@@ -457,6 +465,8 @@ def cobertura(id_agentes):
                 por_ip.setdefault(ip, []).append(ficha)
         for mac in ficha["macs"]:
             por_mac.setdefault(mac, []).append(ficha)
+        if nombre_corto(ficha["nombre"]):
+            por_nombre.setdefault(nombre_corto(ficha["nombre"]), []).append(ficha)
 
     def unicos(listas):
         """Los equipos del listado, sin repetir, del que se conectó último al más viejo."""
@@ -472,27 +482,38 @@ def cobertura(id_agentes):
     for d in inventario:
         ips = [_ip(x) for x in (d["ips"] or "").split(",") if x.strip()]
         macs = [x.strip().upper() for x in (d["macs"] or "").split(",") if x.strip()]
+        nombre = d["nombre_corto"]
         por_m = unicos(por_mac.get(m, []) for m in macs)
         por_i = unicos(por_ip.get(ip, []) for ip in ips)
-        candidatos = unicos([por_m, por_i])
+        por_n = unicos([por_nombre.get(nombre, [])]) if nombre else []
+        candidatos = unicos([por_m, por_i, por_n])
         coinciden.update(f["id_evento"] for f in por_m)        # la MAC confirma que es ese equipo
         agente, por = None, None
-        if not ips and not macs:
+        if not ips and not macs and not nombre:
             estado = "sin_direcciones"
         elif por_m:
             agente = por_m[0]
             estado = "con"
             por = "IP y MAC" if any(f["id_evento"] == agente["id_evento"] for f in por_i) else "MAC"
         elif por_i:
-            agente = por_i[0]
-            estado = "revisar" if macs else "con"
-            por = "IP"
-            if not macs:
+            mismo = next((f for f in por_i if any(f["id_evento"] == n["id_evento"] for n in por_n)), None)
+            agente = mismo or por_i[0]
+            estado = "revisar" if macs and not mismo else "con"
+            por = "IP y nombre" if mismo else "IP"
+            if estado == "con":
                 coinciden.add(agente["id_evento"])
+        elif por_n:
+            # Mismo nombre, pero ninguna IP ni MAC en común (otra tarjeta de red o la IP cambió)
+            agente = por_n[0]
+            estado = "con"
+            por = "nombre"
+            coinciden.add(agente["id_evento"])
         else:
             estado = "sin"
         dispositivos.append({
-            "id_disp": d["id_disp"], "tipo": d["tipo"], "equipo": d["equipo"], "edificio": d["edificio"],
+            "id_disp": d["id_disp"], "tipo": d["tipo"], "categoria": d["categoria"],
+            "lleva_agente": bool(d["lleva_agente"]), "equipo": d["equipo"], "edificio": d["edificio"],
+            "nombre_equipo": d["nombre_equipo"], "asignado": d["asignado"],
             "ips": ips, "macs": macs, "estado": estado, "agente": agente, "por": por,
             "otros": [f["nombre"] for f in candidatos if agente is None or f["id_evento"] != agente["id_evento"]],
         })
@@ -500,9 +521,12 @@ def cobertura(id_agentes):
     no_registrados = [f for f in fichas if f["id_evento"] not in coinciden]
     cuenta = Counter(x["estado"] for x in dispositivos)
     tipos = Counter(x["tipo"] for x in dispositivos)
+    lleva = {x["tipo"]: x["lleva_agente"] for x in dispositivos}
+    categoria = {x["tipo"]: x["categoria"] for x in dispositivos}
     return {
         "referencia": referencia,
-        "tipos": [{"tipo": t, "total": n} for t, n in sorted(tipos.items())],
+        "tipos": [{"tipo": t, "total": n, "categoria": categoria[t], "lleva_agente": lleva[t]}
+                  for t, n in sorted(tipos.items())],
         "totales": {
             "dispositivos": len(dispositivos), "con": cuenta.get("con", 0), "revisar": cuenta.get("revisar", 0),
             "sin": cuenta.get("sin", 0), "sin_direcciones": cuenta.get("sin_direcciones", 0),
@@ -527,19 +551,27 @@ ESTADOS_INTRUSOS = {
 }
 
 
-# Qué parece ser el equipo, por su nombre (solo para ayudar a revisar)
+# Qué parece ser el equipo, por su nombre (solo para ayudar a revisar).
+# El segundo valor es el tipo de equipo que se propone al registrarlo.
 PARECE = [
-    ("impresora", re.compile(r"^(EPSON|NPI[0-9A-F]|HP[0-9A-F]{6}|BRN|BRW|KM[0-9A-F]|KONICA|RICOH|XEROX|CANON|LEXMARK|IMP[-_ ])", re.I)),
-    ("celular", re.compile(r"^(ANDROID|IPHONE|IPAD|GALAXY|REDMI|XIAOMI|HUAWEI|HONOR|MOTO|OPPO|VIVO|SM-|POCO)|PHONE|CELULAR", re.I)),
-    ("servidor", re.compile(r"^(IDRAC|ILO|SRV|SERVER|ESXI|NAS)|-SRV|SERVER", re.I)),
-    ("cámara", re.compile(r"^(IPCAM|HIKVISION|DAHUA|CAM[-_ ]|AXIS)", re.I)),
+    ("impresora", "IMPRESORA",
+     re.compile(r"^(EPSON|NPI[0-9A-F]|HP[0-9A-F]{6}|BRN|BRW|KM[0-9A-F]|KONICA|RICOH|XEROX|CANON|LEXMARK|IMP[-_ ])", re.I)),
+    ("teléfono IP", "TELÉFONO IP", re.compile(r"^(SEP[0-9A-F]{12}$|YEALINK|GRANDSTREAM|GXP|POLYCOM|AVAYA)", re.I)),
+    ("tablet", "TABLET", re.compile(r"^(IPAD|GALAXY-?TAB|TAB[-_ ]|TABLET)|TABLET", re.I)),
+    ("celular", "CELULAR",
+     re.compile(r"^(ANDROID|IPHONE|GALAXY|REDMI|XIAOMI|HUAWEI|HONOR|MOTO|OPPO|VIVO|SM-|POCO)|PHONE|CELULAR", re.I)),
+    ("servidor", "SERVIDOR", re.compile(r"^(IDRAC|ILO|SRV|SERVER|ESXI|NAS)|-SRV|SERVER", re.I)),
+    ("cámara", "CÁMARA IP", re.compile(r"^(IPCAM|HIKVISION|DAHUA|CAM[-_ ]|AXIS)", re.I)),
+    ("access point", "ACCESS POINT", re.compile(r"^(AP[-_]|UAP|U6-|UNIFI|ARUBA-?AP|EAP[0-9])", re.I)),
+    ("laptop", "LAPTOP", re.compile(r"^(LAPTOP|NOTEBOOK|MACBOOK|LT[-_])|[-_]LT[-_]?[0-9]*$|LAPTOP", re.I)),
 ]
+TIPO_PARECE = {texto: tipo for texto, tipo, _ in PARECE}
 
 
 def parece(nombre, mac):
-    for tipo, patron in PARECE:
+    for texto, _, patron in PARECE:
         if nombre and patron.search(nombre):
-            return tipo
+            return texto
     if mac and mac[:6] in OUI_VIRTUALES:
         return "máquina virtual"
     return None
@@ -562,7 +594,8 @@ def partes_nombre(nombre):
 
 
 def _dispositivo(d):
-    return {"id_disp": d["id_disp"], "equipo": d["equipo"], "tipo": d["tipo"], "edificio": d["edificio"],
+    return {"id_disp": d["id_disp"], "equipo": d["equipo"], "tipo": d["tipo"], "categoria": d["categoria"],
+            "edificio": d["edificio"], "nombre_equipo": d["nombre_equipo"], "asignado": d["asignado"],
             "activo": bool(d["activo"]), "ips": d["_ips"], "macs": d["_macs"]}
 
 
@@ -573,21 +606,24 @@ def ultima_dhcp_anterior(id_dhcp):
 
 def intrusos(id_dhcp, id_agentes=None):
     """Concesiones y reservas del DHCP comparadas por MAC con los equipos
-    registrados en el sistema (Dispositivos de red).
+    registrados en el sistema (Equipos municipales).
 
     Estado de cada concesión:
-      registrado  su MAC es de un dispositivo activo del inventario
-      inactivo    su MAC es de un dispositivo marcado como inactivo
+      registrado  su MAC es de un equipo activo del inventario
+      inactivo    su MAC es de un equipo marcado como inactivo
       municipal   no está registrada, pero hay señales de que es un equipo
                   de la municipalidad: tiene el agente de Microclaudia, su
-                  nombre es del dominio de la red o es una reserva del DHCP
+                  nombre es el de un equipo registrado o es del dominio de
+                  la red, o es una reserva del DHCP
       intruso     no está registrada y no hay ninguna de esas señales
       sin_mac     el Id. exclusivo no trae una MAC
-    Pistas: agente, dominio, reserva (a favor); aleatoria, sin_nombre,
-    virtual, ip_de_otro y nueva (MAC que no estaba en el DHCP anterior)."""
+    Pistas: agente, inventario (el nombre es de un equipo registrado),
+    dominio, reserva (a favor); aleatoria, sin_nombre, virtual, ip_de_otro,
+    nueva (MAC que no estaba en el DHCP anterior); nombre_distinto (la MAC
+    está registrada a un equipo con otro nombre en la red)."""
     filas, _ = llamar_sp("sp_log_dhcp_listar", [id_dhcp])
     inventario, _ = llamar_sp("sp_log_red_inventario", [])
-    por_mac, por_ip = {}, {}
+    por_mac, por_ip, por_nombre = {}, {}, {}
     for d in inventario:
         d["_ips"] = [_ip(x) for x in (d["ips"] or "").split(",") if x.strip()]
         d["_macs"] = [x.strip().upper() for x in (d["macs"] or "").split(",") if x.strip()]
@@ -598,6 +634,9 @@ def intrusos(id_dhcp, id_agentes=None):
         for ip in d["_ips"]:
             if ip not in por_ip or (d["activo"] and not por_ip[ip]["activo"]):
                 por_ip[ip] = d
+        n = d["nombre_corto"]
+        if n and (n not in por_nombre or (d["activo"] and not por_nombre[n]["activo"])):
+            por_nombre[n] = d
 
     # Equipos con el agente de Microclaudia, por MAC y por nombre
     agentes_mac, agentes_nombre = {}, {}
@@ -626,11 +665,14 @@ def intrusos(id_dhcp, id_agentes=None):
         corto, sufijo = partes_nombre(f["nombre"])
         d = por_mac.get(mac) if mac else None
         otro = por_ip.get(ip)
+        tocayo = por_nombre.get(nombre_corto(corto)) if corto else None
         agente = (agentes_mac.get(mac) if mac else None) or (agentes_nombre.get(corto.upper()) if corto else None)
         reserva = f["tipo"] in (dhcp.RESERVA_ACTIVA, dhcp.RESERVA_INACTIVA)
         pistas = []
         if agente:
             pistas.append("agente")
+        if tocayo and not d:
+            pistas.append("inventario")
         if dominio and sufijo == dominio:
             pistas.append("dominio")
         if reserva:
@@ -645,12 +687,14 @@ def intrusos(id_dhcp, id_agentes=None):
             pistas.append("ip_de_otro")
         if macs_antes is not None and mac and mac not in macs_antes and not d:
             pistas.append("nueva")
+        if d and d["nombre_corto"] and corto and nombre_corto(corto) != d["nombre_corto"]:
+            pistas.append("nombre_distinto")
         if not mac:
             estado = "sin_mac"
         elif d:
             estado = "registrado" if d["activo"] else "inactivo"
             vistas.add(d["id_disp"])
-        elif {"agente", "dominio", "reserva"} & set(pistas):
+        elif {"agente", "inventario", "dominio", "reserva"} & set(pistas):
             estado = "municipal"
         else:
             estado = "intruso"
@@ -660,6 +704,12 @@ def intrusos(id_dhcp, id_agentes=None):
             "descripcion": f["descripcion"], "tipo_cliente": f["tipo_cliente"], "estado": estado, "pistas": pistas,
             "virtual": OUI_VIRTUALES.get(mac[:6]) if mac else None,
             "parece": parece(corto, mac),
+            # Tipo que se propone al registrarlo: el que dice su nombre, el
+            # del equipo registrado que se llama igual, o computadora si
+            # tiene el agente de Microclaudia
+            "tipo_sugerido": (TIPO_PARECE.get(parece(corto, mac)) or (tocayo["tipo"] if tocayo and not d else None)
+                              or ("COMPUTADORA" if agente else None)),
+            "mismo_nombre": _dispositivo(tocayo) if tocayo and not d else None,
             "dispositivo": _dispositivo(d) if d else None,
             "ip_distinta": bool(d and d["_ips"] and ip not in d["_ips"]),
             "ip_de": _dispositivo(otro) if "ip_de_otro" in pistas else None,

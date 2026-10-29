@@ -1720,3 +1720,14 @@ a.fuente--dhcp:hover { border-color: var(--dhcp); }
   .menu-exportar[open] { flex-basis: 100%; }
   .menu-exportar__lista { position: static; width: auto; margin-top: 6px; }
 }
+
+/* =====================================================================
+   Equipos municipales: categorías, responsable y pestaña «Equipos»
+   ===================================================================== */
+.panel__acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.filtro-persona { margin: 16px 20px 0; flex-wrap: wrap; align-items: center; }
+.filtro-persona > span { flex: 1 1 260px; }
+.resumen--categorias span { line-height: 1.25; }
+@media (min-width: 1081px) and (max-width: 1280px) {
+  .resumen--categorias { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}

@@ -54,9 +54,21 @@ export async function vistaCatalogo(cont, [slug], ctx, modulo = "usuarios") {
   let filas = [];
   let visibles = [];
 
+  // Datos de más de algunos catálogos (la categoría de los tipos de equipo)
+  let extra = { campos: [], columnas: [] };
+  if (def.extra) {
+    try {
+      extra = await def.extra();
+    } catch (e) {
+      lista.innerHTML = `<div class="panel__cuerpo">${errorHTML(e.message)}</div>`;
+      return;
+    }
+    if (!ctx.vigente()) return;
+  }
+
   function pintar() {
     const q = normalizar(buscar.value.trim());
-    visibles = q ? filas.filter((f) => normalizar(`${f[def.llave]} ${f.descripcion}`).includes(q)) : filas;
+    visibles = q ? filas.filter((f) => normalizar(`${f[def.llave]} ${f.descripcion} ${f.categoria || ""}`).includes(q)) : filas;
     total.textContent = `${visibles.length} de ${filas.length}`;
     if (!visibles.length) {
       lista.innerHTML = vacioHTML({
@@ -69,6 +81,7 @@ export async function vistaCatalogo(cont, [slug], ctx, modulo = "usuarios") {
     const columnas = [
       { titulo: "Código", clase: "col-codigo", html: (f) => esc(f[def.llave]) },
       { titulo: "Descripción", html: (f) => `<strong>${esc(f.descripcion)}</strong>` },
+      ...extra.columnas,
     ];
     if (admin) columnas.push({ titulo: "", clase: "col-acciones", html: (f) => botonesFila({ etiqueta: f.descripcion }) });
     lista.innerHTML = tablaHTML({ columnas, filas: visibles });
@@ -86,7 +99,7 @@ export async function vistaCatalogo(cont, [slug], ctx, modulo = "usuarios") {
     pintar();
   }
 
-  const campos = [{ nombre: "descripcion", etiqueta: "Descripción", requerido: true, max: def.max }];
+  const campos = [{ nombre: "descripcion", etiqueta: "Descripción", requerido: true, max: def.max }, ...extra.campos];
 
   async function formulario(fila) {
     const r = await abrirFormulario({

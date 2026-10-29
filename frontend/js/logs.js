@@ -208,8 +208,8 @@ const IMPORTADORES = {
           Un equipo puede traer varias IP y MAC: se guardan todas.</li>
         <li><strong>Para cruzar</strong> se usan las IPv4 y MAC de cada equipo; se dejan fuera las 169.254.x (sin DHCP) y la MAC que
           comparte VirtualBox en muchos equipos.</li>
-        <li><strong>Equipos sin agente:</strong> los equipos registrados en el sistema (Dispositivos de red) se comparan por su MAC
-          y su IP con el último listado importado.</li>
+        <li><strong>Equipos sin agente:</strong> los equipos registrados en el sistema (Equipos municipales) se comparan por su MAC,
+          su IP y su nombre en la red con el último listado importado.</li>
       </ol>
       <p class="ayuda-importar__nota">${icono("enlace", "ic--sm")}<span>Importe un listado nuevo cada cierto tiempo y compárelos en
         <a href="#/logs/comparar">Comparar logs</a> por nombre del equipo: verá qué equipos entraron y cuáles salieron.</span></p>`,
@@ -1483,18 +1483,27 @@ const medidorTramos = (tramos) => medidorPartes(tramos.map((t) => ({ texto: t.va
    --------------------------------------------------------------------- */
 const CLAVE_TIPOS = "muni.logs.cobertura.excluir";
 
-function tiposExcluidos() {
+/** Tipos de equipo que no se comparan con el listado. Los que la persona no
+ *  ha elegido todavía: se comparan solo los que llevan el agente por su
+ *  categoría (computadoras y servidores); una impresora o un switch no. */
+function tiposExcluidos(tipos = []) {
+  let guardado = {};
   try {
-    const v = JSON.parse(localStorage.getItem(CLAVE_TIPOS) || "[]");
-    return new Set(Array.isArray(v) ? v : []);
+    const v = JSON.parse(localStorage.getItem(CLAVE_TIPOS) || "null");
+    // Versión anterior: solo la lista de excluidos
+    guardado = Array.isArray(v) ? { excluidos: v, vistos: v } : v && typeof v === "object" ? v : {};
   } catch {
-    return new Set();
+    guardado = {};
   }
+  const excluidos = new Set(Array.isArray(guardado.excluidos) ? guardado.excluidos : []);
+  const vistos = new Set(Array.isArray(guardado.vistos) ? guardado.vistos : []);
+  for (const t of tipos) if (!vistos.has(t.tipo) && t.lleva_agente === false) excluidos.add(t.tipo);
+  return excluidos;
 }
 
-function guardarExcluidos(excluidos) {
+function guardarExcluidos(excluidos, tipos = []) {
   try {
-    localStorage.setItem(CLAVE_TIPOS, JSON.stringify([...excluidos]));
+    localStorage.setItem(CLAVE_TIPOS, JSON.stringify({ excluidos: [...excluidos], vistos: tipos.map((t) => t.tipo) }));
   } catch {
     /* sin almacenamiento del navegador: vale solo mientras la pantalla esté abierta */
   }
@@ -1504,7 +1513,7 @@ const ESTADOS_COBERTURA = {
   con: { texto: "Con el agente", clase: "permitido" },
   sin: { texto: "Sin el agente", clase: "denegado" },
   revisar: { texto: "Por revisar", clase: "revisar" },
-  sin_direcciones: { texto: "Sin IP ni MAC registradas", clase: "otro" },
+  sin_direcciones: { texto: "Sin IP, MAC ni nombre en la red", clase: "otro" },
 };
 
 function resumirCobertura(cb, excluidos) {
@@ -1526,7 +1535,7 @@ function miniCobertura(n) {
   const partes = ["con", "sin", "revisar"].filter((k) => n[k]);
   const total = partes.reduce((s, k) => s + n[k], 0);
   if (!total) return "";
-  return `<span class="mini-medidor" tabindex="0" data-globo="${globoHTML(`${num(total)} ${total === 1 ? "equipo" : "equipos"} con IP o MAC`,
+  return `<span class="mini-medidor" tabindex="0" data-globo="${globoHTML(`${num(total)} ${total === 1 ? "equipo" : "equipos"} que se comparan`,
     partes.map((k) => [ESTADOS_COBERTURA[k].texto, num(n[k]), ESTADOS_COBERTURA[k].clase]))}">
     ${partes.map((k) => `<i class="medidor__parte--${ESTADOS_COBERTURA[k].clase}" style="flex-grow:${n[k]}"></i>`).join("")}</span>`;
 }
@@ -1535,8 +1544,9 @@ const nombreDispositivo = (d) => d.equipo || `Dispositivo N.º ${d.id_disp}`;
 /** «SERIE CN-123» del texto «COMPUTADORA · DELL · SERIE CN-123» (para listas cortas) */
 const serieDispositivo = (d) => (d.equipo ? d.equipo.split(" · ").pop() : `N.º ${d.id_disp}`);
 const direccionesHTML = (ips, macs) => [...ips, ...macs.map(macGuiones)].map(esc).join("<br>") || `<span class="sin-dato">—</span>`;
+// Los equipos del listado de Microclaudia son computadoras (el agente es para ellas)
 const rutaRegistrar = (f) => `#/red/dispositivos/nuevo?${new URLSearchParams(
-  Object.entries({ ip: f.ip, mac: f.mac, equipo: f.nombre }).filter(([, v]) => v))}`;
+  Object.entries({ ip: f.ip, mac: f.mac, equipo: f.nombre, tipo: "COMPUTADORA" }).filter(([, v]) => v))}`;
 
 function coberturaResumenHTML(cb, idAgentes) {
   if (!cb?.totales) return "";
@@ -1544,16 +1554,16 @@ function coberturaResumenHTML(cb, idAgentes) {
   const noRegistrados = cb.totales.no_registrados;
   if (!cb.totales.dispositivos) {
     return `<section class="panel cobertura-resumen"><div class="panel__cuerpo"><div class="aviso aviso--info">${icono("red")}
-      <span>Todavía no hay equipos registrados en el sistema. Registre cada equipo en <a href="#/red/dispositivos/nuevo">Dispositivos de red</a>
-      con su IP o su MAC y aquí verá cuáles no tienen el agente.</span></div></div></section>`;
+      <span>Todavía no hay equipos registrados en el sistema. Registre cada equipo en <a href="#/red/dispositivos/nuevo">Equipos municipales</a>
+      con su IP, su MAC o su nombre en la red y aquí verá cuáles no tienen el agente.</span></div></div></section>`;
   }
-  const excluidos = tiposExcluidos();
+  const excluidos = tiposExcluidos(cb.tipos);
   const r = resumirCobertura(cb, excluidos);
   const sin = r.lista.filter((d) => d.estado === "sin");
   return `
     <section class="panel cobertura-resumen">
       <div class="panel__cabeza"><div><h2>Equipos registrados sin el agente</h2>
-        <p>Los equipos registrados en el sistema${excluidos.size ? ` (sin ${esc([...excluidos].join(", ").toLowerCase())})` : ""}, comparados por su IP y su MAC con este listado.</p></div>
+        <p>Los equipos registrados en el sistema${excluidos.size ? ` (sin ${esc([...excluidos].join(", ").toLowerCase())})` : ""}, comparados por su IP, su MAC y su nombre en la red con este listado.</p></div>
         <a class="btn btn--primario btn--sm" href="${enlace}">${icono("agente")}Ver el detalle</a></div>
       <div class="panel__cuerpo cobertura-resumen__cuerpo">
         <a class="cobertura-resumen__dato${r.sin ? " cobertura-resumen__dato--sin" : ""}" href="${enlace}">
@@ -1567,7 +1577,7 @@ function coberturaResumenHTML(cb, idAgentes) {
           <a href="#/red/dispositivos/${d.id_disp}" title="${esc(nombreDispositivo(d))}">${esc(serieDispositivo(d))}</a>
           <small>${esc(d.tipo)} · <span class="dato-mono">${esc(d.ips[0] || macGuiones(d.macs[0] || ""))}</span></small></li>`).join("")}
           ${sin.length > 8 ? `<li><a href="${enlace}">y ${num(sin.length - 8)} más</a></li>` : ""}</ul>`
-          : `<p class="cobertura-resumen__ok">${icono("check")}<span>${r.comparables ? "Todos los equipos registrados que tienen IP o MAC tienen el agente." : "Ningún equipo registrado tiene IP ni MAC para comparar."}</span></p>`}
+          : `<p class="cobertura-resumen__ok">${icono("check")}<span>${r.comparables ? "Todos los equipos registrados que se pueden comparar tienen el agente." : "Ningún equipo registrado tiene IP, MAC ni nombre en la red para comparar."}</span></p>`}
       </div>
     </section>`;
 }
@@ -1737,7 +1747,7 @@ async function vistaListadoAgentes(cont, imp, ctx, cat) {
 
 /* =====================================================================
    Equipos sin el agente: los equipos registrados en el sistema
-   (Dispositivos de red) comparados con el listado de Microclaudia
+   (Equipos municipales) comparados con el listado de Microclaudia
    ===================================================================== */
 export async function vistaCobertura(cont, _params, ctx) {
   ctx.migas([{ texto: "Equipos sin agente" }]);
@@ -1748,8 +1758,8 @@ export async function vistaCobertura(cont, _params, ctx) {
       <div class="encabezado-imp">
         <span class="insignia-log insignia-log--agente">${icono("agente")}</span>
         <div><h1>Equipos sin el agente de Microclaudia</h1>
-          <p>Los equipos registrados en el sistema (Dispositivos de red), comparados por su IP y su MAC con el listado de equipos
-            que tienen el agente.</p></div>
+          <p>Los equipos registrados en el sistema (Equipos municipales), comparados por su IP, su MAC y su nombre en la red con
+            el listado de equipos que tienen el agente.</p></div>
       </div>
       <div class="encabezado__acciones">
         <a class="btn btn--secundario" href="#/red/dispositivos/nuevo">${icono("mas")}Registrar equipo</a>
@@ -1767,7 +1777,7 @@ export async function vistaCobertura(cont, _params, ctx) {
   const pedido = Number(ctx.query.get("agentes"));
   let agentes = listados.some((x) => x.id_importacion === pedido) ? pedido : listados[0].id_importacion;
   let irA = ctx.query.get("ver");
-  const excluidos = tiposExcluidos();
+  let excluidos = null;      // se calcula con los tipos de la primera respuesta
   cont.innerHTML = `${encabezado}
     <section class="panel panel--filtro">
       <div class="cobertura-controles">
@@ -1791,9 +1801,10 @@ export async function vistaCobertura(cont, _params, ctx) {
   const conexion = (f) => (f ? `<span class="tramo tramo--${TRAMO_CLASE[f.tramo]}"><i class="muestra muestra--${TRAMO_CLASE[f.tramo]}"></i>${esc(haceTexto(f.horas))}</span>
     <span class="secundario">${esc(fechaLog(f.ultima_conexion))}</span>` : `<span class="sin-dato">—</span>`);
   const celdaDispositivo = (d) => `<a href="#/red/dispositivos/${d.id_disp}"><strong>${esc(nombreDispositivo(d))}</strong></a>
-    ${d.edificio ? `<span class="secundario">${esc(d.edificio)}</span>` : ""}`;
+    ${d.edificio || d.asignado ? `<span class="secundario">${esc([d.edificio, d.asignado].filter(Boolean).join(" · "))}</span>` : ""}`;
+  const POR = { IP: "por la IP", MAC: "por la MAC", "IP y MAC": "por la IP y la MAC", "IP y nombre": "por la IP y el nombre", nombre: "por el nombre en la red" };
   const celdaAgente = (d) => `<button type="button" class="enlace-boton" data-evento-agente="${d.agente.id_evento}"><strong>${esc(d.agente.nombre)}</strong></button>
-    <span class="secundario">${d.por === "IP" ? "por la IP" : d.por === "MAC" ? "por la MAC" : "por la IP y la MAC"}${d.otros.length ? ` · también ${esc(d.otros.join(", "))}` : ""}</span>`;
+    <span class="secundario">${POR[d.por] || ""}${d.otros.length ? ` · también ${esc(d.otros.join(", "))}` : ""}</span>`;
 
   const tablaNoRegistrados = (lista) => {
     const t = buscado.trim().toLowerCase().replace(/[:-]/g, "");
@@ -1818,6 +1829,7 @@ export async function vistaCobertura(cont, _params, ctx) {
 
   const pintar = () => {
     const d = datos;
+    excluidos ??= tiposExcluidos(d.tipos);
     const r = resumirCobertura(d, excluidos);
     const listado = d.importacion;
     const grupo = (estado) => r.lista.filter((x) => x.estado === estado);
@@ -1844,7 +1856,7 @@ export async function vistaCobertura(cont, _params, ctx) {
       ${d.totales.dispositivos ? `
       <div class="cifras">
         <div class="cifra cifra--principal cifra--cobertura"><span>Cobertura del agente</span><b>${porcentaje(r.cobertura)}</b>
-          <small>de los ${num(r.comparables)} equipos registrados que tienen IP o MAC${excluidos.size ? " (tipos elegidos)" : ""}</small></div>
+          <small>de los ${num(r.comparables)} equipos registrados que se pueden comparar${excluidos.size ? " (tipos elegidos)" : ""}</small></div>
         <div class="cifra cifra--medidor"><span>Equipos registrados en el sistema</span>${r.total ? medidorCobertura(r) : `<p class="top-vacio">Elija al menos un tipo de equipo.</p>`}</div>
       </div>
       <div class="cifras cifras--chicas">
@@ -1852,23 +1864,24 @@ export async function vistaCobertura(cont, _params, ctx) {
         ${cifra(num(r.sin), "Sin el agente", "", r.sin ? "cifra--sin" : "")}
         ${cifra(num(r.con), "Con el agente", porMac ? `<small>${num(porMac)} confirmados por la MAC</small>` : "", "cifra--ok")}
         ${cifra(num(r.revisar), "Por revisar", "<small>La IP coincide, la MAC no</small>", r.revisar ? "cifra--aviso" : "")}
-        ${cifra(num(r.sin_direcciones), "Sin IP ni MAC registradas", "<small>No se pueden comparar</small>")}
+        ${cifra(num(r.sin_direcciones), "Sin IP, MAC ni nombre en la red", "<small>No se pueden comparar</small>")}
         ${cifra(num(d.totales.no_registrados), "En el listado, sin registrar", `<small>de ${num(d.totales.agentes)} con el agente</small>`)}
       </div>` : `<section class="panel">${vacioHTML({
         icono: "red", titulo: "Todavía no hay equipos registrados en el sistema",
-        texto: "Registre cada equipo en Dispositivos de red con su IP o su MAC; aquí se compara con el listado de Microclaudia. Puede empezar por los de la lista de abajo.",
+        texto: "Registre cada equipo en Equipos municipales con su nombre en la red, su IP o su MAC; aquí se compara con el listado de Microclaudia. Puede empezar por los de la lista de abajo.",
         boton: `<a class="btn btn--primario" href="#/red/dispositivos/nuevo">${icono("mas")}Registrar equipo</a>`,
       })}</section>`}
       <p class="nota-cobertura">${icono("enlace", "ic--sm")}<span>Listado: <a href="#/logs/importaciones/${listado.id_importacion}">${esc(listado.nombre_archivo)}</a>
         (${esc(unidades(listado.fuente, listado.total_eventos))}, del ${esc(fechaLog(d.referencia || listado.fecha_hasta))}).
-        Un equipo tiene el agente si una de sus MAC está en el listado, o su IP cuando no tiene MAC registrada.</span></p>
+        Un equipo tiene el agente si una de sus MAC está en el listado, o su IP cuando no tiene MAC registrada, o su nombre en la red.
+        De entrada solo se comparan las computadoras y los servidores: los demás tipos se agregan arriba.</span></p>
 
       ${porTipo.length > 1 ? `
       <section class="panel">
         <div class="panel__cabeza"><div><h2>${icono("red")} Por tipo de equipo</h2><p>Los tipos que no se comparan quedan fuera de las cifras de arriba.</p></div></div>
         <div class="tabla-envoltura"><table class="tabla tabla--compacta tabla--tipos">
           <thead><tr><th>Tipo</th><th class="col-numero">Registrados</th><th class="col-numero">Con el agente</th><th class="col-numero">Sin el agente</th>
-            <th class="col-numero col-opcional">Por revisar</th><th class="col-numero col-opcional">Sin IP ni MAC</th><th>Cobertura</th></tr></thead>
+            <th class="col-numero col-opcional">Por revisar</th><th class="col-numero col-opcional">Sin datos para comparar</th><th>Cobertura</th></tr></thead>
           <tbody>${porTipo.map((t) => `<tr${t.fuera ? ' class="fila-fuera"' : ""}>
             <td><strong>${esc(t.tipo)}</strong>${t.fuera ? `<span class="secundario">No se compara</span>` : ""}</td>
             <td class="col-numero">${num(t.total)}</td><td class="col-numero">${num(t.con)}</td>
@@ -1882,7 +1895,7 @@ export async function vistaCobertura(cont, _params, ctx) {
       ${d.totales.dispositivos ? `
       <section class="panel panel--sin-agente">
         <div class="panel__cabeza"><div><h2>${icono("alerta")} Registrados sin el agente (${num(sinAgente.length)})</h2>
-          <p>Ninguna de sus IP o MAC está en el listado de Microclaudia.</p></div></div>
+          <p>Ni sus IP, ni sus MAC, ni su nombre en la red están en el listado de Microclaudia.</p></div></div>
         ${sinAgente.length ? `<div class="tabla-envoltura"><table class="tabla tabla--compacta">
           <thead><tr><th>Equipo registrado</th><th>IP y MAC registradas</th><th class="col-acciones"></th></tr></thead>
           <tbody>${sinAgente.map((x) => `<tr>
@@ -1890,7 +1903,7 @@ export async function vistaCobertura(cont, _params, ctx) {
             <td class="dato-mono col-mac">${direccionesHTML(x.ips, x.macs)}</td>
             <td class="col-acciones"><a class="btn btn--secundario btn--sm" href="#/red/dispositivos/${x.id_disp}">${icono("red")}Ficha</a></td>
           </tr>`).join("")}</tbody></table></div>`
-          : `<div class="panel__cuerpo"><p class="top-vacio">${r.comparables ? "Todos los equipos registrados que tienen IP o MAC tienen el agente." : "No hay equipos con IP o MAC para comparar."}</p></div>`}
+          : `<div class="panel__cuerpo"><p class="top-vacio">${r.comparables ? "Todos los equipos registrados que se pueden comparar tienen el agente." : "No hay equipos con IP, MAC o nombre en la red para comparar."}</p></div>`}
       </section>` : ""}
 
       ${revisar.length ? `
@@ -1910,19 +1923,19 @@ export async function vistaCobertura(cont, _params, ctx) {
 
       ${sinDirecciones.length ? `
       <section class="panel">
-        <div class="panel__cabeza"><div><h2>${icono("red")} Sin IP ni MAC registradas (${num(sinDirecciones.length)})</h2>
-          <p>No se pueden comparar con el listado. Agregue su IP o su MAC en la ficha del equipo.</p></div></div>
+        <div class="panel__cabeza"><div><h2>${icono("red")} Sin IP, MAC ni nombre en la red (${num(sinDirecciones.length)})</h2>
+          <p>No se pueden comparar con el listado. Agregue su nombre en la red, su IP o su MAC en la ficha del equipo.</p></div></div>
         <div class="tabla-envoltura"><table class="tabla tabla--compacta">
           <thead><tr><th>Equipo registrado</th><th class="col-acciones"></th></tr></thead>
           <tbody>${sinDirecciones.map((x) => `<tr><td>${celdaDispositivo(x)}</td>
-            <td class="col-acciones"><a class="btn btn--secundario btn--sm" href="#/red/dispositivos/${x.id_disp}">${icono("editar")}Agregar IP o MAC</a></td></tr>`).join("")}</tbody>
+            <td class="col-acciones"><a class="btn btn--secundario btn--sm" href="#/red/dispositivos/${x.id_disp}">${icono("editar")}Completar datos</a></td></tr>`).join("")}</tbody>
         </table></div>
       </section>` : ""}
 
       ${conAgente.length ? `
       <details class="panel panel--plegable">
         <summary class="panel__cabeza"><div><h2>${icono("check")} Con el agente (${num(conAgente.length)})</h2>
-          <p>Una de sus MAC, o su IP cuando no tiene MAC registrada, está en el listado de Microclaudia.</p></div></summary>
+          <p>Una de sus MAC, o su IP cuando no tiene MAC registrada, o su nombre en la red está en el listado de Microclaudia.</p></div></summary>
         <div class="tabla-envoltura"><table class="tabla tabla--compacta">
           <thead><tr><th>Equipo registrado</th><th>IP y MAC registradas</th><th>Equipo en Microclaudia</th><th>Última conexión</th><th class="col-opcional">Versión</th></tr></thead>
           <tbody>${conAgente.map((x) => `<tr>
@@ -1975,7 +1988,7 @@ export async function vistaCobertura(cont, _params, ctx) {
     if (!b || !datos) return;
     const tipo = b.dataset.tipo;
     if (excluidos.has(tipo)) excluidos.delete(tipo); else excluidos.add(tipo);
-    guardarExcluidos(excluidos);
+    guardarExcluidos(excluidos, datos.tipos);
     pintar();
     cajaTipos.querySelector(`[data-tipo="${CSS.escape(tipo)}"]`)?.focus();
   });
@@ -2021,7 +2034,7 @@ export async function vistaCobertura(cont, _params, ctx) {
 
 /* =====================================================================
    Intrusos en la red: las concesiones del DHCP comparadas por MAC con
-   los equipos registrados en el sistema (Dispositivos de red)
+   los equipos registrados en el sistema (Equipos municipales)
    ===================================================================== */
 const ESTADOS_INTRUSOS = {
   intruso: { texto: "Posibles intrusos", clase: "denegado" },
@@ -2039,7 +2052,15 @@ const PISTAS = {
   sin_nombre: { texto: "Sin nombre", clase: "mala", ayuda: "El equipo no le dijo su nombre al DHCP" },
   nueva: { texto: "MAC nueva", clase: "mala", ayuda: "No estaba en la lista anterior del DHCP" },
   ip_de_otro: { texto: "IP de otro equipo", clase: "mala", ayuda: "Esa IP está registrada a otro dispositivo" },
+  inventario: { texto: "Nombre del inventario", clase: "buena", ayuda: "Su nombre es el de un equipo registrado: puede ser otra tarjeta de red (Wi-Fi o cable) de ese equipo" },
+  nombre_distinto: { texto: "Otro nombre", clase: "neutra", ayuda: "Su MAC está registrada a un equipo con otro nombre en la red" },
   virtual: { texto: "Máquina virtual", clase: "neutra", ayuda: "La MAC es de un adaptador virtual" },
+};
+// Texto de más en el globo de cada pista: qué equipo es
+const EXTRA_PISTA = {
+  ip_de_otro: (c) => (c.ip_de ? `: ${c.ip_de.equipo || `N.º ${c.ip_de.id_disp}`}` : ""),
+  inventario: (c) => (c.mismo_nombre ? ` (${c.mismo_nombre.equipo || `N.º ${c.mismo_nombre.id_disp}`})` : ""),
+  nombre_distinto: (c) => (c.dispositivo?.nombre_equipo ? `: ${c.dispositivo.nombre_equipo}` : ""),
 };
 
 const pistaHTML = (k, extra = "") => {
@@ -2049,13 +2070,14 @@ const pistaHTML = (k, extra = "") => {
 function pistasHTML(c, { solo } = {}) {
   const lista = c.pistas.filter((k) => k !== "virtual" || !c.parece).filter((k) => !solo || PISTAS[k]?.clase === solo);
   const parece = c.parece && !solo ? `<span class="pista pista--neutra" title="Por el nombre del equipo">Parece ${esc(c.parece)}</span>` : "";
-  return `<span class="pistas">${lista.map((k) => pistaHTML(k, k === "ip_de_otro" && c.ip_de ? `: ${c.ip_de.equipo || `N.º ${c.ip_de.id_disp}`}` : "")).join("")}${parece}</span>`;
+  return `<span class="pistas">${lista.map((k) => pistaHTML(k, EXTRA_PISTA[k]?.(c) || "")).join("")}${parece}</span>`;
 }
 const malas = (c) => c.pistas.filter((k) => PISTAS[k]?.clase === "mala").length;
 const expiraTexto = (c) => (c.tipo === "Reserva DHCP activa" ? "Reserva activa" : c.tipo === "Reserva DHCP inactiva" ? "Reserva inactiva"
   : c.expira ? fechaLog(c.expira) : c.tipo || "—");
+// tipo: el que parece por su nombre (IMPRESORA, CELULAR…) para elegirlo de una vez
 const rutaRegistrarDhcp = (c) => `#/red/dispositivos/nuevo?${new URLSearchParams(
-  Object.entries({ ip: c.ip, mac: c.mac, equipo: c.nombre_corto }).filter(([, v]) => v))}`;
+  Object.entries({ ip: c.ip, mac: c.mac, equipo: c.nombre_corto, tipo: c.tipo_sugerido }).filter(([, v]) => v))}`;
 
 export async function vistaIntrusos(cont, _params, ctx, impDirecta = null) {
   ctx.migas(impDirecta ? [{ texto: "Importaciones", href: "#/logs/importaciones" }, { texto: impDirecta.nombre_archivo }] : [{ texto: "Intrusos en la red" }]);
@@ -2069,8 +2091,8 @@ export async function vistaIntrusos(cont, _params, ctx, impDirecta = null) {
       <div class="encabezado-imp">
         <span class="insignia-log insignia-log--dhcp">${icono("intruso")}</span>
         <div><h1>Intrusos en la red</h1>
-          <p>Las direcciones que entregó el servidor DHCP, comparadas por su MAC con los equipos registrados en el sistema
-            (Dispositivos de red). Lo que no está registrado y no tiene ninguna señal de ser de la municipalidad es un posible intruso.</p></div>
+          <p>Las direcciones que entregó el servidor DHCP, comparadas por su MAC y su nombre con los equipos registrados en el sistema
+            (Equipos municipales). Lo que no está registrado y no tiene ninguna señal de ser de la municipalidad es un posible intruso.</p></div>
       </div>
       <div class="encabezado__acciones">
         <a class="btn btn--secundario" href="#/logs/importar/dhcp">${icono("subir")}Importar DHCP</a>
@@ -2131,7 +2153,10 @@ export async function vistaIntrusos(cont, _params, ctx, impDirecta = null) {
   const colMac = (c) => `<td class="col-mac">${celdaMac(c)}</td>`;
   const colNombre = (c) => `<td>${celdaNombre(c)}</td>`;
   const colExpira = (c) => `<td class="col-opcional col-fecha"><span class="${c.presente ? "" : "sin-dato"}">${esc(expiraTexto(c))}</span></td>`;
-  const colRegistrar = (c) => `<td class="col-acciones">${c.mac ? `<a class="btn btn--secundario btn--sm" href="${rutaRegistrarDhcp(c)}">${icono("mas")}Registrar</a>` : ""}</td>`;
+  // Si se llama como un equipo registrado, lo más probable es que sea otra tarjeta de red de ese equipo: se abre su ficha para agregar la MAC
+  const colRegistrar = (c) => `<td class="col-acciones">${!c.mac ? ""
+    : c.mismo_nombre ? `<a class="btn btn--secundario btn--sm" href="#/red/dispositivos/${c.mismo_nombre.id_disp}" title="Agregue esta MAC en la ficha de ${esc(c.mismo_nombre.equipo || "ese equipo")}">${icono("red")}Ver equipo</a>`
+      : `<a class="btn btn--secundario btn--sm" href="${rutaRegistrarDhcp(c)}">${icono("mas")}Registrar</a>`}</td>`;
 
   const tablaMunicipales = (lista) => {
     const t = buscado.trim().toLowerCase().replace(/[:-]/g, "");

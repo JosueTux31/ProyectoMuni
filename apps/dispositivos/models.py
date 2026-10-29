@@ -1,5 +1,5 @@
-"""Módulo de dispositivos de red: catálogos, edificios, dispositivos y sus
-documentos. managed = False: el esquema vive en MariaDB
+"""Módulo de equipos municipales (antes dispositivos de red): catálogos,
+edificios, equipos de todo tipo y sus documentos. managed = False: el esquema vive en MariaDB
 (sql/dispositivos/creacionDispositivo.sql). Las escrituras de la API pasan
 por los procedimientos sp_* de procedimientosDispositivos.sql."""
 from django.db import models
@@ -7,9 +7,25 @@ from django.db import models
 from apps.catalogos.models import CatalogoBase
 
 
+class CategoriaDispositivo(CatalogoBase):
+    """Categorías fijas: equipos de red, computadoras, servidores, móviles,
+    telefonía, impresión, pantallas, energía, videovigilancia y otros.
+    Deciden qué datos se piden al registrar cada equipo."""
+    id_categoria = models.IntegerField(primary_key=True)
+    descripcion = models.CharField(max_length=100)
+    lleva_agente = models.BooleanField(default=False)    # se espera el agente de Microclaudia
+
+    class Meta(CatalogoBase.Meta):
+        db_table = "cat_categorias_dispositivos"
+        verbose_name = "categoría de equipo"
+        verbose_name_plural = "categorías de equipos"
+
+
 class TipoDispositivo(CatalogoBase):
     tipo_disp = models.AutoField(primary_key=True)
     descripcion = models.CharField(max_length=100)
+    categoria = models.ForeignKey(CategoriaDispositivo, on_delete=models.DO_NOTHING, db_column="id_categoria",
+                                  related_name="tipos")
 
     class Meta(CatalogoBase.Meta):
         db_table = "cat_tipos_dispositivos"
@@ -89,34 +105,64 @@ class Edificio(CatalogoBase):
 
 
 class Dispositivo(models.Model):
-    """Dispositivo de red. Se liga a su edificio y a su proveedor de soporte
-    (usr_usuarios con es_proveedor = TRUE). El modelo se identifica con
-    tipo + marca + id_modelo (cat_modelos). Sus direcciones IP y MAC están en
-    IpDispositivo y MacDispositivo (puede tener varias)."""
+    """Equipo municipal (tabla equiposMuni, antes red_dispositivos): de red,
+    computadora, servidor, móvil, teléfono, impresora, pantalla, UPS,
+    cámara... Se liga a su edificio, a su departamento, al funcionario que
+    lo tiene asignado y a su proveedor de soporte (usr_usuarios con
+    es_proveedor = TRUE). El modelo se identifica con tipo + marca +
+    id_modelo (cat_modelos). Los datos de cada categoría son opcionales.
+    Sus direcciones IP y MAC están en IpDispositivo y MacDispositivo."""
     id_disp = models.AutoField(primary_key=True)
     serie = models.CharField(max_length=100)
     tipo_dispositivo = models.ForeignKey(TipoDispositivo, on_delete=models.DO_NOTHING, db_column="tipo_disp",
                                          related_name="dispositivos")
     marca = models.ForeignKey(Marca, on_delete=models.DO_NOTHING, db_column="id_marca", related_name="dispositivos")
     id_modelo = models.IntegerField(null=True, blank=True)
+    nombre_equipo = models.CharField(max_length=100, null=True, blank=True)    # nombre en la red (hostname)
+    placa = models.CharField(max_length=50, null=True, blank=True)             # número de activo
     cant_ptos_ethernet = models.PositiveSmallIntegerField(default=0)
     cant_ptos_sfp = models.PositiveSmallIntegerField(default=0)
     sistema_operativo = models.ForeignKey(SistemaOperativo, on_delete=models.DO_NOTHING, db_column="id_os",
                                           related_name="dispositivos")
+    version_os = models.CharField(max_length=100, null=True, blank=True)
+    procesador = models.CharField(max_length=150, null=True, blank=True)
+    memoria_gb = models.PositiveSmallIntegerField(null=True, blank=True)
+    almacenamiento_gb = models.PositiveIntegerField(null=True, blank=True)
+    tipo_almacenamiento = models.CharField(max_length=10, null=True, blank=True)
+    imei = models.CharField(max_length=15, null=True, blank=True)
+    imei2 = models.CharField(max_length=15, null=True, blank=True)
+    numero_linea = models.CharField(max_length=20, null=True, blank=True)
+    operador = models.CharField(max_length=50, null=True, blank=True)
+    extension = models.CharField(max_length=10, null=True, blank=True)
+    tecnologia_impresion = models.CharField(max_length=20, null=True, blank=True)
+    a_color = models.BooleanField(null=True, blank=True)
+    consumible = models.CharField(max_length=100, null=True, blank=True)
+    pulgadas = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True)
+    resolucion = models.CharField(max_length=20, null=True, blank=True)
+    capacidad_va = models.PositiveIntegerField(null=True, blank=True)
+    autonomia_min = models.PositiveSmallIntegerField(null=True, blank=True)
+    canales = models.PositiveSmallIntegerField(null=True, blank=True)
     edificio = models.ForeignKey(Edificio, on_delete=models.DO_NOTHING, db_column="id_predio",
                                  null=True, blank=True, related_name="dispositivos")
-    ubicacion = models.CharField(max_length=255, null=True, blank=True)    # piso, cuarto, rack
+    ubicacion = models.CharField(max_length=255, null=True, blank=True)    # piso, oficina, rack
+    departamento = models.ForeignKey("catalogos.Departamento", on_delete=models.DO_NOTHING, db_column="cod_departamento",
+                                     null=True, blank=True, related_name="equipos")
+    asignado = models.ForeignKey("usuarios.Usuario", on_delete=models.DO_NOTHING, db_column="id_asignado",
+                                 null=True, blank=True, related_name="equipos_asignados")
     proveedor = models.ForeignKey("proveedores.Proveedor", on_delete=models.DO_NOTHING, db_column="id_proveedor",
                                   null=True, blank=True, related_name="dispositivos")
+    fecha_compra = models.DateField(null=True, blank=True)
+    garantia_hasta = models.DateField(null=True, blank=True)
+    observaciones = models.CharField(max_length=500, null=True, blank=True)
     activo = models.BooleanField(default=True)
     creado_en = models.DateTimeField(editable=False)
     actualizado_en = models.DateTimeField(editable=False)
 
     class Meta:
         managed = False
-        db_table = "red_dispositivos"
-        verbose_name = "dispositivo de red"
-        verbose_name_plural = "dispositivos de red"
+        db_table = "equiposMuni"        # antes red_dispositivos
+        verbose_name = "equipo municipal"
+        verbose_name_plural = "equipos municipales"
         ordering = ["tipo_dispositivo_id", "marca_id", "serie"]
 
     def __str__(self):

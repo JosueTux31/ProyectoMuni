@@ -8,7 +8,8 @@ from django.db import connection
 
 from .auditoria import contexto_actual
 
-_NOMBRE_SP_VALIDO = re.compile(r"^sp_[a-z0-9_]+$")
+# Letras, números y guion bajo (sp_equiposMuni_* lleva una mayúscula)
+_NOMBRE_SP_VALIDO = re.compile(r"^sp_[A-Za-z0-9_]+$")
 
 
 def llamar_sp(nombre, params=(), con_salida=False):

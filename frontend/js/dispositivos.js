@@ -1,13 +1,17 @@
-// Módulo de dispositivos de red: inicio del módulo, lista, registro, ficha
-// (datos, documentos e historial), marcas y modelos, y edificios.
-// Todo pasa por las APIs de /api/dispositivos/ (procedimientos almacenados).
+// Módulo de equipos municipales (antes dispositivos de red): inicio del
+// módulo, lista, registro, ficha (datos, documentos e historial), marcas y
+// modelos, y edificios. Equipos de red, computadoras, servidores, móviles,
+// telefonía, impresión, pantallas, UPS, cámaras... en la tabla equiposMuni:
+// cada tipo es de una categoría y el formulario pide los datos de esa
+// categoría. Todo pasa por las APIs de /api/dispositivos/ (procedimientos
+// almacenados).
 import { api, apiSubir, ErrorApi, ruta } from "./api.js";
 import {
-  abrirFormulario, botonCargando, botonesFila, cargandoHTML, confirmar, debounce, errorHTML, esc, eventoFila,
+  abrirFormulario, botonCargando, botonesFila, camposHTML, cargandoHTML, confirmar, debounce, errorHTML, esc, eventoFila,
   fecha, icono, leerCampos, limpiarErrores, mostrarErrores, nombreCompleto, tablaHTML, toast, urlApi, vacioHTML,
 } from "./ui.js";
 import { filasCatalogo, olvidarCatalogo } from "./datos.js";
-import { pastillaEstado, seccionesHTML, todosLosCampos } from "./usuarios.js";
+import { pastillaEstado, todosLosCampos } from "./usuarios.js";
 import { coordenadas, embebidoMaps, enlaceMaps, enlazarCampoMapa, validarMapaLocal } from "./proveedores.js";
 import { feedAuditoria } from "./auditoria.js";
 import { abrirVisor, abrirVistaPrevia } from "./zoom.js";
@@ -19,14 +23,36 @@ const EXT_BLOQUEADAS = [".html", ".htm", ".xhtml", ".svg", ".js", ".mjs", ".php"
 /* =====================================================================
    Utilidades
    ===================================================================== */
-const ICONO_TIPO = { MODEM: "modem", FIREWALL: "firewall", ROUTER: "router", SWITCH: "switch" };
-const normalizar = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const normalizar = (s) => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-/** Ícono según el tipo de dispositivo (red si es un tipo nuevo). */
-export const iconoTipo = (descripcion) => ICONO_TIPO[String(descripcion || "").toUpperCase()] || "red";
+/* Categorías de equipo (códigos fijos de cat_categorias_dispositivos) */
+const CAT = { RED: 1, COMPUTO: 2, SERVIDOR: 3, MOVIL: 4, TELEFONIA: 5, IMPRESION: 6, PANTALLA: 7, ENERGIA: 8, VIDEO: 9, OTRO: 10 };
+const ICONO_CATEGORIA = {
+  1: "red", 2: "escritorio", 3: "servidor", 4: "celular", 5: "telefono-ip", 6: "impresora", 7: "monitor", 8: "ups", 9: "cctv", 10: "equipo",
+};
+// Ícono por el nombre del tipo (el primero que coincide); si no, el de su categoría
+const ICONOS_TIPO = [
+  [/modem/, "modem"], [/firewall/, "firewall"], [/router|enrutador/, "router"], [/switch/, "switch"],
+  [/access point|punto de acceso|antena|wi-?fi|inalambric|(^|[^a-z])ap([^a-z]|$)/, "wifi"],
+  [/laptop|portatil|notebook/, "laptop"], [/todo en uno|all in one/, "monitor"],
+  [/computador|escritorio|desktop|workstation|estacion de trabajo|mini pc|(^|[^a-z])pc([^a-z]|$)|cpu/, "escritorio"],
+  [/servidor|server/, "servidor"], [/(^|[^a-z])nas([^a-z]|$)|almacenamiento|storage/, "disco"],
+  [/tablet|ipad/, "tablet"], [/celular|smartphone|movil/, "celular"],
+  [/central|pbx|planta telef/, "central"], [/telefono/, "telefono-ip"],
+  [/impresora|multifuncional|plotter|fotocopiadora/, "impresora"], [/escaner|scanner/, "escaner"],
+  [/proyector/, "proyector"], [/televisor|(^|[^a-z])tv([^a-z]|$)|pantalla/, "tv"], [/monitor/, "monitor"],
+  [/(^|[^a-z])ups([^a-z]|$)|no ?break|regulador|inversor/, "ups"],
+  [/camara|cctv/, "cctv"], [/nvr|dvr|grabador/, "disco"], [/reloj|marcador|biometric/, "reloj"],
+];
+
+/** Ícono según el tipo de equipo (o su categoría si el nombre no dice nada). */
+export function iconoTipo(descripcion, idCategoria) {
+  const n = normalizar(descripcion);
+  return ICONOS_TIPO.find(([patron]) => patron.test(n))?.[1] || ICONO_CATEGORIA[idCategoria] || "red";
+}
 
 const insigniaTipo = (d, tam = "") =>
-  `<span class="insignia-tipo${tam ? ` insignia-tipo--${tam}` : ""}" aria-hidden="true">${icono(iconoTipo(d.tipo_dispositivo))}</span>`;
+  `<span class="insignia-tipo${tam ? ` insignia-tipo--${tam}` : ""}" aria-hidden="true">${icono(iconoTipo(d.tipo_dispositivo, d.id_categoria))}</span>`;
 
 /** Nombre del equipo: el modelo (ya incluye la marca) o la marca si no tiene modelo. */
 export const tituloDispositivo = (d) => d.modelo || d.marca || `Dispositivo ${d.id_disp}`;
@@ -110,7 +136,18 @@ function validarArchivo(archivo) {
 function precisarError(e) {
   if (Object.keys(e.campos || {}).length) return e;
   const m = e.message || "";
-  if (e.estado === 409 && /uk_disp_serie/.test(e.db)) e.campos = { serie: "Ya hay otro dispositivo de esa marca con la misma serie." };
+  if (e.estado === 409 && /uk_disp_placa/.test(e.db)) e.campos = { placa: "Esa placa ya la tiene otro equipo." };
+  else if (e.estado === 409 && /uk_disp_imei/.test(e.db)) e.campos = { imei: "Ese IMEI ya está registrado en otro equipo." };
+  else if (/placa/i.test(m)) e.campos = { placa: m };
+  else if (/IMEI/.test(m)) e.campos = { [/segundo/i.test(m) ? "imei2" : "imei"]: m };
+  else if (/nombre de equipo/i.test(m)) e.campos = { nombre_equipo: m };
+  else if (/asignad/i.test(m)) e.campos = { id_asignado: m };
+  else if (/garant/i.test(m)) e.campos = { garantia_hasta: m };
+  else if (/departamento/i.test(m)) e.campos = { cod_departamento: m };
+  else if (/almacenamiento/i.test(m)) e.campos = { tipo_almacenamiento: m };
+  else if (/impresi/i.test(m)) e.campos = { tecnologia_impresion: m };
+  else if (/pulgadas/i.test(m)) e.campos = { pulgadas: m };
+  else if (e.estado === 409 && /uk_disp_serie/.test(e.db)) e.campos = { serie: "Ya hay otro dispositivo de esa marca con la misma serie." };
   else if (e.estado === 409 && /uk_macs_mac/.test(e.db)) e.campos = { direccion_mac: "Esa dirección MAC ya está registrada en un dispositivo." };
   else if (e.estado === 409 && /uk_ips_dispositivo/.test(e.db)) e.campos = { direccion_ip: "El dispositivo ya tiene esa dirección IP." };
   else {
@@ -142,12 +179,29 @@ function olvidarMarcasYModelos() {
 }
 
 async function datosBase() {
-  const [tipos, marcas, sistemas, edificios] = await Promise.all([
+  const [tipos, marcas, sistemas, edificios, categorias, departamentos] = await Promise.all([
     filasCatalogo("tipos-dispositivos"), filasCatalogo("marcas"),
     filasCatalogo("sistemas-operativos"), filasCatalogo("edificios"),
+    filasCatalogo("categorias-dispositivos"), filasCatalogo("departamentos"),
   ]);
-  return { tipos, marcas, sistemas, edificios };
+  return { tipos, marcas, sistemas, edificios, categorias, departamentos };
 }
+
+/** Categoría de un tipo de equipo (por su código). */
+const categoriaDe = (base, tipoDisp) => base.tipos.find((t) => t.tipo_disp === Number(tipoDisp))?.id_categoria || null;
+
+/** <option> de los tipos de equipo agrupados por categoría (con <optgroup>). */
+function opcionesTiposHTML(tipos, categorias, elegido = null) {
+  const opcion = (t) => `<option value="${t.tipo_disp}"${t.tipo_disp === Number(elegido) ? " selected" : ""}>${esc(t.descripcion)}</option>`;
+  const orden = (a, b) => a.descripcion.localeCompare(b.descripcion, "es");
+  return [...categorias].sort((a, b) => a.id_categoria - b.id_categoria).map((c) => {
+    const suyos = tipos.filter((t) => t.id_categoria === c.id_categoria).sort(orden);
+    return suyos.length ? `<optgroup label="${esc(nombreCategoria(c.descripcion))}">${suyos.map(opcion).join("")}</optgroup>` : "";
+  }).join("") + tipos.filter((t) => !categorias.some((c) => c.id_categoria === t.id_categoria)).sort(orden).map(opcion).join("");
+}
+
+/** EQUIPOS DE RED -> Equipos de red */
+const nombreCategoria = (texto) => String(texto || "").charAt(0) + String(texto || "").slice(1).toLowerCase();
 
 /* =====================================================================
    Inicio del módulo
@@ -156,10 +210,10 @@ export async function vistaInicioRed(cont, _params, ctx) {
   ctx.migas([{ texto: "Inicio" }]);
   cont.innerHTML = `
     <div class="saludo">
-      <h1>Dispositivos de red</h1>
-      <p>Modems, firewalls, routers y switches de la municipalidad: dónde están, quién les da soporte y sus archivos.</p>
+      <h1>Equipos municipales</h1>
+      <p>Equipos de red, computadoras, servidores, celulares, teléfonos, impresoras, pantallas, UPS y cámaras de la municipalidad: a quién están asignados, dónde están, quién les da soporte y sus archivos.</p>
     </div>
-    ${ctx.esAdmin ? "" : `<div class="aviso aviso--ocre" style="margin-top:18px">${icono("candado")}<span>Su rol permite consultar los dispositivos y descargar sus documentos. Los cambios los hace un administrador.</span></div>`}
+    ${ctx.esAdmin ? "" : `<div class="aviso aviso--ocre" style="margin-top:18px">${icono("candado")}<span>Su rol permite consultar los equipos y descargar sus documentos. Los cambios los hace un administrador.</span></div>`}
     <div id="resumen-red">${cargandoHTML()}</div>
     <div class="dos-columnas">
       <section class="panel">
@@ -173,36 +227,35 @@ export async function vistaInicioRed(cont, _params, ctx) {
     </div>
     ${ctx.esAdmin ? `
     <section class="panel" style="margin-top:20px">
-      <div class="panel__cabeza"><div><h2>Actividad reciente</h2><p>Últimos cambios a los dispositivos.</p></div><a class="btn btn--fantasma btn--sm" href="#/red/auditoria">Ver toda la auditoría</a></div>
+      <div class="panel__cabeza"><div><h2>Actividad reciente</h2><p>Últimos cambios a los equipos.</p></div><a class="btn btn--fantasma btn--sm" href="#/red/auditoria">Ver toda la auditoría</a></div>
       <div class="panel__cuerpo" id="actividad-red"></div>
     </section>` : ""}`;
 
   if (ctx.esAdmin) {
-    feedAuditoria(cont.querySelector("#actividad-red"), { tabla: "red_dispositivos" }, {
-      limite: 8, paginar: false, vacio: "Todavía no hay cambios en los dispositivos.",
+    feedAuditoria(cont.querySelector("#actividad-red"), { tabla: "equiposMuni" }, {
+      limite: 8, paginar: false, vacio: "Todavía no hay cambios en los equipos.",
     }).catch((e) => { cont.querySelector("#actividad-red").innerHTML = errorHTML(e.message); });
   }
 
-  const [dispositivos, tipos] = await Promise.all([
+  const [dispositivos, categorias] = await Promise.all([
     api(`${RECURSO}/`, { query: { activo: true } }),
-    filasCatalogo("tipos-dispositivos"),
+    filasCatalogo("categorias-dispositivos"),
   ]);
   if (!ctx.vigente()) return;
 
-  const ordenados = [...tipos].sort((a, b) => a.tipo_disp - b.tipo_disp);
-  const cuantos = (t) => dispositivos.filter((d) => d.tipo_disp === t.tipo_disp).length;
-  const nombreTipo = (t) => t.descripcion.charAt(0) + t.descripcion.slice(1).toLowerCase();
+  const ordenadas = [...categorias].sort((a, b) => a.id_categoria - b.id_categoria);
+  const cuantos = (c) => dispositivos.filter((d) => d.id_categoria === c.id_categoria).length;
   cont.querySelector("#resumen-red").outerHTML = `
-    <h2 class="resumen__titulo" id="titulo-resumen-red">Dispositivos activos por tipo</h2>
-    <nav class="resumen resumen--iconos" aria-labelledby="titulo-resumen-red" style="--columnas:${Math.min(Math.max(ordenados.length, 1), 6)}">
-      ${ordenados.map((t) => `<a href="#/red/dispositivos?tipo_disp=${t.tipo_disp}">${icono(iconoTipo(t.descripcion))}<b>${cuantos(t)}</b><span>${esc(nombreTipo(t))}</span></a>`).join("")}
+    <h2 class="resumen__titulo" id="titulo-resumen-red">Equipos activos por categoría</h2>
+    <nav class="resumen resumen--iconos resumen--categorias" aria-labelledby="titulo-resumen-red" style="--columnas:${Math.min(Math.max(ordenadas.length, 1), 5)}">
+      ${ordenadas.map((c) => `<a href="#/red/dispositivos?id_categoria=${c.id_categoria}">${icono(ICONO_CATEGORIA[c.id_categoria] || "equipo")}<b>${cuantos(c)}</b><span>${esc(nombreCategoria(c.descripcion))}</span></a>`).join("")}
     </nav>`;
 
   const recientes = [...dispositivos].sort((a, b) => String(b.creado_en).localeCompare(String(a.creado_en))).slice(0, 6);
   const caja = cont.querySelector("#recientes-red");
   if (!recientes.length) {
     caja.innerHTML = vacioHTML({
-      icono: "red", titulo: "Todavía no hay dispositivos",
+      icono: "red", titulo: "Todavía no hay equipos",
       boton: ctx.esAdmin ? `<a class="btn btn--primario" href="#/red/dispositivos/nuevo">${icono("mas")}Registrar el primero</a>` : "",
     });
     return;
@@ -211,7 +264,7 @@ export async function vistaInicioRed(cont, _params, ctx) {
     clicable: true,
     filas: recientes,
     columnas: [
-      { titulo: "Dispositivo", html: (d) => celdaDispositivo(d) },
+      { titulo: "Equipo", html: (d) => celdaDispositivo(d) },
       { titulo: "Registrado", html: (d) => `<span class="secundario">${esc(fecha(d.creado_en))}</span>` },
     ],
   });
@@ -226,43 +279,49 @@ function atajosRed(ctx) {
     `<li><a href="${href}">${icono(ic)}<span><strong>${esc(titulo)}</strong><small>${esc(texto)}</small></span>${icono("derecha")}</a></li>`;
   return [
     ctx.esAdmin
-      ? item("#/red/dispositivos/nuevo", "mas", "Registrar un dispositivo", "Equipo, ubicación, red, soporte y documentos")
-      : item("#/red/dispositivos", "red", "Buscar un dispositivo", "Por serie, modelo, ubicación, IP o MAC"),
+      ? item("#/red/dispositivos/nuevo", "mas", "Registrar un equipo", "Laptop, impresora, celular, switch… con los datos de cada uno")
+      : item("#/red/dispositivos", "red", "Buscar un equipo", "Por serie, placa, nombre en la red, responsable, IP o MAC"),
     item("#/red/edificios", "edificio", "Edificios", "Dónde están los equipos"),
-    item("#/red/marcas", "etiqueta", "Marcas y modelos", "Por tipo de dispositivo"),
-    item("#/red/catalogos/tipos-documentos", "documento", "Tipos de documento", "Manuales, firmware, respaldos…"),
+    item("#/red/marcas", "etiqueta", "Marcas y modelos", "Por tipo de equipo"),
+    item("#/red/catalogos/tipos-dispositivos", "equipo", "Tipos de equipo", "Cada uno en su categoría"),
+    item("#/red/catalogos/tipos-documentos", "documento", "Tipos de documento", "Manuales, firmware, facturas, actas…"),
   ];
 }
 
 const celdaDispositivo = (d) => `
   <div class="persona">${insigniaTipo(d)}<div>
     <a href="#/red/dispositivos/${d.id_disp}"><strong>${esc(tituloDispositivo(d))}</strong></a>
-    <span class="secundario">${esc([marcaAparte(d), `Serie ${d.serie}`].filter(Boolean).join(" · "))}</span>
+    <span class="secundario">${esc([marcaAparte(d), d.nombre_equipo, `Serie ${d.serie}`].filter(Boolean).join(" · "))}</span>
   </div></div>`;
 
 /* =====================================================================
-   Lista de dispositivos
+   Lista de equipos
    ===================================================================== */
+const FILTROS_LISTA = ["buscar", "id_categoria", "tipo_disp", "id_marca", "id_predio", "cod_departamento", "id_proveedor", "activo"];
+
 export async function vistaDispositivos(cont, _params, ctx) {
-  ctx.migas([{ texto: "Dispositivos" }]);
+  ctx.migas([{ texto: "Equipos" }]);
   const q = ctx.query || new URLSearchParams();
   cont.innerHTML = `
     <div class="encabezado">
       <div>
-        <h1>Dispositivos</h1>
-        <p>Inventario de equipos de red con su ubicación, proveedor de soporte y documentos.</p>
+        <h1>Equipos</h1>
+        <p>Inventario de equipos municipales: de red, computadoras, servidores, móviles, telefonía, impresión y más, con su responsable, ubicación, proveedor de soporte y documentos.</p>
       </div>
-      ${ctx.esAdmin ? `<div class="encabezado__acciones"><a class="btn btn--primario" href="#/red/dispositivos/nuevo">${icono("mas")}Nuevo dispositivo</a></div>` : ""}
+      ${ctx.esAdmin ? `<div class="encabezado__acciones"><a class="btn btn--primario" href="#/red/dispositivos/nuevo">${icono("mas")}Nuevo equipo</a></div>` : ""}
     </div>
     <section class="panel">
+      <div data-asignado-filtro hidden></div>
       <form class="filtros" role="search" id="filtros-dispositivos">
         <div class="campo campo--buscar">
           <label for="d-buscar">Buscar</label>
-          <div class="buscador">${icono("buscar")}<input id="d-buscar" name="buscar" type="search" placeholder="Serie, modelo, ubicación, IP o MAC" autocomplete="off"></div>
+          <div class="buscador">${icono("buscar")}<input id="d-buscar" name="buscar" type="search" placeholder="Serie, placa, nombre en la red, responsable, IP o MAC" autocomplete="off"></div>
         </div>
+        <div class="campo"><label for="d-categoria">Categoría</label><select id="d-categoria" name="id_categoria"><option value="">Todas</option></select></div>
         <div class="campo"><label for="d-tipo">Tipo</label><select id="d-tipo" name="tipo_disp"><option value="">Todos</option></select></div>
         <div class="campo"><label for="d-marca">Marca</label><select id="d-marca" name="id_marca"><option value="">Todas</option></select></div>
         <div class="campo"><label for="d-edificio">Edificio</label><select id="d-edificio" name="id_predio"><option value="">Todos</option></select></div>
+        <div class="campo"><label for="d-departamento">Departamento</label><select id="d-departamento" name="cod_departamento"><option value="">Todos</option></select></div>
         <div class="campo campo--ancho"><label for="d-proveedor">Proveedor</label><select id="d-proveedor" name="id_proveedor"><option value="">Todos</option></select></div>
         <div class="campo">
           <label for="d-activo">Estado</label>
@@ -278,35 +337,70 @@ export async function vistaDispositivos(cont, _params, ctx) {
   const form = cont.querySelector("#filtros-dispositivos");
   const lista = cont.querySelector("#lista-dispositivos");
   const total = cont.querySelector("#total-dispositivos");
+  const avisoAsignado = cont.querySelector("[data-asignado-filtro]");
   let filas = [];
+  // Desde la ficha de una persona: #/red/dispositivos?id_asignado=5
+  let idAsignado = q.get("id_asignado") || "";
 
   const [base, proveedores] = await Promise.all([datosBase(), api("proveedores/", { query: { activo: "" } })]);
   if (!ctx.vigente()) return;
   const opcionesHTML = (lista2) => lista2.map((o) => `<option value="${esc(o.valor)}">${esc(o.texto)}</option>`).join("");
-  form.tipo_disp.insertAdjacentHTML("beforeend", opcionesHTML(opciones(base.tipos, "tipo_disp")));
+  form.id_categoria.insertAdjacentHTML("beforeend", opcionesHTML(opciones([...base.categorias].sort((a, b) => a.id_categoria - b.id_categoria),
+    "id_categoria", (c) => nombreCategoria(c.descripcion))));
   form.id_predio.insertAdjacentHTML("beforeend", opcionesHTML(opciones(base.edificios, "id_predio")));
+  form.cod_departamento.insertAdjacentHTML("beforeend", opcionesHTML(opciones(base.departamentos, "cod_departamento")));
   form.id_proveedor.insertAdjacentHTML("beforeend", opcionesHTML(opciones(proveedores, "id", nombreCompleto)));
+
+  function llenarTipos() {
+    const cat = Number(form.id_categoria.value);
+    const anterior = form.tipo_disp.value;
+    const tipos = base.tipos.filter((t) => !cat || t.id_categoria === cat);
+    form.tipo_disp.innerHTML = `<option value="">Todos</option>${cat ? opcionesHTML(opciones([...tipos].sort((a, b) => a.descripcion.localeCompare(b.descripcion, "es")), "tipo_disp"))
+      : opcionesTiposHTML(tipos, base.categorias)}`;
+    if (tipos.some((t) => String(t.tipo_disp) === anterior)) form.tipo_disp.value = anterior;
+  }
 
   function llenarMarcas() {
     const tipo = Number(form.tipo_disp.value);
+    const cat = Number(form.id_categoria.value);
     const anterior = form.id_marca.value;
-    const marcas = base.marcas.filter((m) => !tipo || m.tipo_disp === tipo);
+    const marcas = base.marcas.filter((m) => (tipo ? m.tipo_disp === tipo : !cat || categoriaDe(base, m.tipo_disp) === cat));
     form.id_marca.innerHTML = `<option value="">Todas</option>${opcionesHTML(opciones(marcas, "id_marca", (m) => (tipo ? m.descripcion : `${m.descripcion} (${m.tipo_dispositivo.toLowerCase()})`)))}`;
     if (marcas.some((m) => String(m.id_marca) === anterior)) form.id_marca.value = anterior;
   }
 
-  // Filtros que vienen en la dirección (#/red/dispositivos?tipo_disp=2)
-  for (const nombre of ["buscar", "tipo_disp", "id_predio", "id_proveedor", "activo"]) {
+  // Filtros que vienen en la dirección (#/red/dispositivos?id_categoria=2)
+  for (const nombre of ["buscar", "id_categoria", "id_predio", "cod_departamento", "id_proveedor", "activo"]) {
     if (q.has(nombre)) form[nombre].value = q.get(nombre);
   }
+  llenarTipos();
+  if (q.has("tipo_disp")) form.tipo_disp.value = q.get("tipo_disp");
   llenarMarcas();
   if (q.has("id_marca")) form.id_marca.value = q.get("id_marca");
 
-  const NOMBRES = ["buscar", "tipo_disp", "id_marca", "id_predio", "id_proveedor", "activo"];
+  function pintarAvisoAsignado() {
+    avisoAsignado.hidden = !idAsignado;
+    if (!idAsignado) return;
+    avisoAsignado.innerHTML = `<div class="aviso aviso--info filtro-persona">${icono("usuario")}<span>Equipos asignados a <strong data-nombre-asignado>la persona N.º ${esc(idAsignado)}</strong>.</span>
+      <a class="btn btn--fantasma btn--sm" href="#/usuarios/${esc(idAsignado)}">Ver su ficha</a>
+      <button type="button" class="btn btn--fantasma btn--sm" data-quitar-asignado>${icono("cerrar")}Quitar este filtro</button></div>`;
+    api(ruta("usuarios", idAsignado)).then((u) => {
+      const el = avisoAsignado.querySelector("[data-nombre-asignado]");
+      if (el) el.textContent = nombreCompleto(u);
+    }).catch(() => {});
+  }
+  avisoAsignado.addEventListener("click", (ev) => {
+    if (!ev.target.closest("[data-quitar-asignado]")) return;
+    idAsignado = "";
+    pintarAvisoAsignado();
+    cargar();
+  });
+  pintarAvisoAsignado();
+
   let consulta = 0;
   async function cargar() {
     const esta = ++consulta;
-    const query = Object.fromEntries(NOMBRES.map((n) => [n, form[n].value.trim()]));
+    const query = { ...Object.fromEntries(FILTROS_LISTA.map((n) => [n, form[n].value.trim()])), id_asignado: idAsignado };
     // La dirección guarda los filtros para volver a la misma lista
     const qs = new URLSearchParams(Object.entries(query).filter(([n, v]) => v !== "" && !(n === "activo" && v === "true"))).toString();
     history.replaceState(null, "", `#/red/dispositivos${qs ? `?${qs}` : ""}`);
@@ -318,13 +412,13 @@ export async function vistaDispositivos(cont, _params, ctx) {
       return;
     }
     if (esta !== consulta || !ctx.vigente()) return;
-    total.textContent = `${filas.length} ${filas.length === 1 ? "dispositivo" : "dispositivos"}`;
+    total.textContent = `${filas.length} ${filas.length === 1 ? "equipo" : "equipos"}`;
 
     if (!filas.length) {
-      const hayFiltros = NOMBRES.some((n) => n !== "activo" && form[n].value);
+      const hayFiltros = idAsignado || FILTROS_LISTA.some((n) => n !== "activo" && form[n].value);
       lista.innerHTML = vacioHTML({
         icono: "red",
-        titulo: hayFiltros ? "Ningún dispositivo coincide con la búsqueda" : "No hay dispositivos en este estado",
+        titulo: hayFiltros ? "Ningún equipo coincide con la búsqueda" : "No hay equipos en este estado",
         texto: hayFiltros ? "Pruebe con otro texto o quite los filtros." : "",
         boton: ctx.esAdmin && !hayFiltros ? `<a class="btn btn--primario" href="#/red/dispositivos/nuevo">${icono("mas")}Registrar el primero</a>` : "",
       });
@@ -335,8 +429,14 @@ export async function vistaDispositivos(cont, _params, ctx) {
       clicable: true,
       filas,
       columnas: [
-        { titulo: "Dispositivo", html: celdaDispositivo },
-        { titulo: "Tipo", html: (d) => esc(d.tipo_dispositivo) },
+        { titulo: "Equipo", html: celdaDispositivo },
+        { titulo: "Tipo", html: (d) => `${esc(d.tipo_dispositivo)}<span class="secundario">${esc(nombreCategoria(d.categoria))}</span>` },
+        {
+          titulo: "Responsable", clase: "col-opcional",
+          html: (d) => (d.asignado || d.departamento
+            ? `${d.asignado ? `<a href="#/usuarios/${d.id_asignado}">${esc(d.asignado)}</a>` : `<span class="secundario">Sin persona asignada</span>`}<span class="secundario">${esc(d.departamento || "")}</span>`
+            : `<span class="secundario">Sin asignar</span>`),
+        },
         {
           titulo: "Ubicación", clase: "col-opcional",
           html: (d) => (d.edificio || d.ubicacion
@@ -364,68 +464,214 @@ export async function vistaDispositivos(cont, _params, ctx) {
   });
   form.addEventListener("submit", (ev) => { ev.preventDefault(); cargar(); });
   form.buscar.addEventListener("input", debounce(cargar, 300));
+  form.id_categoria.addEventListener("change", () => { llenarTipos(); llenarMarcas(); cargar(); });
   form.tipo_disp.addEventListener("change", () => { llenarMarcas(); cargar(); });
-  ["id_marca", "id_predio", "id_proveedor", "activo"].forEach((n) => form[n].addEventListener("change", cargar));
+  ["id_marca", "id_predio", "cod_departamento", "id_proveedor", "activo"].forEach((n) => form[n].addEventListener("change", cargar));
 
   await cargar();
 }
 
 /* =====================================================================
-   Formulario del dispositivo (crear y editar)
+   Formulario del equipo (crear y editar)
    ===================================================================== */
-function seccionesDispositivo(base, proveedores, valores = {}) {
+// Cada dato se pide solo en las categorías de «cats» (sin «cats»: en todas)
+const SIN_PANTALLA = [CAT.RED, CAT.COMPUTO, CAT.SERVIDOR, CAT.MOVIL, CAT.TELEFONIA, CAT.IMPRESION, CAT.ENERGIA, CAT.VIDEO, CAT.OTRO];
+const FIRMWARE = { [CAT.RED]: "Versión del firmware", [CAT.TELEFONIA]: "Versión del firmware", [CAT.IMPRESION]: "Versión del firmware",
+  [CAT.ENERGIA]: "Versión del firmware", [CAT.VIDEO]: "Versión del firmware" };
+const TECNOLOGIAS = ["LÁSER", "TINTA", "TINTA CONTINUA", "TÉRMICA", "MATRIZ DE PUNTO"];
+const ALMACENAMIENTOS = [["SSD", "SSD"], ["NVME", "SSD NVMe"], ["HDD", "Disco duro (HDD)"], ["EMMC", "eMMC"]];
+
+/** Personas para «Funcionario responsable»: el personal activo (y la asignada, aunque esté inactiva). */
+function opcionesPersonal(personal, valores) {
+  const ops = [...personal].sort((a, b) => nombreCompleto(a).localeCompare(nombreCompleto(b), "es"))
+    .map((u) => ({ valor: u.id, texto: nombreCompleto(u) }));
+  if (valores.id_asignado && !ops.some((o) => o.valor === valores.id_asignado)) {
+    ops.push({ valor: valores.id_asignado, texto: `${valores.asignado || `Persona ${valores.id_asignado}`} (inactiva)` });
+  }
+  return ops;
+}
+
+function seccionesDispositivo(base, proveedores, personal, valores = {}) {
   const provOpciones = opciones(proveedores, "id", nombreCompleto);
   if (valores.id_proveedor && !provOpciones.some((o) => o.valor === valores.id_proveedor)) {
     provOpciones.push({ valor: valores.id_proveedor, texto: `${valores.proveedor || `Proveedor ${valores.id_proveedor}`} (inactivo)` });
   }
+  const numero = (nombre, etiqueta, cats, extra = {}) => ({ nombre, etiqueta, tipo: "number", entero: true, minimo: 1, cats, ...extra });
   return [
     {
-      titulo: "Equipo", icono: "red",
-      texto: "La marca depende del tipo y el modelo depende de la marca.",
+      clave: "equipo", titulo: "Equipo", icono: "red",
+      texto: "El tipo decide qué datos se piden. La marca depende del tipo y el modelo depende de la marca.",
       campos: [
-        { nombre: "tipo_disp", etiqueta: "Tipo de dispositivo", tipo: "select", opciones: opciones(base.tipos, "tipo_disp"), requerido: true, entero: true },
+        { nombre: "tipo_disp", etiqueta: "Tipo de equipo", tipo: "select", opciones: [], requerido: true, entero: true },
         { nombre: "id_marca", etiqueta: "Marca", tipo: "select", opciones: [], requerido: true, entero: true },
         { nombre: "id_modelo", etiqueta: "Modelo", tipo: "select", opciones: [], entero: true, vacioTexto: "Sin modelo" },
         { nombre: "serie", etiqueta: "Número de serie", requerido: true, max: 100, placeholder: "658429" },
-        { nombre: "id_os", etiqueta: "Sistema operativo", tipo: "select", opciones: opciones(base.sistemas, "id_os"), entero: true, sinVacio: true },
+        { nombre: "placa", etiqueta: "Placa (número de activo)", max: 50, placeholder: "MG-000123" },
+        {
+          nombre: "nombre_equipo", etiqueta: "Nombre en la red", max: 100, placeholder: "PC-FIN-01", cats: SIN_PANTALLA,
+          ayuda: "El nombre del equipo en la red (hostname): se compara con el DHCP y con Microclaudia.",
+        },
       ],
     },
     {
-      titulo: "Puertos", icono: "puertos",
-      texto: "Cantidad de puertos de red del equipo.",
+      clave: "sistema", titulo: "Sistema", icono: "sistema",
+      texto: "Sistema operativo o firmware y su versión.",
       campos: [
-        { nombre: "cant_ptos_ethernet", etiqueta: "Puertos Ethernet", tipo: "number", entero: true, placeholder: "0" },
-        { nombre: "cant_ptos_sfp", etiqueta: "Puertos SFP", tipo: "number", entero: true, placeholder: "0" },
+        {
+          nombre: "id_os", etiqueta: "Sistema operativo", tipo: "select", opciones: opciones(base.sistemas, "id_os"), entero: true, sinVacio: true,
+          cats: [CAT.RED, CAT.COMPUTO, CAT.SERVIDOR, CAT.MOVIL, CAT.TELEFONIA, CAT.IMPRESION, CAT.VIDEO, CAT.OTRO],
+        },
+        { nombre: "version_os", etiqueta: "Versión del sistema", max: 100, placeholder: "11 PRO 23H2", cats: SIN_PANTALLA, etiquetas: FIRMWARE },
       ],
     },
     {
-      titulo: "Ubicación", icono: "punto",
+      clave: "hardware", titulo: "Características", icono: "equipo",
+      texto: "Procesador, memoria, disco y pantalla.",
+      campos: [
+        { nombre: "procesador", etiqueta: "Procesador", max: 150, placeholder: "INTEL CORE I7-1365U", cats: [CAT.COMPUTO, CAT.SERVIDOR] },
+        numero("memoria_gb", "Memoria RAM (GB)", [CAT.COMPUTO, CAT.SERVIDOR, CAT.MOVIL], { maximo: 4096, placeholder: "16" }),
+        numero("almacenamiento_gb", "Almacenamiento (GB)", [CAT.COMPUTO, CAT.SERVIDOR, CAT.MOVIL, CAT.VIDEO], { maximo: 1000000, placeholder: "512" }),
+        {
+          nombre: "tipo_almacenamiento", etiqueta: "Tipo de disco", tipo: "select", vacioTexto: "Sin indicar",
+          opciones: ALMACENAMIENTOS.map(([valor, texto]) => ({ valor, texto })), cats: [CAT.COMPUTO, CAT.SERVIDOR],
+        },
+        {
+          nombre: "pulgadas", etiqueta: "Pantalla (pulgadas)", tipo: "number", minimo: 1, maximo: 150, paso: "0.1", placeholder: "14",
+          cats: [CAT.COMPUTO, CAT.MOVIL, CAT.PANTALLA],
+        },
+        { nombre: "resolucion", etiqueta: "Resolución", max: 20, placeholder: "1920X1080", cats: [CAT.PANTALLA, CAT.VIDEO] },
+      ],
+    },
+    {
+      clave: "puertos", titulo: "Puertos", icono: "puertos",
+      texto: "Cantidad de puertos del equipo.",
+      campos: [
+        numero("cant_ptos_ethernet", "Puertos Ethernet", [CAT.RED, CAT.SERVIDOR, CAT.TELEFONIA, CAT.VIDEO], { minimo: 0, maximo: 9999, placeholder: "0" }),
+        numero("cant_ptos_sfp", "Puertos SFP", [CAT.RED, CAT.SERVIDOR], { minimo: 0, maximo: 9999, placeholder: "0" }),
+        numero("canales", "Canales de video", [CAT.VIDEO], { maximo: 512, placeholder: "16" }),
+      ],
+    },
+    {
+      clave: "linea", titulo: "Línea telefónica", icono: "telefono",
+      texto: "IMEI del equipo (en el celular: marque *#06#) y la línea que usa.",
+      campos: [
+        { nombre: "imei", etiqueta: "IMEI", max: 20, placeholder: "15 dígitos", mayus: false, cats: [CAT.MOVIL] },
+        { nombre: "imei2", etiqueta: "IMEI 2 (segundo SIM)", max: 20, placeholder: "15 dígitos", mayus: false, cats: [CAT.MOVIL] },
+        { nombre: "numero_linea", etiqueta: "Número de línea", tipo: "tel", max: 20, placeholder: "8888-8888", cats: [CAT.MOVIL, CAT.TELEFONIA] },
+        { nombre: "operador", etiqueta: "Operador", max: 50, placeholder: "KÖLBI, CLARO, LIBERTY…", cats: [CAT.MOVIL] },
+        { nombre: "extension", etiqueta: "Extensión", max: 10, placeholder: "1234", mayus: false, cats: [CAT.TELEFONIA] },
+      ],
+    },
+    {
+      clave: "impresion", titulo: "Impresión", icono: "impresora",
+      texto: "Cómo imprime y qué consumible usa.",
+      campos: [
+        {
+          nombre: "tecnologia_impresion", etiqueta: "Tecnología", tipo: "select", vacioTexto: "Sin indicar",
+          opciones: TECNOLOGIAS.map((t) => ({ valor: t, texto: nombreCategoria(t) })), cats: [CAT.IMPRESION],
+        },
+        { nombre: "consumible", etiqueta: "Tóner o cartucho", max: 100, placeholder: "HP 58A", cats: [CAT.IMPRESION] },
+        { nombre: "a_color", etiqueta: "Imprime a color", tipo: "checkbox", cats: [CAT.IMPRESION] },
+      ],
+    },
+    {
+      clave: "energia", titulo: "Energía", icono: "ups",
+      texto: "Capacidad de la UPS y cuánto dura con la batería.",
+      campos: [
+        numero("capacidad_va", "Capacidad (VA)", [CAT.ENERGIA], { maximo: 1000000, placeholder: "1500" }),
+        numero("autonomia_min", "Autonomía (minutos)", [CAT.ENERGIA], { maximo: 9999, placeholder: "15" }),
+      ],
+    },
+    {
+      clave: "ubicacion", titulo: "Ubicación", icono: "punto", despues: true,
       texto: "Edificio donde está el equipo y el lugar exacto dentro de él. La ubicación GPS se toma del edificio.",
       campos: [
         { nombre: "id_predio", etiqueta: "Edificio", tipo: "select", opciones: opciones(base.edificios, "id_predio"), entero: true, vacioTexto: "Sin edificio" },
-        { nombre: "ubicacion", etiqueta: "Ubicación en el edificio", max: 255, placeholder: "Piso 2, cuarto de comunicaciones, rack 1" },
+        { nombre: "ubicacion", etiqueta: "Ubicación en el edificio", max: 255, placeholder: "Piso 2, oficina de contabilidad, rack 1" },
       ],
     },
     {
-      titulo: "Soporte", icono: "proveedor",
-      texto: "Proveedor que le da soporte al equipo.",
+      clave: "asignacion", titulo: "Asignación", icono: "usuario", despues: true,
+      texto: "Departamento que usa el equipo y el funcionario responsable.",
+      campos: [
+        {
+          nombre: "cod_departamento", etiqueta: "Departamento", tipo: "select", entero: true, vacioTexto: "Sin departamento",
+          opciones: opciones([...base.departamentos].sort((a, b) => a.descripcion.localeCompare(b.descripcion, "es")), "cod_departamento"),
+        },
+        { nombre: "id_asignado", etiqueta: "Funcionario responsable", tipo: "select", opciones: opcionesPersonal(personal, valores), entero: true, vacioTexto: "Sin asignar" },
+      ],
+    },
+    {
+      clave: "soporte", titulo: "Compra y soporte", icono: "proveedor", despues: true,
+      texto: "Proveedor que le da soporte, fechas de compra y de garantía, y observaciones.",
       campos: [
         { nombre: "id_proveedor", etiqueta: "Proveedor de soporte", tipo: "select", opciones: provOpciones, entero: true, vacioTexto: "Sin proveedor", completo: true },
+        { nombre: "fecha_compra", etiqueta: "Fecha de compra", tipo: "date" },
+        { nombre: "garantia_hasta", etiqueta: "Garantía hasta", tipo: "date" },
+        { nombre: "observaciones", etiqueta: "Observaciones", tipo: "textarea", max: 500, completo: true },
       ],
     },
   ];
 }
 
-/** Tipo → marca → modelo en cascada. Termina cuando los modelos quedaron cargados. */
-async function enlazarEquipo(form, base, valores = {}, bloqueado = false) {
+const seccionEquipoHTML = (s, valores, soloLectura) => `
+  <section class="seccion-form" data-seccion="${s.clave}">
+    <h3>${icono(s.icono)}${esc(s.titulo)}</h3>
+    <p>${esc(s.texto)}</p>
+    <div class="rejilla">${camposHTML(s.campos, valores, { soloLectura })}</div>
+  </section>`;
+
+/** Las secciones del equipo, las direcciones de red y las de ubicación, asignación y soporte. */
+const formularioEquipoHTML = (secciones, valores, soloLectura) =>
+  secciones.filter((s) => !s.despues).map((s) => seccionEquipoHTML(s, valores, soloLectura)).join("")
+  + seccionDireccionesHTML(soloLectura)
+  + secciones.filter((s) => s.despues).map((s) => seccionEquipoHTML(s, valores, soloLectura)).join("");
+
+const pideCampo = (c, idCategoria) => !c.cats || (idCategoria !== null && c.cats.includes(idCategoria));
+
+/** Muestra solo los datos que lleva la categoría del tipo elegido (sin tipo:
+ *  solo los comunes). Los demás se ocultan y no se mandan. */
+function aplicarCategoria(form, secciones, idCategoria, soloLectura) {
+  for (const s of secciones) {
+    let alguno = false;
+    for (const c of s.campos) {
+      const caja = form.querySelector(`.campo[data-campo="${c.nombre}"]`);
+      if (!caja) continue;
+      const ver = pideCampo(c, idCategoria);
+      caja.hidden = !ver;
+      alguno ||= ver;
+      const control = form.elements.namedItem(c.nombre);
+      if (c.cats && control && !soloLectura) control.disabled = !ver;
+      if (c.etiquetas) {
+        const etiqueta = caja.querySelector("label");
+        if (etiqueta) etiqueta.textContent = c.etiquetas[idCategoria] || c.etiqueta;
+      }
+    }
+    const seccion = form.querySelector(`[data-seccion="${s.clave}"]`);
+    if (seccion) seccion.hidden = !alguno;
+  }
+}
+
+/** Datos del formulario: los que no lleva la categoría van vacíos. */
+function leerEquipo(form, campos, idCategoria) {
+  const datos = leerCampos(form, campos);
+  for (const c of campos) if (!pideCampo(c, idCategoria)) datos[c.nombre] = null;
+  return datos;
+}
+
+/** Tipo → marca → modelo en cascada, con los tipos agrupados por categoría.
+ *  alCambiarTipo(idCategoria) se llama al elegir otro tipo. Termina cuando
+ *  los modelos quedaron cargados. */
+async function enlazarEquipo(form, base, valores = {}, bloqueado = false, alCambiarTipo = () => {}) {
   const selTipo = form.elements.namedItem("tipo_disp");
   const selMarca = form.elements.namedItem("id_marca");
   const selModelo = form.elements.namedItem("id_modelo");
   const opcion = (v, t, elegida) => `<option value="${esc(v)}"${elegida ? " selected" : ""}>${esc(t)}</option>`;
+  selTipo.innerHTML = `<option value="">Seleccione…</option>${opcionesTiposHTML(base.tipos, base.categorias, valores.tipo_disp)}`;
 
   function llenarMarcas(preseleccion) {
     const tipo = Number(selTipo.value);
-    const marcas = base.marcas.filter((m) => m.tipo_disp === tipo);
+    const marcas = base.marcas.filter((m) => m.tipo_disp === tipo).sort((a, b) => a.descripcion.localeCompare(b.descripcion, "es"));
     const primera = !tipo ? "Elija primero el tipo" : marcas.length ? "Seleccione…" : "Este tipo no tiene marcas";
     selMarca.innerHTML = `<option value="">${primera}</option>${marcas.map((m) => opcion(m.id_marca, m.descripcion, m.id_marca === preseleccion)).join("")}`;
     selMarca.disabled = bloqueado || !marcas.length;
@@ -450,10 +696,21 @@ async function enlazarEquipo(form, base, valores = {}, bloqueado = false) {
     selModelo.disabled = bloqueado || !modelos.length;
   }
 
-  selTipo.addEventListener("change", () => { llenarMarcas(null); llenarModelos(null); });
+  selTipo.addEventListener("change", () => { llenarMarcas(null); llenarModelos(null); alCambiarTipo(categoriaDe(base, selTipo.value)); });
   selMarca.addEventListener("change", () => llenarModelos(null));
   llenarMarcas(valores.id_marca ?? null);
+  alCambiarTipo(categoriaDe(base, selTipo.value));
   await llenarModelos(valores.id_modelo ?? null);
+}
+
+/** Al elegir el funcionario responsable, el departamento se llena con el suyo si estaba vacío. */
+function enlazarAsignacion(form, personal) {
+  const persona = form.elements.namedItem("id_asignado");
+  const depto = form.elements.namedItem("cod_departamento");
+  persona?.addEventListener("change", () => {
+    const u = personal.find((x) => String(x.id) === persona.value);
+    if (u?.cod_departamento && depto && !depto.value) depto.value = String(u.cod_departamento);
+  });
 }
 
 /** Formulario de un edificio: nombre, otras señas y ubicación GPS. Lo usan la
@@ -719,53 +976,76 @@ function mostrarErrorDispositivo(form, e, caja, filas) {
   caja.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-function prepararNumeros(form) {
-  form.querySelectorAll('input[type="number"]').forEach((input) => {
-    input.min = "0";
-    input.max = "9999";
-    input.step = "1";
-    input.inputMode = "numeric";
-  });
+/** Mínimo, máximo y paso de cada número (decimales solo en las pulgadas). */
+function prepararNumeros(form, campos) {
+  for (const c of campos) {
+    if (c.tipo !== "number") continue;
+    const input = form.elements.namedItem(c.nombre);
+    if (!input) continue;
+    input.min = String(c.minimo ?? 0);
+    input.max = String(c.maximo ?? 9999);
+    input.step = c.paso || "1";
+    input.inputMode = c.paso ? "decimal" : "numeric";
+  }
+}
+
+/** Tipo de equipo que corresponde a una sugerencia (IMPRESORA, COMPUTADORA…), si hay uno solo claro. */
+function tipoSugerido(tipos, texto) {
+  const buscado = normalizar(texto);
+  if (!buscado) return null;
+  return tipos.find((t) => normalizar(t.descripcion) === buscado)
+    || [...tipos].sort((a, b) => a.descripcion.length - b.descripcion.length).find((t) => normalizar(t.descripcion).includes(buscado))
+    || null;
 }
 
 /* =====================================================================
    Nuevo dispositivo
    ===================================================================== */
 export async function vistaDispositivoNuevo(cont, _params, ctx) {
-  ctx.migas([{ texto: "Dispositivos", href: "#/red/dispositivos" }, { texto: "Nuevo dispositivo" }]);
+  ctx.migas([{ texto: "Equipos", href: "#/red/dispositivos" }, { texto: "Nuevo equipo" }]);
   cont.innerHTML = cargandoHTML();
 
-  const [base, proveedores, tiposDoc] = await Promise.all([
+  const [base, proveedores, tiposDoc, personal] = await Promise.all([
     datosBase(), api("proveedores/", { query: { activo: true } }), filasCatalogo("tipos-documentos"),
+    api("usuarios/", { query: { activo: true } }),
   ]);
   if (!ctx.vigente()) return;
-  const secciones = seccionesDispositivo(base, proveedores);
-  const valores = { id_os: base.sistemas.some((s) => s.id_os === 1) ? 1 : undefined };
-  const opcionesDoc = [...tiposDoc].sort((a, b) => a.id_doc - b.id_doc)
-    .map((t) => `<option value="${t.id_doc}">${esc(t.descripcion)}</option>`).join("");
 
-  // Desde «Equipos sin agente»: #/red/dispositivos/nuevo?ip=&mac=&equipo= trae la IP y la MAC del listado de Microclaudia
+  // Desde los logs (equipos sin agente, intrusos del DHCP):
+  // #/red/dispositivos/nuevo?ip=&mac=&equipo=&tipo= trae la IP, la MAC, el
+  // nombre en la red y el tipo que parece; desde la ficha de una persona, ?asignado=
   const q = ctx.query || new URLSearchParams();
   const previas = {
     ips: q.get("ip") ? [{ direccion_ip: q.get("ip") }] : [],
     macs: q.get("mac") ? [{ direccion_mac: q.get("mac") }] : [],
   };
   const deListado = q.get("equipo");
+  const sugerido = tipoSugerido(base.tipos, q.get("tipo"));
+  const asignado = personal.find((u) => String(u.id) === q.get("asignado"));
+  const valores = {
+    id_os: base.sistemas.some((s) => s.id_os === 1) ? 1 : undefined,
+    nombre_equipo: deListado ? deListado.split(".")[0].toUpperCase() : undefined,
+    tipo_disp: sugerido?.tipo_disp,
+    id_asignado: asignado?.id,
+    cod_departamento: asignado?.cod_departamento || undefined,
+  };
+  const secciones = seccionesDispositivo(base, proveedores, personal, valores);
+  const opcionesDoc = [...tiposDoc].sort((a, b) => a.id_doc - b.id_doc)
+    .map((t) => `<option value="${t.id_doc}">${esc(t.descripcion)}</option>`).join("");
 
   cont.innerHTML = `
-    <a class="volver" href="#/red/dispositivos">${icono("atras")}Volver a dispositivos</a>
-    <div class="encabezado"><div><h1>Nuevo dispositivo</h1><p>Los campos con * son obligatorios.</p></div></div>
-    ${deListado ? `<div class="aviso aviso--info">${icono("enlace")}<span>La IP y la MAC vienen del equipo <strong>${esc(deListado)}</strong> del listado de
-      Microclaudia. Complete el tipo, la marca y la serie.</span></div>` : ""}
+    <a class="volver" href="#/red/dispositivos">${icono("atras")}Volver a equipos</a>
+    <div class="encabezado"><div><h1>Nuevo equipo</h1><p>Los campos con * son obligatorios. Al elegir el tipo aparecen los datos que lleva ese equipo.</p></div></div>
+    ${deListado ? `<div class="aviso aviso--info">${icono("enlace")}<span>${previas.ips.length || previas.macs.length ? "El nombre en la red, la IP y la MAC vienen" : "El nombre en la red viene"} del equipo
+      <strong>${esc(deListado)}</strong> de los logs${sugerido ? ` (tipo sugerido: ${esc(sugerido.descripcion)})` : ""}. Revise el tipo y complete la marca y la serie.</span></div>` : ""}
+    ${asignado ? `<div class="aviso aviso--info">${icono("usuario")}<span>El equipo queda asignado a <strong>${esc(nombreCompleto(asignado))}</strong>.</span></div>` : ""}
     <form class="panel" id="form-dispositivo" novalidate>
       <div class="panel__cuerpo">
         <div data-error hidden style="margin-bottom:18px"></div>
-        ${seccionesHTML(secciones.slice(0, 2), valores, false)}
-        ${seccionDireccionesHTML(false)}
-        ${seccionesHTML(secciones.slice(2), valores, false)}
+        ${formularioEquipoHTML(secciones, valores, false)}
         <section class="seccion-form">
           <h3>${icono("documento")}Documentos</h3>
-          <p>Opcional. Manuales, imagen, firmware, respaldos o configuración, hasta ${MAX_MB_DOCUMENTO / 1024} GB cada uno. También se pueden subir después desde la ficha.</p>
+          <p>Opcional. Manuales, imagen, firmware, respaldos, configuración, facturas o actas de entrega, hasta ${MAX_MB_DOCUMENTO / 1024} GB cada uno. También se pueden subir después desde la ficha.</p>
           <div class="repetible" data-repetible="documentos">
             <div class="repetible__filas"></div>
             <div><button type="button" class="btn btn--fantasma btn--sm" data-agregar-doc>${icono("mas")}Agregar documento</button></div>
@@ -775,7 +1055,7 @@ export async function vistaDispositivoNuevo(cont, _params, ctx) {
       <div class="panel__pie">
         <span class="progreso-texto" data-progreso aria-live="polite"></span>
         <a class="btn btn--secundario" href="#/red/dispositivos">Cancelar</a>
-        <button class="btn btn--primario" type="submit">${icono("check")}Registrar dispositivo</button>
+        <button class="btn btn--primario" type="submit">${icono("check")}Registrar equipo</button>
       </div>
     </form>`;
 
@@ -783,11 +1063,13 @@ export async function vistaDispositivoNuevo(cont, _params, ctx) {
   const caja = form.querySelector("[data-error]");
   const campos = todosLosCampos(secciones);
   const filasDoc = form.querySelector('[data-repetible="documentos"] .repetible__filas');
-  prepararNumeros(form);
+  let categoria = null;
+  prepararNumeros(form, campos);
   enlazarEdificio(form, base.edificios, ctx.esAdmin);
+  enlazarAsignacion(form, personal);
   pintarDirecciones(form, previas, false);
   enlazarDirecciones(form);
-  await enlazarEquipo(form, base);
+  await enlazarEquipo(form, base, valores, false, (cat) => { categoria = cat; aplicarCategoria(form, secciones, cat, false); });
 
   let contador = 0;
   form.addEventListener("click", (ev) => {
@@ -833,7 +1115,7 @@ export async function vistaDispositivoNuevo(cont, _params, ctx) {
     let creado;
     try {
       // El dispositivo, sus IP y sus MAC se guardan juntos (todo o nada)
-      creado = await api(`${RECURSO}/`, { metodo: "POST", datos: { ...leerCampos(form, campos), ...direcciones.datos } });
+      creado = await api(`${RECURSO}/`, { metodo: "POST", datos: { ...leerEquipo(form, campos, categoria), ...direcciones.datos } });
     } catch (e) {
       botonCargando(boton, false);
       if (!(e instanceof ErrorApi)) throw e;
@@ -857,7 +1139,7 @@ export async function vistaDispositivoNuevo(cont, _params, ctx) {
       }
     }
 
-    toast(`Se registró el dispositivo ${tituloDispositivo(creado)} (serie ${creado.serie}).`);
+    toast(`Se registró el equipo ${tituloDispositivo(creado)} (serie ${creado.serie}).`);
     if (fallos.length) toast(`Algunos datos no se guardaron. ${fallos.join(" ")}`, "error");
     location.hash = `#/red/dispositivos/${creado.id_disp}${documentos.length && !sinDirecciones ? "/documentos" : ""}`;
   });
@@ -873,13 +1155,13 @@ const PESTANAS = [
 ];
 
 export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
-  ctx.migas([{ texto: "Dispositivos", href: "#/red/dispositivos" }]);
+  ctx.migas([{ texto: "Equipos", href: "#/red/dispositivos" }]);
   cont.innerHTML = cargandoHTML();
 
   const d = await api(ruta(RECURSO, id));
   if (!ctx.vigente()) return;
   const titulo = tituloDispositivo(d);
-  ctx.migas([{ texto: "Dispositivos", href: "#/red/dispositivos" }, { texto: `${titulo} · ${d.serie}` }]);
+  ctx.migas([{ texto: "Equipos", href: "#/red/dispositivos" }, { texto: `${titulo} · ${d.serie}` }]);
 
   const base = `#/red/dispositivos/${d.id_disp}`;
   const pestanas = PESTANAS.filter((t) => !t.soloAdmin || ctx.esAdmin);
@@ -888,7 +1170,7 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
   const marca = marcaAparte(d);
 
   cont.innerHTML = `
-    <a class="volver" href="#/red/dispositivos">${icono("atras")}Volver a dispositivos</a>
+    <a class="volver" href="#/red/dispositivos">${icono("atras")}Volver a equipos</a>
     <div class="ficha">
       ${insigniaTipo(d, "grande")}
       <div class="ficha__texto">
@@ -897,6 +1179,9 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
           ${pastillaEstado(d.activo)}
           <span>${esc(d.tipo_dispositivo)}${marca ? ` · ${esc(marca)}` : ""}</span>
           <span class="dato-mono">Serie ${esc(d.serie)}</span>
+          ${d.placa ? `<span class="dato-mono" title="Placa (número de activo)">Placa ${esc(d.placa)}</span>` : ""}
+          ${d.nombre_equipo ? `<span class="ficha__dato-icono dato-mono" title="Nombre en la red">${icono("red", "ic--sm")}${esc(d.nombre_equipo)}</span>` : ""}
+          ${d.asignado ? `<a class="ficha__dato-icono" href="#/usuarios/${d.id_asignado}" title="Funcionario responsable">${icono("usuario", "ic--sm")}${esc(d.asignado)}</a>` : ""}
           ${d.edificio ? `<span class="ficha__dato-icono">${icono("edificio", "ic--sm")}${esc(d.edificio)}</span>` : ""}
           ${d.ips ? `<span class="ficha__dato-icono dato-mono" title="Direcciones IP">${icono("web", "ic--sm")}${resumenDirecciones(d.ips)}</span>` : ""}
           ${d.macs ? `<span class="ficha__dato-icono dato-mono" title="Direcciones MAC">${icono("puertos", "ic--sm")}${resumenDirecciones(d.macs, formatearMac)}</span>` : ""}
@@ -908,7 +1193,7 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
           : `<button type="button" class="btn btn--primario" data-estado>${icono("encender")}Activar</button>`) : ""}
       </div>
     </div>
-    <div class="pestanas" role="tablist" aria-label="Información del dispositivo">
+    <div class="pestanas" role="tablist" aria-label="Información del equipo">
       ${pestanas.map((t) => `<button type="button" role="tab" id="tab-${t.clave}" aria-controls="panel-pestana" data-pestana="${t.clave}" aria-selected="${t.clave === actual}">${icono(t.icono)}${esc(t.titulo)}${t.clave === "documentos" ? `<span class="contador">${d.cantidad_documentos || 0}</span>` : ""}</button>`).join("")}
     </div>
     <div id="panel-pestana" role="tabpanel"></div>`;
@@ -975,11 +1260,12 @@ async function cambiarEstado(d, alTerminar) {
 
 /* --------------------------------------------------------- Datos generales */
 async function pestanaDatos(panel, d, ctx, recargar) {
-  const [base, proveedores, ips, macs] = await Promise.all([
+  const [base, proveedores, ips, macs, personal] = await Promise.all([
     datosBase(), api("proveedores/", { query: { activo: true } }),
     api(ruta(RECURSO, d.id_disp, "ips")), api(ruta(RECURSO, d.id_disp, "macs")),
+    api("usuarios/", { query: { activo: true } }),
   ]);
-  const secciones = seccionesDispositivo(base, proveedores, d);
+  const secciones = seccionesDispositivo(base, proveedores, personal, d);
   const soloLectura = !ctx.esAdmin;
   const campos = todosLosCampos(secciones);
 
@@ -988,9 +1274,7 @@ async function pestanaDatos(panel, d, ctx, recargar) {
       <div class="panel__cuerpo">
         ${soloLectura ? `<div class="aviso aviso--ocre" style="margin-bottom:18px">${icono("candado")}<span>Solo un administrador puede modificar estos datos.</span></div>` : ""}
         <div data-error hidden style="margin-bottom:18px"></div>
-        ${seccionesHTML(secciones.slice(0, 2), d, soloLectura)}
-        ${seccionDireccionesHTML(soloLectura)}
-        ${seccionesHTML(secciones.slice(2), d, soloLectura)}
+        ${formularioEquipoHTML(secciones, d, soloLectura)}
         <section class="seccion-form">
           <h3>${icono("etiqueta")}Registro</h3>
           <dl class="lista-datos">
@@ -1003,21 +1287,23 @@ async function pestanaDatos(panel, d, ctx, recargar) {
     </form>
     ${ctx.esAdmin ? `
     <section class="panel zona-riesgo">
-      <div class="panel__cabeza"><h2>Acciones sobre el dispositivo</h2></div>
+      <div class="panel__cabeza"><h2>Acciones sobre el equipo</h2></div>
       <div class="fila-riesgo">
         <div><strong>Eliminar definitivamente</strong>
-          <p>Borra el dispositivo con sus direcciones IP y MAC, sus documentos y archivos. No se puede deshacer. Si solo se retiró de servicio, use Desactivar.</p></div>
-        <button type="button" class="btn btn--peligro-suave" data-eliminar>${icono("borrar")}Eliminar dispositivo</button>
+          <p>Borra el equipo con sus direcciones IP y MAC, sus documentos y archivos. No se puede deshacer. Si solo se retiró de servicio, use Desactivar.</p></div>
+        <button type="button" class="btn btn--peligro-suave" data-eliminar>${icono("borrar")}Eliminar equipo</button>
       </div>
     </section>` : ""}`;
 
   const form = panel.querySelector("form");
   const caja = form.querySelector("[data-error]");
-  prepararNumeros(form);
+  let categoria = d.id_categoria || null;
+  prepararNumeros(form, campos);
   enlazarEdificio(form, base.edificios, ctx.esAdmin);
+  if (!soloLectura) enlazarAsignacion(form, personal);
   pintarDirecciones(form, { ips, macs }, soloLectura);
   if (!soloLectura) enlazarDirecciones(form);
-  await enlazarEquipo(form, base, d, soloLectura);
+  await enlazarEquipo(form, base, d, soloLectura, (cat) => { categoria = cat; aplicarCategoria(form, secciones, cat, soloLectura); });
 
   // Enlace a la ficha del proveedor (módulo de usuarios y proveedores)
   if (d.id_proveedor) {
@@ -1053,7 +1339,7 @@ async function pestanaDatos(panel, d, ctx, recargar) {
     let r;
     try {
       // Los datos, las IP y las MAC se guardan juntos (todo o nada)
-      r = await api(ruta(RECURSO, d.id_disp), { metodo: "PUT", datos: { ...leerCampos(form, campos), ...direcciones.datos } });
+      r = await api(ruta(RECURSO, d.id_disp), { metodo: "PUT", datos: { ...leerEquipo(form, campos, categoria), ...direcciones.datos } });
     } catch (e) {
       botonCargando(boton, false);
       if (!(e instanceof ErrorApi)) throw e;
@@ -1295,7 +1581,7 @@ export async function vistaMarcas(cont, _params, ctx) {
   cont.innerHTML = `
     <div class="encabezado">
       <div><h1>Marcas y modelos</h1>
-        <p>Cada marca pertenece a un tipo de dispositivo y tiene sus propios modelos. Una marca que fabrica varios tipos (por ejemplo CISCO) se registra una vez por cada tipo.</p></div>
+        <p>Cada marca pertenece a un tipo de equipo y tiene sus propios modelos. Una marca que fabrica varios tipos (por ejemplo DELL: laptops, monitores, servidores) se registra una vez por cada tipo.</p></div>
       ${admin ? `<div class="encabezado__acciones"><button type="button" class="btn btn--primario" data-agregar-marca>${icono("mas")}Agregar marca</button></div>` : ""}
     </div>
     <div class="maestro-detalle">
@@ -1319,10 +1605,9 @@ export async function vistaMarcas(cont, _params, ctx) {
   let modelosVisibles = [];
   let elegida = Number(ctx.query?.get("id_marca")) || null;
 
-  const tipos = await filasCatalogo("tipos-dispositivos");
+  const [tipos, categorias] = await Promise.all([filasCatalogo("tipos-dispositivos"), filasCatalogo("categorias-dispositivos")]);
   if (!ctx.vigente()) return;
-  selTipo.insertAdjacentHTML("beforeend", [...tipos].sort((a, b) => a.tipo_disp - b.tipo_disp)
-    .map((t) => `<option value="${t.tipo_disp}">${esc(t.descripcion)}</option>`).join(""));
+  selTipo.insertAdjacentHTML("beforeend", opcionesTiposHTML(tipos, categorias));
   if (ctx.query?.get("tipo_disp")) selTipo.value = ctx.query.get("tipo_disp");
 
   const modelosDeMarca = (m) => modelos.filter((x) => x.id_marca === m.id_marca).sort((a, b) => a.num_linea - b.num_linea);
@@ -1374,7 +1659,7 @@ export async function vistaMarcas(cont, _params, ctx) {
         columnas: [
           { titulo: "Línea", clase: "col-codigo", html: (x) => esc(x.num_linea) },
           { titulo: "Modelo", html: (x) => `<strong>${esc(x.descripcion)}</strong>` },
-          { titulo: "", clase: "col-acciones", html: (x) => `<a class="btn btn--fantasma btn--sm" href="#/red/dispositivos?id_marca=${x.id_marca}&tipo_disp=${x.tipo_disp}" title="Ver dispositivos de esta marca">${icono("red")}<span class="visualmente-oculto">Dispositivos</span></a>${admin ? botonesFila({ etiqueta: x.descripcion }) : ""}` },
+          { titulo: "", clase: "col-acciones", html: (x) => `<a class="btn btn--fantasma btn--sm" href="#/red/dispositivos?id_marca=${x.id_marca}&tipo_disp=${x.tipo_disp}" title="Ver equipos de esta marca">${icono("red")}<span class="visualmente-oculto">Equipos</span></a>${admin ? botonesFila({ etiqueta: x.descripcion }) : ""}` },
         ],
       }) : vacioHTML({
         icono: "etiqueta", titulo: "Esta marca no tiene modelos",
@@ -1400,7 +1685,10 @@ export async function vistaMarcas(cont, _params, ctx) {
       titulo: m ? "Editar marca" : "Agregar marca",
       descripcion: m ? "El tipo solo se puede cambiar mientras la marca no tenga modelos ni dispositivos." : "",
       campos: [
-        { nombre: "tipo_disp", etiqueta: "Tipo de dispositivo", tipo: "select", requerido: true, entero: true, opciones: opciones(tipos, "tipo_disp") },
+        {
+          nombre: "tipo_disp", etiqueta: "Tipo de equipo", tipo: "select", requerido: true, entero: true,
+          opciones: opciones([...tipos].sort((a, b) => a.descripcion.localeCompare(b.descripcion, "es")), "tipo_disp"),
+        },
         { nombre: "descripcion", etiqueta: "Marca", requerido: true, max: 100, placeholder: "CISCO" },
       ],
       valores: m || { tipo_disp: Number(selTipo.value) || "" },
@@ -1563,4 +1851,54 @@ export async function vistaEdificios(cont, _params, ctx) {
   buscar.addEventListener("input", pintar);
 
   await cargar();
+}
+
+/* =====================================================================
+   Equipos de una persona: pestaña de la ficha del funcionario (equipos
+   asignados) y de la del proveedor (equipos a los que da soporte)
+   ===================================================================== */
+export async function pestanaEquiposPersona(panel, persona, ctx, { proveedor = false } = {}) {
+  const campo = proveedor ? "id_proveedor" : "id_asignado";
+  const filas = await api(`${RECURSO}/`, { query: { [campo]: persona.id, activo: "" } });
+  const nombre = nombreCompleto(persona);
+  const enLista = `#/red/dispositivos?${campo}=${persona.id}&activo=`;
+  panel.innerHTML = `
+    <section class="panel">
+      <div class="panel__cabeza">
+        <div><h2>${proveedor ? "Equipos a los que da soporte" : "Equipos asignados"}</h2>
+          <p>${proveedor ? `Equipos municipales que tienen a ${esc(nombre)} como proveedor de soporte.` : `Equipos municipales que tiene a cargo ${esc(nombre)}.`}</p></div>
+        <div class="panel__acciones">
+          ${filas.length ? `<a class="btn btn--fantasma btn--sm" href="${enLista}">${icono("red")}Ver en la lista de equipos</a>` : ""}
+          ${ctx.esAdmin && !proveedor ? `<a class="btn btn--secundario btn--sm" href="#/red/dispositivos/nuevo?asignado=${persona.id}">${icono("mas")}Registrar un equipo a su nombre</a>` : ""}
+        </div>
+      </div>
+      <div data-lista></div>
+    </section>`;
+  const caja = panel.querySelector("[data-lista]");
+  if (!filas.length) {
+    caja.innerHTML = vacioHTML({
+      icono: "red", titulo: proveedor ? "No da soporte a ningún equipo" : "No tiene equipos asignados",
+      texto: proveedor ? "Se elige el proveedor en los datos de cada equipo." : "Se asignan en los datos de cada equipo (sección Asignación).",
+    });
+    return;
+  }
+  caja.innerHTML = tablaHTML({
+    clicable: true,
+    filas,
+    columnas: [
+      { titulo: "Equipo", html: celdaDispositivo },
+      { titulo: "Tipo", html: (d) => `${esc(d.tipo_dispositivo)}<span class="secundario">${esc(nombreCategoria(d.categoria))}</span>` },
+      {
+        titulo: "Ubicación", clase: "col-opcional",
+        html: (d) => (d.edificio || d.ubicacion
+          ? `${esc(d.edificio || "Sin edificio")}<span class="secundario">${esc(d.ubicacion || "")}</span>`
+          : `<span class="secundario">Sin ubicación</span>`),
+      },
+      { titulo: "Estado", html: (d) => pastillaEstado(d.activo) },
+    ],
+  });
+  caja.addEventListener("click", (ev) => {
+    const r = eventoFila(ev, filas);
+    if (r && !ev.target.closest("a")) location.hash = `#/red/dispositivos/${r.fila.id_disp}`;
+  });
 }
