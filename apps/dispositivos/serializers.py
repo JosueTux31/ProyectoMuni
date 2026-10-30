@@ -234,6 +234,8 @@ class DispositivoSerializer(serializers.Serializer):
     fecha_compra = serializers.DateField(**OPCIONAL)
     garantia_hasta = serializers.DateField(**OPCIONAL)
     observaciones = serializers.CharField(max_length=500, **TEXTO_OPCIONAL)
+    # Licencia de Microclaudia (la marca el administrador). Sin mandar = no cambia
+    tiene_microclaudia = serializers.BooleanField(**OPCIONAL)
     # Todas las IP y MAC del dispositivo; se guardan junto con él. Si no
     # vienen (o vienen en null) no se tocan las que ya tiene.
     ips = serializers.ListField(child=serializers.DictField(), required=False, allow_null=True)

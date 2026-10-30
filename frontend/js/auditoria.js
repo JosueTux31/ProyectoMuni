@@ -72,7 +72,7 @@ const ETIQUETAS = {
   tecnologia_impresion: "Tecnología de impresión", a_color: "Imprime a color", consumible: "Tóner o cartucho",
   pulgadas: "Pulgadas", resolucion: "Resolución", capacidad_va: "Capacidad (VA)", autonomia_min: "Autonomía (minutos)",
   canales: "Canales de video", id_asignado: "Funcionario responsable", fecha_compra: "Fecha de compra",
-  garantia_hasta: "Garantía hasta", observaciones: "Observaciones",
+  garantia_hasta: "Garantía hasta", observaciones: "Observaciones", tiene_microclaudia: "Tiene Microclaudia",
   cant_ptos_ethernet: "Puertos Ethernet", cant_ptos_sfp: "Puertos SFP", id_os: "Sistema operativo",
   gps: "Coordenadas", id_predio: "Edificio", id_edificio: "Edificio", ubicacion: "Ubicación en el edificio",
   id_proveedor: "Proveedor", direccion_ip: "Dirección IP", direccion_mac: "Dirección MAC", interfaz: "Interfaz",
@@ -82,7 +82,7 @@ const ETIQUETAS = {
   servidor: "Servidor", puerto: "Puerto", seguridad: "Seguridad", usuario: "Usuario de la cuenta", clave: "Clave",
   correo_remitente: "Correo del remitente", nombre_remitente: "Nombre del remitente", responder_a: "Respuestas a",
   firma: "Firma", limite_diario: "Límite diario", asunto: "Asunto", destinatarios: "Para", estado: "Estado",
-  total: "Destinatarios", enviados: "Enviados", errores: "Errores", dominio: "Dominio",
+  total: "Destinatarios", enviados: "Enviados", errores: "Errores", dominio: "Dominio", origen: "Origen de la lista",
 };
 
 // Campo → catálogo para mostrar la descripción en lugar del código
@@ -94,7 +94,7 @@ const CAMPO_CATALOGO = {
   id_categoria: "categorias-dispositivos",
   id_predio: "edificios", id_edificio: "edificios",
 };
-const BOOLEANOS = new Set(["activo", "es_whatsapp", "es_proveedor", "a_color"]);
+const BOOLEANOS = new Set(["activo", "es_whatsapp", "es_proveedor", "a_color", "tiene_microclaudia"]);
 const OCULTOS = new Set(["id", "id_usuario", "num_linea", "id_disp"]);
 
 /** AABBCCDDEEFF (o AA:BB:...) -> AA-BB-CC-DD-EE-FF */

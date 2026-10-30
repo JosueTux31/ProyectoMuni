@@ -394,6 +394,7 @@ const COLUMNAS_CSV = [
     if (g.clave !== "por-vencer") return g.clave === "vencida" ? "Vencida" : "Vigente";
     return g.dias === 0 ? "Vence hoy" : `Vence en ${g.dias} ${g.dias === 1 ? "día" : "días"}`;
   }],
+  ["Tiene Microclaudia", (d) => ([CAT.COMPUTO, CAT.SERVIDOR].includes(d.id_categoria) || d.tiene_microclaudia ? (d.tiene_microclaudia ? "Sí" : "No") : "")],
   ["Documentos", (d) => d.cantidad_documentos || 0], ["Observaciones", (d) => d.observaciones],
   ["Estado", (d) => (d.activo ? "Activo" : "Inactivo")], ["Registrado", (d) => (d.creado_en ? String(d.creado_en).slice(0, 10) : "")],
 ];
@@ -635,6 +636,10 @@ function seccionesDispositivo(base, proveedores, personal, valores = {}) {
           cats: [CAT.RED, CAT.COMPUTO, CAT.SERVIDOR, CAT.MOVIL, CAT.TELEFONIA, CAT.IMPRESION, CAT.VIDEO, CAT.OTRO],
         },
         { nombre: "version_os", etiqueta: "Versión del sistema", max: 100, placeholder: "11 PRO 23H2", cats: SIN_PANTALLA, etiquetas: FIRMWARE },
+        {
+          nombre: "tiene_microclaudia", etiqueta: "Tiene Microclaudia (licencia del antivirus)", tipo: "checkbox", cats: [CAT.COMPUTO, CAT.SERVIDOR],
+          completo: true, ayuda: "Márquelo cuando el equipo tenga el agente de Microclaudia instalado. En Licencias y reportes se compara con el listado de Microclaudia.",
+        },
       ],
     },
     {
@@ -1319,6 +1324,8 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
         <div class="ficha__datos">
           ${pastillaEstado(d.activo)}
           ${d.activo ? pastillaGarantia(d) : ""}
+          ${[CAT.COMPUTO, CAT.SERVIDOR].includes(d.id_categoria) || d.tiene_microclaudia
+            ? `<span class="pastilla pastilla--sin-punto ${d.tiene_microclaudia ? "pastilla--agente" : "pastilla--inactivo"}" title="Check de la licencia de Microclaudia (se marca en Datos generales)">${icono(d.tiene_microclaudia ? "check" : "agente", "ic--sm")}${d.tiene_microclaudia ? "Con Microclaudia" : "Sin Microclaudia"}</span>` : ""}
           <span>${esc(d.tipo_dispositivo)}${marca ? ` · ${esc(marca)}` : ""}</span>
           <span class="dato-mono">Serie ${esc(d.serie)}</span>
           ${d.placa ? `<span class="dato-mono" title="Placa (número de activo)">Placa ${esc(d.placa)}</span>` : ""}

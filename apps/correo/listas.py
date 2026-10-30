@@ -9,6 +9,9 @@ Archivos que sirven:
     inglés: First Name, Last Name, Email Address, Status).
   - .xlsx (la misma descarga abierta en Excel). Se lee la primera hoja con
     la biblioteca estándar, sin instalar nada.
+Si el archivo trae el último inicio de sesión (Last Sign In) y el espacio
+usado (Email Usage), como la descarga completa de la consola de Google o
+la lista de Sophos Email, también se guardan para ver qué cuentas no se usan.
 """
 import csv
 import io
@@ -16,6 +19,7 @@ import re
 import unicodedata
 import zipfile
 from collections import Counter
+from datetime import datetime, timedelta
 from xml.etree import ElementTree
 
 _CORREO = re.compile(r"[A-Za-z0-9._%+'\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
@@ -28,6 +32,11 @@ ENC_CORREO = ("correo", "correo electronico", "email", "e-mail", "email address"
 ENC_NOMBRE = ("nombre", "nombres", "first name", "given name", "nombre de pila")
 ENC_APELLIDOS = ("apellidos", "apellido", "last name", "family name", "surname")
 ENC_ESTADO = ("estado", "status", "estado de la cuenta", "account status")
+ENC_ACCESO = ("last sign in", "last signin", "last login", "last logon", "ultimo acceso", "ultimo inicio de sesion",
+              "ultimo ingreso", "fecha de ultimo acceso", "ultima conexion", "ultimo inicio")
+ENC_USO = ("email usage", "uso del correo", "uso de correo", "uso del buzon", "uso", "storage used",
+           "almacenamiento usado", "espacio usado", "tamano del buzon", "mailbox size")
+NUNCA = ("never", "nunca", "never logged in", "nunca ha iniciado sesion", "nunca ha accedido", "sin acceso")
 
 SUSPENDIDA = {"suspended", "suspendida", "suspendido", "inactiva", "inactivo", "inactive", "disabled", "deshabilitada",
               "bloqueada", "archived", "archivada"}
@@ -102,7 +111,8 @@ def _con_encabezado(filas):
     for i, fila in enumerate(filas[:10]):
         enc = [_encabezado(x) for x in fila]
         col = {}
-        for k, nombres in (("c", ENC_CORREO), ("n", ENC_NOMBRE), ("a", ENC_APELLIDOS), ("e", ENC_ESTADO)):
+        for k, nombres in (("c", ENC_CORREO), ("n", ENC_NOMBRE), ("a", ENC_APELLIDOS), ("e", ENC_ESTADO),
+                           ("u", ENC_ACCESO), ("g", ENC_USO)):
             col[k] = next((j for j, h in enumerate(enc) if h in nombres), None)
         if col["c"] is None:
             col["c"] = next((j for j, h in enumerate(enc) if "correo" in h or "mail" in h), None)
@@ -115,9 +125,87 @@ def _con_encabezado(filas):
                 return fila[j].strip() if j is not None and j < len(fila) else ""
             m = _CORREO.search(dato("c"))
             if m:
-                salida.append({"c": m.group().lower(), "n": dato("n"), "a": dato("a"), "e": dato("e")})
+                x = {"c": m.group().lower(), "n": dato("n"), "a": dato("a"), "e": dato("e")}
+                if col["u"] is not None:
+                    x["u"] = dato("u")
+                if col["g"] is not None:
+                    x["g"] = dato("g")
+                salida.append(x)
+        _uso(salida)
         return salida
     return None
+
+
+# ------------------------------------------------- último acceso y uso
+_DMY = re.compile(r"^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap]\.?\s*m\.?)?)?", re.I)
+_ISO = re.compile(r"^(\d{4})[/.\-](\d{1,2})[/.\-](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?")
+_TAMANO = re.compile(r"([\d.,]+)\s*([KMGT]?)I?B?\b", re.I)
+
+
+def _fecha(texto, dia_primero=True):
+    """'25/1/2023 13:31' / '2023-01-25 13:31:00' / número de serie de Excel -> datetime (o None)."""
+    t = (texto or "").strip()
+    if not t:
+        return None
+    if re.fullmatch(r"\d{5}(\.\d+)?", t):                 # fecha de Excel guardada como número
+        return datetime(1899, 12, 30) + timedelta(days=float(t))
+    m = _ISO.match(t)
+    if m:
+        a, mes, d, h, mi, s = (int(x) if x else 0 for x in m.groups())
+    else:
+        m = _DMY.match(t)
+        if not m:
+            return None
+        x, y, a, h, mi, s, ampm = m.groups()
+        d, mes = (int(x), int(y)) if dia_primero else (int(y), int(x))
+        a, h, mi, s = int(a), int(h or 0), int(mi or 0), int(s or 0)
+        a += 2000 if a < 100 else 0
+        if ampm and ampm[0].lower() == "p" and h < 12:
+            h += 12
+        elif ampm and ampm[0].lower() == "a" and h == 12:
+            h = 0
+    try:
+        return datetime(a, mes, d, h, mi, s)
+    except ValueError:
+        return None
+
+
+def _gb(texto):
+    """'1.66GB' / '500 MB' / '1,5 GB' -> GB (sin unidad se toma como GB)."""
+    m = _TAMANO.search((texto or "").replace(" ", ""))
+    if not m:
+        return None
+    numero = m.group(1)
+    numero = numero.replace(",", ".") if numero.count(",") == 1 and "." not in numero else numero.replace(",", "")
+    try:
+        valor = float(numero)
+    except ValueError:
+        return None
+    return round(valor * {"": 1, "K": 1 / 1024 ** 2, "M": 1 / 1024, "G": 1, "T": 1024}[m.group(2).upper()], 2)
+
+
+def _uso(salida):
+    """Convierte el último acceso (u) y el uso (g) que vienen como texto:
+    u -> 'AAAA-MM-DD hh:mm:ss' y x (1 = nunca ha iniciado sesión); g -> GB.
+    Si una fecha trae el primer número mayor que 12 es día/mes (como en Costa
+    Rica); si es el segundo, mes/día; si no se sabe, día/mes."""
+    textos = [x.get("u", "") for x in salida if x.get("u")]
+    partes = [_DMY.match(t.strip()) for t in textos]
+    dia_primero = not any(p and int(p.group(2)) > 12 for p in partes) or any(p and int(p.group(1)) > 12 for p in partes)
+    for x in salida:
+        if "u" in x:
+            crudo = x.pop("u")
+            if sin_tildes(crudo).strip().lower() in NUNCA:
+                x["x"] = 1
+            else:
+                f = _fecha(crudo, dia_primero)
+                if f:
+                    x["u"] = f.strftime("%Y-%m-%d %H:%M:%S")
+                    x["x"] = 0
+        if "g" in x:
+            g = _gb(x.pop("g"))
+            if g is not None:
+                x["g"] = g
 
 
 def _sueltos(texto):

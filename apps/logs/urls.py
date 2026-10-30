@@ -41,6 +41,9 @@ urlpatterns = [
     # DHCP: concesiones comparadas por MAC con el inventario (intrusos en la red)
     path("intrusos/", ANALISIS.as_view({"get": "intrusos"}), name="intrusos"),
 
+    # Control de licencias de Microclaudia (inventario contra el listado y el check de cada equipo)
+    path("licencias/", ANALISIS.as_view({"get": "licencias"}), name="licencias"),
+
     # Un equipo del inventario en la red: DHCP, Microclaudia y Sophos (su ficha, pestaña «En la red»)
     path("equipos/<int:id_disp>/", ANALISIS.as_view({"get": "equipo"}), name="equipo-en-la-red"),
 

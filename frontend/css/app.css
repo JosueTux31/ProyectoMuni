@@ -1764,3 +1764,69 @@ a.fuente--dhcp:hover { border-color: var(--dhcp); }
 .en-red__dir .dato-mono { white-space: nowrap; }
 .en-red__dirs { max-width: 300px; }
 .sin-corte { white-space: nowrap; }
+
+/* =====================================================================
+   Licencias y reportes: Microclaudia, Google Workspace y Sophos Email
+   ===================================================================== */
+.insignia-log--licencia { background: var(--verde-100); color: var(--verde-700); }
+.insignia-log--sophos { background: var(--azul-100); color: var(--azul); }
+.panel--licencia { margin-top: 20px; }
+.panel--licencia .panel__cabeza { align-items: flex-start; }
+.panel--licencia .panel__cabeza h2 { display: flex; align-items: center; gap: 8px; }
+.cifras--tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.titulo-cruce { margin: 4px 0 10px; font-size: 14px; font-weight: 700; color: var(--tinta-2); }
+button.cifra { font: inherit; text-align: left; cursor: pointer; }
+.cifra--enlace { transition: border-color .15s, box-shadow .15s; }
+.cifra--enlace:hover { border-color: var(--verde-700); box-shadow: 0 2px 8px rgba(23, 32, 28, .08); }
+.cifra--enlace:focus-visible { box-shadow: var(--foco); }
+
+.panel--tareas { border-top: 4px solid var(--verde-700); margin-bottom: 20px; }
+.tareas-licencia { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.tarea-licencia a { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--linea); border-radius: var(--r-md);
+  color: var(--tinta); text-decoration: none; background: var(--superficie); }
+.tarea-licencia a:hover { border-color: var(--verde-700); }
+.tarea-licencia b { min-width: 42px; font-size: 20px; text-align: right; }
+.tarea-licencia span { flex: 1; }
+.tarea-licencia .ic { color: var(--tinta-3); }
+.tarea-licencia--sin a { border-left: 4px solid var(--rojo); }
+.tarea-licencia--sin b { color: var(--rojo-700); }
+.tarea-licencia--aviso a { border-left: 4px solid var(--ocre); }
+
+.licencias-tarjetas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.licencias-tarjetas .panel + .panel { margin-top: 0; }
+.tarjeta-licencia .panel__cabeza { align-items: flex-start; }
+.datos-licencia { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dato-licencia > a, .dato-licencia { display: flex; align-items: baseline; gap: 10px; color: var(--tinta); text-decoration: none; }
+.dato-licencia > a { width: 100%; }
+.dato-licencia > a:hover span { text-decoration: underline; }
+.dato-licencia b { min-width: 48px; text-align: right; font-size: 18px; }
+.dato-licencia span { font-size: 14px; color: var(--tinta-2); }
+.dato-licencia--sin b { color: var(--rojo-700); }
+.dato-licencia--aviso b { color: #8A5A0B; }
+.dato-licencia--ok b { color: var(--verde-700); }
+
+@media (max-width: 1180px) {
+  .licencias-tarjetas { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .cifras--tres { grid-template-columns: 1fr; }
+  .tarea-licencia b { min-width: 30px; font-size: 17px; }
+}
+
+/* ---------- Imprimir (reportes): solo el contenido, sin menú ni botones */
+@media print {
+  .lateral, .barra, .velo, .toasts, .no-imprimir, .mas-filas, #falla-arranque { display: none !important; }
+  body, .principal, .vista { background: #fff !important; }
+  .app { display: block !important; }
+  .principal { margin: 0 !important; padding: 0 !important; }
+  .vista { padding: 0 !important; }
+  .panel { break-inside: auto; box-shadow: none !important; }
+  .panel__cabeza { break-after: avoid; }
+  .tabla tr { break-inside: avoid; }
+  .tabla-envoltura { overflow: visible !important; }
+  .tabla .col-opcional { display: table-cell !important; }
+  details.panel--plegable:not([open]) { display: none; }
+  a { color: inherit; text-decoration: none; }
+}
+.cobertura-controles--tres .campo { flex-basis: 260px; }
+.cobertura-controles--tres .campo:first-child { flex-basis: 380px; flex-grow: 2; }

@@ -835,3 +835,187 @@ def visto_en_red(id_disp):
         "sophos": sophos,
         "hay_logs": any(ultima_importacion(f) for f in FUENTES_LOGS),
     }
+
+
+# --------------------------------------------------------------- licencias de Microclaudia
+SITUACIONES_LICENCIA = {
+    "sin_licencia": "Equipo activo sin licencia",
+    "inactivo_con_licencia": "Equipo inactivo con licencia",
+    "revisar": "Por revisar (solo coincide la IP)",
+    "con_licencia": "Con licencia",
+    "no_la_lleva": "No lleva Microclaudia",
+    "inactivo": "Inactivo sin licencia",
+}
+
+
+def licencias_microclaudia(id_agentes=None, dias_nuevo=30, dias_sin_conexion=30):
+    """Control de licencias de Microclaudia: el inventario completo (activos e
+    inactivos) contra el listado de equipos con el agente (cada equipo del
+    listado ocupa una licencia) y el check «Tiene Microclaudia» que marca el
+    administrador en cada equipo.
+
+      sin_licencia           equipos activos que llevan el agente (computadoras
+                             y servidores) y no están en el listado; los
+                             registrados hace dias_nuevo días o menos son «nuevos»
+      inactivos_con_licencia equipos dados de baja que siguen en el listado o
+                             con el check marcado: su licencia se puede liberar
+      revisar                equipos activos que solo coinciden por la IP
+      check_sin_listado      tienen el check pero no aparecen en el listado
+      listado_sin_check      aparecen en el listado pero no tienen el check
+      no_registrados         licencias en equipos que no están en el inventario
+      sin_conexion           equipos del listado que no se conectan hace más de
+                             dias_sin_conexion días (contados desde la conexión
+                             más reciente del listado)
+    Sin listado de Microclaudia se usa solo el check."""
+    agentes = llamar_sp("sp_log_agentes_listar", [id_agentes])[0] if id_agentes else []
+    inventario, _ = llamar_sp("sp_log_red_inventario", [])
+    referencia = max((a["ultima_conexion"] for a in agentes if a["ultima_conexion"]), default=None)
+    hoy = datetime.now()
+
+    fichas, por_ip, por_mac, por_nombre = [], {}, {}, {}
+    for a in agentes:
+        horas = ((referencia - a["ultima_conexion"]).total_seconds() / 3600
+                 if referencia and a["ultima_conexion"] else None)
+        f = {"id_evento": a["id_evento"], "nombre": a["nombre_equipo"], "sistema": a["sistema_operativo"],
+             "version": a["version_agente"], "ultima_conexion": a["ultima_conexion"],
+             "dias_sin_conexion": int(horas // 24) if horas is not None else None,
+             "ip": a["ip_principal"], "mac": a["mac_principal"],
+             "ips": [x for x in (a["ips"] or "").split(",") if x],
+             "macs": [x for x in (a["macs"] or "").split(",") if x]}
+        fichas.append(f)
+        for ip in f["ips"]:
+            if not ip.startswith(RED_VIRTUALBOX):
+                por_ip.setdefault(ip, []).append(f)
+        for m in f["macs"]:
+            por_mac.setdefault(m, []).append(f)
+        n = nombre_corto(f["nombre"])
+        if n:
+            por_nombre.setdefault(n, []).append(f)
+
+    def reciente(lista):
+        return max(lista, key=lambda f: f["ultima_conexion"] or datetime.min) if lista else None
+
+    def buscar(d, macs, ips):
+        """(agente, por) del equipo: por MAC o por nombre (seguro) o solo por IP."""
+        en_mac = [f for m in macs for f in por_mac.get(m, [])]
+        if en_mac:
+            return reciente(en_mac), "MAC"
+        nombre = nombre_corto(d["nombre_equipo"])
+        if nombre and por_nombre.get(nombre):
+            return reciente(por_nombre[nombre]), "nombre"
+        en_ip = [f for ip in ips for f in por_ip.get(ip, [])]
+        if en_ip:
+            return reciente(en_ip), "IP"
+        return None, None
+
+    filas = []
+    for d in inventario:
+        ips = [_ip(x) for x in (d["ips"] or "").split(",") if x.strip()]
+        macs = [x.strip().upper() for x in (d["macs"] or "").split(",") if x.strip()]
+        agente, por = buscar(d, macs, ips) if fichas else (None, None)
+        if not d["activo"] and por == "IP":
+            agente, por = None, None            # la IP de un equipo dado de baja ya la usa otro
+        creado = d["creado_en"]
+        if isinstance(creado, datetime) and creado.tzinfo:
+            creado = creado.replace(tzinfo=None)
+        dias = (hoy - creado).days if isinstance(creado, datetime) else None
+        filas.append({
+            "id_disp": d["id_disp"], "equipo": d["equipo"], "serie": d["serie"], "tipo": d["tipo"],
+            "categoria": d["categoria"], "lleva_agente": bool(d["lleva_agente"]), "activo": bool(d["activo"]),
+            "nombre_equipo": d["nombre_equipo"], "asignado": d["asignado"], "edificio": d["edificio"],
+            "ips": ips, "macs": macs, "tiene_microclaudia": bool(d["tiene_microclaudia"]),
+            "creado_en": creado, "actualizado_en": d["actualizado_en"], "dias_registrado": dias,
+            "nuevo": dias is not None and dias <= dias_nuevo,
+            "agente": agente, "por": por,
+        })
+
+    # Un agente que es de un equipo activo no cuenta para uno inactivo con el mismo nombre
+    usados = {f["agente"]["id_evento"] for f in filas if f["activo"] and f["por"] in ("MAC", "nombre")}
+    for f in filas:
+        if not f["activo"] and f["agente"] and f["agente"]["id_evento"] in usados:
+            f["agente"], f["por"] = None, None
+    asignados = {f["agente"]["id_evento"] for f in filas if f["por"] in ("MAC", "nombre")}
+    hay_listado = bool(fichas)
+
+    for f in filas:
+        seguro = f["por"] in ("MAC", "nombre")
+        if f["activo"]:
+            if seguro:
+                f["situacion"] = "con_licencia"
+            elif f["por"] == "IP" and f["lleva_agente"]:
+                f["situacion"] = "revisar"
+            elif f["lleva_agente"] and not (not hay_listado and f["tiene_microclaudia"]):
+                f["situacion"] = "sin_licencia"
+            elif f["lleva_agente"]:
+                f["situacion"] = "con_licencia"          # sin listado: lo dice el check
+            else:
+                f["situacion"] = "no_la_lleva"
+        else:
+            f["situacion"] = "inactivo_con_licencia" if (seguro or f["tiene_microclaudia"]) else "inactivo"
+
+    def ordenar_sin(f):
+        return (not f["nuevo"], -(f["creado_en"].timestamp() if isinstance(f["creado_en"], datetime) else 0))
+
+    sin_licencia = sorted((f for f in filas if f["situacion"] == "sin_licencia"), key=ordenar_sin)
+    inactivos = [f for f in filas if f["situacion"] == "inactivo_con_licencia"]
+    for f in inactivos:
+        f["motivo"] = ("listado y check" if f["agente"] and f["tiene_microclaudia"]
+                       else "listado" if f["agente"] else "check")
+    revisar = [f for f in filas if f["situacion"] == "revisar"]
+    check_sin_listado = ([f for f in filas if f["activo"] and f["tiene_microclaudia"] and f["por"] not in ("MAC", "nombre")]
+                         if hay_listado else [])
+    listado_sin_check = [f for f in filas if f["activo"] and f["por"] in ("MAC", "nombre") and not f["tiene_microclaudia"]]
+
+    # Licencias en equipos que no están en el inventario (los que solo coinciden
+    # por IP con un equipo también, con ese equipo para revisar)
+    ip_de = {f["agente"]["id_evento"]: f for f in revisar}
+    no_registrados = []
+    for a in fichas:
+        if a["id_evento"] in asignados:
+            continue
+        otro = ip_de.get(a["id_evento"])
+        no_registrados.append({**a, "ip_de": {"id_disp": otro["id_disp"], "equipo": otro["equipo"]} if otro else None})
+    no_registrados.sort(key=lambda a: a["ultima_conexion"] or datetime.min, reverse=True)
+
+    equipo_de = {f["agente"]["id_evento"]: f for f in filas if f["por"] in ("MAC", "nombre")}
+    sin_conexion = []
+    for a in fichas:
+        if a["dias_sin_conexion"] is not None and a["dias_sin_conexion"] > dias_sin_conexion:
+            e = equipo_de.get(a["id_evento"])
+            sin_conexion.append({**a, "equipo": {"id_disp": e["id_disp"], "equipo": e["equipo"], "activo": e["activo"]}
+                                 if e else None})
+    sin_conexion.sort(key=lambda a: -(a["dias_sin_conexion"] or 0))
+
+    cuenta = Counter(f["situacion"] for f in filas)
+    llevan = [f for f in filas if f["activo"] and f["lleva_agente"]]
+    return {
+        "referencia": referencia,
+        "hay_listado": hay_listado,
+        "parametros": {"dias_nuevo": dias_nuevo, "dias_sin_conexion": dias_sin_conexion},
+        "situaciones": SITUACIONES_LICENCIA,
+        "totales": {
+            "licencias_en_uso": len(fichas),
+            "en_equipos_activos": len({f["agente"]["id_evento"] for f in filas
+                                       if f["activo"] and f["por"] in ("MAC", "nombre")}),
+            "equipos_activos": sum(1 for f in filas if f["activo"]),
+            "deben_tenerla": len(llevan),
+            "con_licencia": sum(1 for f in llevan if f["situacion"] == "con_licencia"),
+            "sin_licencia": cuenta.get("sin_licencia", 0),
+            "nuevos_sin_licencia": sum(1 for f in sin_licencia if f["nuevo"]),
+            "inactivos_con_licencia": len(inactivos),
+            "revisar": len(revisar),
+            "no_registrados": len(no_registrados),
+            "sin_conexion": len(sin_conexion),
+            "con_check": sum(1 for f in filas if f["activo"] and f["tiene_microclaudia"]),
+            "check_sin_listado": len(check_sin_listado),
+            "listado_sin_check": len(listado_sin_check),
+        },
+        "sin_licencia": sin_licencia,
+        "inactivos_con_licencia": inactivos,
+        "revisar": revisar,
+        "check_sin_listado": check_sin_listado,
+        "listado_sin_check": listado_sin_check,
+        "no_registrados": no_registrados,
+        "sin_conexion": sin_conexion,
+        "equipos": sorted(filas, key=lambda f: (not f["activo"], f["tipo"], f["id_disp"])),
+    }

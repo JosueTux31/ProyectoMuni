@@ -129,7 +129,7 @@ CAMPOS_DISPOSITIVO = (
     "tecnologia_impresion", "a_color", "consumible", "pulgadas", "resolucion",
     "capacidad_va", "autonomia_min", "canales",
     "id_predio", "ubicacion", "cod_departamento", "id_asignado", "id_proveedor",
-    "fecha_compra", "garantia_hasta", "observaciones",
+    "fecha_compra", "garantia_hasta", "observaciones", "tiene_microclaudia",
     "ips", "macs",
 )
 DIRECCIONES = ("ips", "macs")
@@ -166,6 +166,9 @@ class DispositivoViewSet(SPViewSet):
     - Cada dispositivo trae "ips" y "macs" (todas, separadas por coma; la
       MAC sin separadores) y "gps_edificio" (las coordenadas de su
       edificio, para el mapa: el GPS se pone en el edificio).
+    - "tiene_microclaudia": el check de la licencia de Microclaudia, que marca
+      el administrador. Si no se manda (o va en null) se conserva el que tenía;
+      PATCH {"tiene_microclaudia": true} cambia solo el check.
     - DELETE desactiva. POST /<id>/activar/ lo activa de nuevo.
       DELETE /<id>/eliminar-fisico/ lo borra con sus documentos y archivos.
     - GET /<id>/historial/ (solo administradores): quién lo registró y
@@ -178,7 +181,7 @@ class DispositivoViewSet(SPViewSet):
     filtros_listar = ("activo", "id_categoria", "tipo_disp", "id_marca", "id_predio", "cod_departamento",
                       "id_asignado", "id_proveedor", "buscar")
     insertar_devuelve_codigo = True
-    campos_bool = ("activo", "a_color", "lleva_agente")
+    campos_bool = ("activo", "a_color", "lleva_agente", "tiene_microclaudia")
 
     serializer_class = s.DispositivoSerializer
     serializer_filtros_class = s.DispositivoFiltrosSerializer

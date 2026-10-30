@@ -27,4 +27,7 @@ urlpatterns = [
     path("listas/", LISTA.as_view({"get": "list", "post": "create"}), name="listas-lista"),
     path("listas/<int:id_lista>/", LISTA.as_view({"get": "retrieve", "put": "update", "delete": "destroy"}),
          name="listas-detalle"),
+
+    # Control de licencias de correo (Google Workspace y Sophos Email)
+    path("licencias/", LISTA.as_view({"get": "licencias"}), name="licencias"),
 ]

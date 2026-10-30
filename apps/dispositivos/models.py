@@ -154,6 +154,7 @@ class Dispositivo(models.Model):
     fecha_compra = models.DateField(null=True, blank=True)
     garantia_hasta = models.DateField(null=True, blank=True)
     observaciones = models.CharField(max_length=500, null=True, blank=True)
+    tiene_microclaudia = models.BooleanField(default=False)     # licencia de Microclaudia (la marca el administrador)
     activo = models.BooleanField(default=True)
     creado_en = models.DateTimeField(editable=False)
     actualizado_en = models.DateTimeField(editable=False)

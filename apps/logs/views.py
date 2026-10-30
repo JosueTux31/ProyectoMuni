@@ -17,6 +17,7 @@ los logs muestran la navegación y las conexiones del personal.
 - GET  cobertura/?agentes=        equipos registrados sin el agente de Microclaudia
 - GET  intrusos/?dhcp=&agentes=    concesiones del DHCP comparadas por MAC con el inventario
 - GET  equipos/<id_disp>/          dónde aparece un equipo del inventario: DHCP, Microclaudia y Sophos
+- GET  licencias/?agentes=&nuevos=&sin_conexion=  control de licencias de Microclaudia
 - CRUD mapeo/                      alias de los campos por programa
 """
 import csv
@@ -307,6 +308,16 @@ class AnalisisViewSet(viewsets.GenericViewSet):
         if imp is None:
             return Response({"importacion": None})
         return Response({"importacion": imp, **srv.cobertura(imp["id_importacion"])})
+
+    # GET licencias/?agentes=<id>&nuevos=30&sin_conexion=30  Control de licencias de
+    # Microclaudia: todo el inventario (activos e inactivos) contra el listado y el
+    # check «Tiene Microclaudia» de cada equipo. Sin listado importado, solo el check.
+    def licencias(self, request):
+        imp = self._importacion_agentes(request, "agentes")
+        dias_nuevo = _entero(request, "nuevos", 30, 1, 3650)
+        dias_sin = _entero(request, "sin_conexion", 30, 1, 3650)
+        resultado = srv.licencias_microclaudia(imp["id_importacion"] if imp else None, dias_nuevo, dias_sin)
+        return Response({"importacion": imp, **resultado})
 
     # GET intrusos/?dhcp=<id>&agentes=<id>  (sin dhcp: la última lista del DHCP;
     # sin agentes: el último listado de Microclaudia; agentes=0: sin listado).

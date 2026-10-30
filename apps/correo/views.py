@@ -13,8 +13,12 @@
 - POST    envios/<id>/reintentar/ vuelve a enviar los que fallaron o se cancelaron
 - POST    envios/<id>/cancelar/   detiene el envío
 - GET     envios/<id>/adjuntos/<n>/  descarga un adjunto
-- GET/POST listas/                listas de correos importadas (POST multipart: archivo, descripcion)
+- GET/POST listas/?origen=        listas de correos importadas (POST multipart: archivo, descripcion,
+                                  origen GOOGLE, SOPHOS u OTRA)
 - GET/PUT/DELETE listas/<id>/     una lista con su comparación con el personal
+- GET     licencias/?origen=GOOGLE|SOPHOS&lista=&dias=90&google=
+                                  control de licencias de correo: personal sin correo, cuentas de
+                                  personal retirado, suspendidas, sin uso; Sophos contra Google
 """
 import json
 import mimetypes
@@ -34,6 +38,7 @@ from apps.core.archivos import almacen, borrar
 from apps.core.db import llamar_sp
 from apps.core.permisos import SoloAdmin
 
+from . import licencias as lic
 from . import listas as lst
 from . import servicio as srv
 from .cifrado import cifrar
@@ -275,7 +280,7 @@ class ListaViewSet(viewsets.GenericViewSet):
     pagination_class = None
 
     def list(self, request):
-        filas, _ = llamar_sp("sp_cor_listas_listar", [])
+        filas, _ = llamar_sp("sp_cor_listas_listar", [_origen(request.query_params.get("origen"), None)])
         return Response(filas)
 
     def _comparacion(self, id_lista, avisos=None):
@@ -303,7 +308,7 @@ class ListaViewSet(viewsets.GenericViewSet):
         descripcion = (request.data.get("descripcion") or "").strip()[:255] or None
         _, id_lista = llamar_sp("sp_cor_listas_insertar", [
             Path(archivo.name).name[:255], descripcion, lst.dominio_principal(correos), getattr(request.user, "id", None),
-            json.dumps(correos, ensure_ascii=False)], con_salida=True)
+            _origen(request.data.get("origen")), json.dumps(correos, ensure_ascii=False)], con_salida=True)
         return Response(self._comparacion(id_lista, avisos), status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, id_lista):
@@ -316,3 +321,42 @@ class ListaViewSet(viewsets.GenericViewSet):
     def destroy(self, request, id_lista):
         llamar_sp("sp_cor_listas_eliminar", [id_lista])
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # GET licencias/?origen=GOOGLE|SOPHOS&lista=<id>&dias=90&google=<id>
+    def licencias(self, request):
+        q = request.query_params
+        origen = _origen(q.get("origen"), "GOOGLE")
+        try:
+            dias = max(1, min(int(q.get("dias") or 90), 3650))
+        except ValueError:
+            dias = 90
+        listas, _ = llamar_sp("sp_cor_listas_listar", [origen])
+        salida = {"origen": origen, "nombre_origen": lic.ORIGENES[origen], "listas": listas, "dias": dias,
+                  "opciones_dias": lic.DIAS_SIN_USO, "resultado": None, "listas_google": []}
+        if origen == "SOPHOS":
+            salida["listas_google"] = llamar_sp("sp_cor_listas_listar", ["GOOGLE"])[0]
+        if not listas:
+            return Response(salida)
+        pedida = _entero(q.get("lista"))
+        lista = next((x for x in listas if x["id_lista"] == pedida), listas[0])
+        correos, _ = llamar_sp("sp_cor_listas_correos_listar", [lista["id_lista"]])
+        personal = lst.preparar_personal(llamar_sp("sp_cor_personal_listar", [False])[0])
+        google = correos_google = None
+        if origen == "SOPHOS" and salida["listas_google"] and q.get("google") != "0":
+            pedida = _entero(q.get("google"))
+            google = next((x for x in salida["listas_google"] if x["id_lista"] == pedida), salida["listas_google"][0])
+            correos_google, _ = llamar_sp("sp_cor_listas_correos_listar", [google["id_lista"]])
+        salida["resultado"] = lic.analizar(lista, correos, personal, dias, google, correos_google)
+        return Response(salida)
+
+
+def _origen(valor, defecto="OTRA"):
+    v = str(valor or "").strip().upper()
+    return v if v in lic.ORIGENES else defecto
+
+
+def _entero(valor):
+    try:
+        return int(valor)
+    except (TypeError, ValueError):
+        return None
