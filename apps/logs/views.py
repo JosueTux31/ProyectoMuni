@@ -16,11 +16,13 @@ los logs muestran la navegación y las conexiones del personal.
 - GET  agentes/?importacion=       tablero del listado de Microclaudia (por defecto el último)
 - GET  cobertura/?agentes=        equipos registrados sin el agente de Microclaudia
 - GET  intrusos/?dhcp=&agentes=    concesiones del DHCP comparadas por MAC con el inventario
+- GET  equipos/<id_disp>/          dónde aparece un equipo del inventario: DHCP, Microclaudia y Sophos
 - CRUD mapeo/                      alias de los campos por programa
 """
 import csv
 import io
 import json
+import re
 from pathlib import Path
 
 from django.conf import settings
@@ -38,6 +40,18 @@ from . import servicio as srv
 from .esquema import (ALIAS_FILTRO, CAMPO, CAMPOS, CAMPOS_AMBOS, CAMPOS_COMPARAR, CAMPOS_TOP, GRUPOS)
 
 EXT_PERMITIDAS = {".txt", ".log", ".csv", ".text", ""}
+
+# Un texto del log que empieza con = + - @ se exporta con un apóstrofo delante
+# para que Excel no lo tome como fórmula (los logs traen datos de afuera:
+# nombres de equipos, URL, agentes de usuario...). Los números quedan igual.
+_FORMULA = re.compile(r"^[=+\-@\t\r]")
+_NUMERO = re.compile(r"^(-?\d+([.,]\d+)?|-+)$")   # números y rayas solas ("-")
+
+
+def _celda_csv(valor):
+    if isinstance(valor, str) and _FORMULA.match(valor) and not _NUMERO.match(valor):
+        return "'" + valor
+    return valor
 
 
 def _filtro(request, clave="q"):
@@ -194,7 +208,7 @@ class EventoViewSet(viewsets.GenericViewSet):
                         encabezado = list(fila) + [f"original.{k}" for k in extras]
                         w.writerow(encabezado)
                     datos = srv.cargar_datos(f) if extras else {}
-                    w.writerow(list(fila.values()) + [datos.get(k, "") for k in extras])
+                    w.writerow([_celda_csv(x) for x in list(fila.values()) + [datos.get(k, "") for k in extras]])
                 yield buf.getvalue()
                 buf.seek(0)
                 buf.truncate(0)
@@ -313,6 +327,15 @@ class AnalisisViewSet(viewsets.GenericViewSet):
         agentes = None if request.query_params.get("agentes") == "0" else self._importacion_agentes(request, "agentes")
         resultado = srv.intrusos(imp["id_importacion"], agentes["id_importacion"] if agentes else None)
         return Response({"importacion": imp, "agentes": agentes, **resultado})
+
+    # GET equipos/<id_disp>/  Dónde aparece un equipo del inventario en lo
+    # importado: la última lista del DHCP, el último listado de Microclaudia y
+    # su tráfico en los logs de Sophos (pestaña «En la red» de su ficha).
+    def equipo(self, request, id_disp):
+        resultado = srv.visto_en_red(id_disp)
+        if resultado is None:
+            raise NotFound("El equipo no existe.")
+        return Response(resultado)
 
 
 # =====================================================================

@@ -1731,3 +1731,36 @@ a.fuente--dhcp:hover { border-color: var(--dhcp); }
 @media (min-width: 1081px) and (max-width: 1280px) {
   .resumen--categorias { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+
+/* ---------- Garantía de los equipos (pastilla en la ficha y panel del inicio) */
+.pastilla--aviso { background: var(--ocre-100); color: #6B4A0B; }
+.pastilla--garantia-vigente { background: var(--verde-100); color: var(--verde-700); }
+.pastilla--garantia-por-vencer { background: var(--ocre-100); color: #6B4A0B; }
+.pastilla--garantia-vencida { background: #ECEEED; color: var(--tinta-3); }
+.pastilla[class*="pastilla--garantia-"] .ic { width: 14px; height: 14px; }
+.panel--garantias { border-top: 4px solid var(--ocre); }
+.panel--garantias h2 { display: flex; align-items: center; gap: 8px; }
+
+/* ---------- Ficha del equipo, pestaña «En la red»: DHCP, Microclaudia y Sophos */
+.en-red { display: flex; flex-direction: column; gap: 16px; }
+.en-red__claves { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.en-red__claves .etiqueta-dir { min-width: 0; margin-right: 4px; }
+.en-red__titulo { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 280px; }
+.en-red__titulo a { overflow-wrap: anywhere; }
+.insignia-log--sm { width: 40px; height: 40px; border-radius: var(--r-md); }
+.insignia-log--sm .ic { width: 22px; height: 22px; }
+.en-red__nota { margin: 0; font-size: 13.5px; color: var(--tinta-2); }
+.en-red__nota code { font-family: var(--mono); font-size: 12.5px; background: var(--papel); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.en-red__pie { margin: 0; padding: 12px 20px; border-top: 1px solid var(--linea-2); font-size: 13px; color: var(--tinta-3); }
+.en-red__cifras { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.en-red__cifras .cifra { padding: 12px 14px; }
+.en-red__cifras .cifra > b { order: -1; font-size: 24px; line-height: 1.15; }
+.en-red__acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.en-red .tabla .pastilla + .secundario { margin-top: 3px; }
+@media (max-width: 640px) {
+  .en-red__cifras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.acciones-concesion { display: inline-flex; align-items: center; gap: 4px; }
+.en-red__dir .dato-mono { white-space: nowrap; }
+.en-red__dirs { max-width: 300px; }
+.sin-corte { white-space: nowrap; }

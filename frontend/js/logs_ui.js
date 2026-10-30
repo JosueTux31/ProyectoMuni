@@ -226,6 +226,21 @@ export function descargarTexto(texto, nombre, tipo = "text/csv;charset=utf-8") {
 
 export const marcaArchivo = () => new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "_");
 
+/**
+ * Una celda de un CSV para Excel (separado por punto y coma). Un texto que
+ * empieza con = + - @ se escribe con un apóstrofo delante para que Excel no
+ * lo ejecute como fórmula: los nombres del DHCP y los datos de los logs
+ * vienen de afuera. Los números (-5, -3,5) y las rayas solas (-) quedan como están.
+ */
+export function celdaCsv(v) {
+  let t = String(v ?? "");
+  if (/^[=+\-@\t\r]/.test(t) && !/^(-?\d+([.,]\d+)?|-+)$/.test(t)) t = `'${t}`;
+  return /[";\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+}
+
+/** Filas (listas de valores) -> texto CSV con BOM para que Excel abra bien las tildes. */
+export const textoCsv = (filas) => `﻿${filas.map((f) => f.map(celdaCsv).join(";")).join("\r\n")}\r\n`;
+
 /* =====================================================================
    Globos de ayuda de los gráficos (hover y foco con teclado)
    data-globo lleva el HTML ya escapado con globoHTML().

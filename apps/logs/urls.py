@@ -41,6 +41,9 @@ urlpatterns = [
     # DHCP: concesiones comparadas por MAC con el inventario (intrusos en la red)
     path("intrusos/", ANALISIS.as_view({"get": "intrusos"}), name="intrusos"),
 
+    # Un equipo del inventario en la red: DHCP, Microclaudia y Sophos (su ficha, pestaña «En la red»)
+    path("equipos/<int:id_disp>/", ANALISIS.as_view({"get": "equipo"}), name="equipo-en-la-red"),
+
     # Alias de los campos de cada programa
     path("mapeo/", v.MapeoViewSet.as_view({"get": "list", "post": "create"}), name="mapeo-lista"),
     path("mapeo/<str:fuente>/<str:campo_origen>/",

@@ -9,7 +9,7 @@
 import { api, apiSubir } from "./api.js";
 import { abrirFormulario, botonCargando, cargandoHTML, confirmar, debounce, errorHTML, esc, fecha, icono, toast, vacioHTML } from "./ui.js";
 import { filasCatalogo } from "./datos.js";
-import { descargar, descargarTexto, marcaArchivo, num } from "./logs_ui.js";
+import { celdaCsv, descargar, descargarTexto, marcaArchivo, num } from "./logs_ui.js";
 
 const MAX_ADJUNTOS = 5;
 const MAX_MB_ADJUNTOS = 15;
@@ -875,7 +875,7 @@ export async function vistaListaCorreos(cont, [id], ctx) {
       return;
     }
     if (ev.target.closest("[data-exportar]")) {
-      const celda = (v) => { const s = String(v ?? ""); return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+      const celda = celdaCsv;   // con protección contra fórmulas de Excel
       const filas = [["Resultado", "Correo", "Nombre en la lista", "Estado de la cuenta", "Persona registrada", "Departamento", "Persona activa", "Sugerencia"]];
       for (const c of r.coinciden) filas.push([c.alerta === "inactivo" ? "Persona inactiva con cuenta activa" : c.alerta === "suspendida" ? "Cuenta suspendida de persona activa" : "Coincide",
         c.correo, c.nombre, c.estado, c.persona.nombre, c.persona.departamento, c.persona.activo ? "Sí" : "No", ""]);

@@ -161,7 +161,8 @@ def mac_con_guiones(mac):
 # Valores de las listas del formulario (iguales a los que acepta la base)
 TECNOLOGIAS_IMPRESION = ["LÁSER", "TINTA", "TINTA CONTINUA", "TÉRMICA", "MATRIZ DE PUNTO"]
 TIPOS_ALMACENAMIENTO = ["SSD", "NVME", "HDD", "EMMC"]
-_NOMBRE_RED = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# Nombre en la red: como lo muestra el DHCP o Microclaudia (puede llevar espacios: «FILAS - KIOSCO»)
+_NOMBRE_RED = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._-]*")
 _TELEFONO = re.compile(r"\+?[0-9][0-9 -]{3,18}")
 
 
@@ -248,10 +249,10 @@ class DispositivoSerializer(serializers.Serializer):
         return _texto_o_nulo(valor)
 
     def validate_nombre_equipo(self, valor):
-        valor = _texto_o_nulo(valor)
+        valor = re.sub(r"\s+", " ", _texto_o_nulo(valor) or "") or None
         if valor and not _NOMBRE_RED.fullmatch(valor):
             raise serializers.ValidationError(
-                "El nombre en la red lleva letras, números, guion, punto o guion bajo, sin espacios (por ejemplo PC-FIN-01).")
+                "El nombre en la red lleva letras, números, espacios, guion, punto o guion bajo (por ejemplo PC-FIN-01).")
         return valor
 
     def validate_imei(self, valor):

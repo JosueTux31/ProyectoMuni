@@ -15,7 +15,7 @@
 import { api, apiSubir } from "./api.js";
 import { abrirFormulario, cargandoHTML, confirmar, debounce, errorHTML, esc, fecha, icono, toast, vacioHTML } from "./ui.js";
 import {
-  abrirEvento, activarBarraFiltro, activarGlobos, agregarCondicion, barraFiltroHTML, bytes, catalogoCampos, claseGrupo,
+  abrirEvento, activarBarraFiltro, activarGlobos, agregarCondicion, barraFiltroHTML, bytes, catalogoCampos, celdaCsv, claseGrupo,
   compacto, condicion, descargar, escucharDocumento, eventos, descargarTexto, diaLog, esMono, fechaFiltro, fechaLog, globoHTML, horaLog, leyendaAccionesHTML,
   lineaTiempo, listaIds, listaTopHTML, macGuiones, marcaArchivo, medidorAcciones, num, olvidarCatalogo, pastillaAccion, pct,
   rangoFechas, reemplazarRuta, rutaLogs, tablaTiempoHTML, valorCorto,
@@ -1202,10 +1202,7 @@ function pintarComparacion(salida, r, envio, cat, listados = []) {
 }
 
 function exportarComparacion(r, nombres, cat) {
-  const celda = (v) => {
-    const s = String(v ?? "");
-    return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
+  const celda = celdaCsv;   // con protección contra fórmulas de Excel
   const lineas = [["Campo", "Valor", ...nombres.map((n, i) => `${LETRAS[i]} ${n}`), ...nombres.map((_, i) => `Denegados ${LETRAS[i]}`), "En todos", "Aparece en"].map(celda).join(";")];
   for (const [campo, d] of Object.entries(r.campos)) {
     for (const v of d.valores) {
@@ -2014,7 +2011,7 @@ export async function vistaCobertura(cont, _params, ctx) {
   });
   botonExportar.addEventListener("click", () => {
     if (!datos) return;
-    const celda = (v) => { const t = String(v ?? ""); return /[";\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const celda = celdaCsv;   // con protección contra fórmulas de Excel
     const filas = [["Estado", "Equipo registrado", "Tipo", "Edificio", "IP registradas", "MAC registradas", "Equipo en Microclaudia",
       "Coincide por", "IP en Microclaudia", "MAC en Microclaudia", "Última conexión del agente", "Versión del agente"]];
     for (const x of resumirCobertura(datos, excluidos).lista) {
@@ -2153,9 +2150,12 @@ export async function vistaIntrusos(cont, _params, ctx, impDirecta = null) {
   const colMac = (c) => `<td class="col-mac">${celdaMac(c)}</td>`;
   const colNombre = (c) => `<td>${celdaNombre(c)}</td>`;
   const colExpira = (c) => `<td class="col-opcional col-fecha"><span class="${c.presente ? "" : "sin-dato"}">${esc(expiraTexto(c))}</span></td>`;
-  // Si se llama como un equipo registrado, lo más probable es que sea otra tarjeta de red de ese equipo: se abre su ficha para agregar la MAC
+  // Si se llama como un equipo registrado, lo más probable es que sea otra tarjeta de red de ese equipo:
+  // «Agregar MAC» la suma a ese equipo (con confirmación) y el ícono abre su ficha
   const colRegistrar = (c) => `<td class="col-acciones">${!c.mac ? ""
-    : c.mismo_nombre ? `<a class="btn btn--secundario btn--sm" href="#/red/dispositivos/${c.mismo_nombre.id_disp}" title="Agregue esta MAC en la ficha de ${esc(c.mismo_nombre.equipo || "ese equipo")}">${icono("red")}Ver equipo</a>`
+    : c.mismo_nombre ? `<span class="acciones-concesion"><button type="button" class="btn btn--secundario btn--sm" data-agregar-mac="${c.id_evento}"
+        title="Agregar esta MAC a ${esc(c.mismo_nombre.equipo || "ese equipo")}">${icono("mas")}Agregar MAC</button><a class="btn-icono" href="#/red/dispositivos/${c.mismo_nombre.id_disp}"
+        title="Ver la ficha de ${esc(c.mismo_nombre.equipo || "ese equipo")}" aria-label="Ver la ficha de ${esc(c.mismo_nombre.equipo || "ese equipo")}">${icono("red")}</a></span>`
       : `<a class="btn btn--secundario btn--sm" href="${rutaRegistrarDhcp(c)}">${icono("mas")}Registrar</a>`}</td>`;
 
   const tablaMunicipales = (lista) => {
@@ -2197,7 +2197,7 @@ export async function vistaIntrusos(cont, _params, ctx, impDirecta = null) {
       <div class="cifras cifras--chicas">
         ${cifra(num(tt.presentes), "Conectadas", `<small>${num(tt.reservas_activas)} reservas activas · ${num(tt.reservas_inactivas)} inactivas</small>`)}
         ${cifra(num(tt.registrado), "Registradas en el inventario", tt.ip_distinta ? `<small>${num(tt.ip_distinta)} con otra IP que la registrada</small>` : "", "cifra--ok")}
-        ${cifra(num(tt.municipal), "Municipales sin registrar", "<small>Agente, dominio o reserva</small>", tt.municipal ? "cifra--aviso" : "")}
+        ${cifra(num(tt.municipal), "Municipales sin registrar", "<small>Agente, dominio, reserva o nombre del inventario</small>", tt.municipal ? "cifra--aviso" : "")}
         ${cifra(num(p.aleatoria || 0), "Con MAC aleatoria", "<small>Celulares y portátiles personales</small>", p.aleatoria ? "cifra--sin" : "")}
         ${cifra(num(p.ip_de_otro || 0), "Con la IP de otro equipo", "<small>Registrada a otro dispositivo</small>", p.ip_de_otro ? "cifra--aviso" : "")}
         ${cifra(num(tt.no_vistos), "Registrados que no aparecen", `<small>de ${num(tt.inventario_con_mac)} activos con MAC</small>`)}
@@ -2230,7 +2230,8 @@ export async function vistaIntrusos(cont, _params, ctx, impDirecta = null) {
 
       <section class="panel panel--revisar" data-municipales>
         <div class="panel__cabeza"><div><h2>${icono("red")} Municipales sin registrar (${num(municipales.length)})</h2>
-          <p>No están en el inventario, pero tienen el agente, son del dominio o tienen una reserva. <strong>Registrar</strong> abre el formulario con su IP y su MAC.</p></div>
+          <p>No están en el inventario, pero tienen el agente, son del dominio, tienen una reserva o se llaman como un equipo registrado.
+            <strong>Registrar</strong> abre el formulario con su IP y su MAC; <strong>Agregar MAC</strong> suma la MAC al equipo registrado que se llama igual.</p></div>
           ${municipales.length ? `<div class="buscador buscador--equipos">${icono("buscar")}<input type="search" class="control" data-buscar-municipal value="${esc(buscado)}" placeholder="Nombre, IP o MAC" aria-label="Buscar en los municipales sin registrar"></div>` : ""}</div>
         <div data-tabla-municipales>${tablaMunicipales(municipales)}</div>
       </section>
@@ -2295,7 +2296,25 @@ export async function vistaIntrusos(cont, _params, ctx, impDirecta = null) {
     caja.querySelector("[data-tabla-municipales]").innerHTML = tablaMunicipales(datos.concesiones.filter((c) => c.estado === "municipal"));
   }, 200));
   const abrir = (tr) => abrirEvento(Number(tr.dataset.evento), { importaciones: [dhcp] });
+  const agregarMac = async (c) => {
+    const eq = c.mismo_nombre;
+    const nombre = eq.equipo || `Dispositivo N.º ${eq.id_disp}`;
+    const ok = await confirmar({
+      titulo: "Agregar la MAC al equipo registrado",
+      mensaje: `La concesión «${c.nombre || c.ip}» se llama como ${nombre}${eq.nombre_equipo ? ` (${eq.nombre_equipo})` : ""}: lo más probable es que sea `
+        + `otra tarjeta de red de ese equipo, por ejemplo la Wi-Fi. Se agregará la MAC ${macGuiones(c.mac)} a sus direcciones.`,
+      textoBoton: "Agregar MAC", peligro: false,
+      accion: () => api(`dispositivos/${eq.id_disp}/macs/`, { metodo: "POST", datos: { direccion_mac: c.mac } }),
+    });
+    if (ok) { toast(`Se agregó la MAC ${macGuiones(c.mac)} a ${nombre}.`); cargar(); }
+  };
   caja.addEventListener("click", (ev) => {
+    const agregar = ev.target.closest("[data-agregar-mac]");
+    if (agregar) {
+      const c = datos?.concesiones.find((x) => x.id_evento === Number(agregar.dataset.agregarMac));
+      if (c?.mismo_nombre) agregarMac(c);
+      return;
+    }
     if (ev.target.closest("[data-mas-municipales]")) {
       todos = true;
       caja.querySelector("[data-tabla-municipales]").innerHTML = tablaMunicipales(datos.concesiones.filter((c) => c.estado === "municipal"));
@@ -2310,16 +2329,16 @@ export async function vistaIntrusos(cont, _params, ctx, impDirecta = null) {
   });
   botonExportar.addEventListener("click", () => {
     if (!datos) return;
-    const celda = (v) => { const t = String(v ?? ""); return /[";\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const celda = celdaCsv;   // con protección contra fórmulas de Excel
     const filas = [["Estado", "IP", "MAC", "Nombre en el DHCP", "Descripción", "Tipo", "Expira", "Señales", "Parece",
-      "Dispositivo registrado", "IP registradas", "Equipo en Microclaudia"]];
+      "Dispositivo registrado", "IP registradas", "Equipo en Microclaudia", "Equipo registrado con el mismo nombre"]];
     for (const c of datos.concesiones) {
       filas.push([datos.estados?.[c.estado] || c.estado, c.ip, macGuiones(c.mac || ""), c.nombre || "", c.descripcion || "",
         c.tipo, c.expira ? fechaLog(c.expira) : "", c.pistas.map((k) => PISTAS[k]?.texto || k).join(", "), c.parece || "",
-        c.dispositivo?.equipo || "", c.dispositivo?.ips.join(" ") || "", c.agente?.nombre || ""]);
+        c.dispositivo?.equipo || "", c.dispositivo?.ips.join(" ") || "", c.agente?.nombre || "", c.mismo_nombre?.equipo || ""]);
     }
     for (const x of datos.no_vistos) {
-      filas.push(["Registrado que no aparece en el DHCP", x.ips.join(" "), x.macs.map(macGuiones).join(" "), "", "", "", "", "", "", x.equipo || "", x.ips.join(" "), ""]);
+      filas.push(["Registrado que no aparece en el DHCP", x.ips.join(" "), x.macs.map(macGuiones).join(" "), "", "", "", "", "", "", x.equipo || "", x.ips.join(" "), "", ""]);
     }
     descargarTexto(`﻿${filas.map((f) => f.map(celda).join(";")).join("\r\n")}\r\n`, `intrusos_dhcp_${marcaArchivo()}.csv`);
     toast("Se descargó el archivo.");

@@ -15,6 +15,7 @@ import { pastillaEstado, todosLosCampos } from "./usuarios.js";
 import { coordenadas, embebidoMaps, enlaceMaps, enlazarCampoMapa, validarMapaLocal } from "./proveedores.js";
 import { feedAuditoria } from "./auditoria.js";
 import { abrirVisor, abrirVistaPrevia } from "./zoom.js";
+import { abrirEvento, descargarTexto, fechaLog, marcaArchivo, num, rangoFechas, rutaLogs, textoCsv } from "./logs_ui.js";
 
 const RECURSO = "dispositivos";
 const MAX_MB_DOCUMENTO = 1024;   // igual que MUNI_MAX_MB_DOCUMENTO_RED en settings.py
@@ -203,6 +204,38 @@ function opcionesTiposHTML(tipos, categorias, elegido = null) {
 /** EQUIPOS DE RED -> Equipos de red */
 const nombreCategoria = (texto) => String(texto || "").charAt(0) + String(texto || "").slice(1).toLowerCase();
 
+/* ------------------------------------------------------------ Garantía */
+const DIAS_AVISO_GARANTIA = 90;   // «por vencer»: vence dentro de estos días
+const FORMATO_DIA = new Intl.DateTimeFormat("es-CR", { day: "numeric", month: "short", year: "numeric" });
+
+/** "2027-03-15" -> Date local de ese día (sin correrse por la zona horaria). */
+function diaLocal(texto) {
+  const [a, m, d] = String(texto || "").slice(0, 10).split("-").map(Number);
+  return a && m && d ? new Date(a, m - 1, d) : null;
+}
+
+/** "2027-03-15" -> "15 mar 2027" */
+const fechaDia = (texto) => { const d = diaLocal(texto); return d ? FORMATO_DIA.format(d) : "—"; };
+
+/** Estado de la garantía según «Garantía hasta»: vencida, por vencer (en
+ *  DIAS_AVISO_GARANTIA días o menos) o vigente. null si no tiene la fecha. */
+function estadoGarantia(garantiaHasta, hoy = new Date()) {
+  const fin = diaLocal(garantiaHasta);
+  if (!fin) return null;
+  const dias = Math.round((fin - new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())) / 86400000);
+  const dia = FORMATO_DIA.format(fin);
+  if (dias < 0) return { clave: "vencida", dias, texto: "Garantía vencida", detalle: `Venció el ${dia}` };
+  if (dias <= DIAS_AVISO_GARANTIA) {
+    return { clave: "por-vencer", dias, texto: dias === 0 ? "La garantía vence hoy" : `Garantía: vence en ${dias} ${dias === 1 ? "día" : "días"}`, detalle: `Vence el ${dia}` };
+  }
+  return { clave: "vigente", dias, texto: `En garantía hasta ${dia}`, detalle: `Vence el ${dia}` };
+}
+
+const pastillaGarantia = (d) => {
+  const g = estadoGarantia(d.garantia_hasta);
+  return g ? `<span class="pastilla pastilla--sin-punto pastilla--garantia-${g.clave}" title="${esc(g.detalle)}">${icono("escudo", "ic--sm")}${esc(g.texto)}</span>` : "";
+};
+
 /* =====================================================================
    Inicio del módulo
    ===================================================================== */
@@ -225,6 +258,7 @@ export async function vistaInicioRed(cont, _params, ctx) {
         <ul class="atajos">${atajosRed(ctx).join("")}</ul>
       </section>
     </div>
+    <div id="garantias-red"></div>
     ${ctx.esAdmin ? `
     <section class="panel" style="margin-top:20px">
       <div class="panel__cabeza"><div><h2>Actividad reciente</h2><p>Últimos cambios a los equipos.</p></div><a class="btn btn--fantasma btn--sm" href="#/red/auditoria">Ver toda la auditoría</a></div>
@@ -250,6 +284,8 @@ export async function vistaInicioRed(cont, _params, ctx) {
     <nav class="resumen resumen--iconos resumen--categorias" aria-labelledby="titulo-resumen-red" style="--columnas:${Math.min(Math.max(ordenadas.length, 1), 5)}">
       ${ordenadas.map((c) => `<a href="#/red/dispositivos?id_categoria=${c.id_categoria}">${icono(ICONO_CATEGORIA[c.id_categoria] || "equipo")}<b>${cuantos(c)}</b><span>${esc(nombreCategoria(c.descripcion))}</span></a>`).join("")}
     </nav>`;
+
+  pintarGarantias(cont.querySelector("#garantias-red"), dispositivos);
 
   const recientes = [...dispositivos].sort((a, b) => String(b.creado_en).localeCompare(String(a.creado_en))).slice(0, 6);
   const caja = cont.querySelector("#recientes-red");
@@ -288,6 +324,40 @@ function atajosRed(ctx) {
   ];
 }
 
+/** Inicio: los equipos activos cuya garantía vence pronto (solo si hay alguno). */
+function pintarGarantias(caja, dispositivos) {
+  const conEstado = dispositivos.map((d) => ({ d, g: estadoGarantia(d.garantia_hasta) })).filter((x) => x.g);
+  const porVencer = conEstado.filter((x) => x.g.clave === "por-vencer").sort((a, b) => a.g.dias - b.g.dias);
+  if (!porVencer.length) return;
+  const vencidas = conEstado.filter((x) => x.g.clave === "vencida").length;
+  const filas = porVencer.map((x) => x.d);
+  caja.innerHTML = `
+    <section class="panel panel--garantias" style="margin-top:20px">
+      <div class="panel__cabeza"><div><h2>${icono("escudo")} Garantías por vencer (${porVencer.length})</h2>
+        <p>Equipos activos cuya garantía vence en los próximos ${DIAS_AVISO_GARANTIA} días: revise con el proveedor si conviene extenderla.
+          ${vencidas === 1 ? "Otro equipo activo ya tiene la garantía vencida." : vencidas ? `Otros ${vencidas} equipos activos ya tienen la garantía vencida.` : ""}</p></div></div>
+      ${tablaHTML({
+        clicable: true,
+        filas,
+        columnas: [
+          { titulo: "Equipo", html: (d) => celdaDispositivo(d) },
+          {
+            titulo: "Vence",
+            html: (d) => { const g = estadoGarantia(d.garantia_hasta); return `${esc(fechaDia(d.garantia_hasta))}<span class="secundario">${g.dias === 0 ? "Hoy" : `En ${g.dias} ${g.dias === 1 ? "día" : "días"}`}</span>`; },
+          },
+          {
+            titulo: "Proveedor de soporte", clase: "col-opcional",
+            html: (d) => (d.proveedor ? `<a href="#/proveedores/${d.id_proveedor}">${esc(d.proveedor)}</a>` : `<span class="secundario">Sin proveedor</span>`),
+          },
+        ],
+      })}
+    </section>`;
+  caja.addEventListener("click", (ev) => {
+    const r = eventoFila(ev, filas);
+    if (r && !ev.target.closest("a")) location.hash = `#/red/dispositivos/${r.fila.id_disp}`;
+  });
+}
+
 const celdaDispositivo = (d) => `
   <div class="persona">${insigniaTipo(d)}<div>
     <a href="#/red/dispositivos/${d.id_disp}"><strong>${esc(tituloDispositivo(d))}</strong></a>
@@ -299,6 +369,38 @@ const celdaDispositivo = (d) => `
    ===================================================================== */
 const FILTROS_LISTA = ["buscar", "id_categoria", "tipo_disp", "id_marca", "id_predio", "cod_departamento", "id_proveedor", "activo"];
 
+/* Columnas del CSV de la lista: todos los datos del equipo (los que no lleva su categoría quedan vacíos) */
+const decimal = (v) => (v === null || v === undefined || v === "" ? "" : Number(v).toLocaleString("es-CR", { maximumFractionDigits: 2, useGrouping: false }));
+const COLUMNAS_CSV = [
+  ["Serie", (d) => d.serie], ["Placa", (d) => d.placa], ["Categoría", (d) => nombreCategoria(d.categoria)],
+  ["Tipo", (d) => d.tipo_dispositivo], ["Marca", (d) => d.marca], ["Modelo", (d) => d.modelo], ["Nombre en la red", (d) => d.nombre_equipo],
+  ["Sistema operativo", (d) => d.sistema_operativo], ["Versión del sistema o firmware", (d) => d.version_os], ["Procesador", (d) => d.procesador],
+  ["Memoria RAM (GB)", (d) => d.memoria_gb], ["Almacenamiento (GB)", (d) => d.almacenamiento_gb],
+  ["Tipo de disco", (d) => ALMACENAMIENTOS.find(([v]) => v === d.tipo_almacenamiento)?.[1] || d.tipo_almacenamiento],
+  ["Pantalla (pulgadas)", (d) => decimal(d.pulgadas)], ["Resolución", (d) => d.resolucion],
+  ["Puertos Ethernet", (d) => d.cant_ptos_ethernet], ["Puertos SFP", (d) => d.cant_ptos_sfp], ["Canales de video", (d) => d.canales],
+  ["IMEI", (d) => d.imei], ["IMEI 2", (d) => d.imei2], ["Número de línea", (d) => d.numero_linea], ["Operador", (d) => d.operador],
+  ["Extensión", (d) => d.extension], ["Tecnología de impresión", (d) => d.tecnologia_impresion],
+  ["Imprime a color", (d) => (d.id_categoria === CAT.IMPRESION ? (d.a_color ? "Sí" : "No") : "")], ["Tóner o cartucho", (d) => d.consumible],
+  ["Capacidad (VA)", (d) => d.capacidad_va], ["Autonomía (minutos)", (d) => d.autonomia_min],
+  ["Direcciones IP", (d) => lista(d.ips).join(" ")], ["Direcciones MAC", (d) => lista(d.macs).map(formatearMac).join(" ")],
+  ["Edificio", (d) => d.edificio], ["Ubicación en el edificio", (d) => d.ubicacion], ["Departamento", (d) => d.departamento],
+  ["Funcionario responsable", (d) => d.asignado], ["Proveedor de soporte", (d) => d.proveedor],
+  ["Fecha de compra", (d) => (d.fecha_compra ? String(d.fecha_compra).slice(0, 10) : "")],
+  ["Garantía hasta", (d) => (d.garantia_hasta ? String(d.garantia_hasta).slice(0, 10) : "")],
+  ["Garantía", (d) => {
+    const g = estadoGarantia(d.garantia_hasta);
+    if (!g) return "";
+    if (g.clave !== "por-vencer") return g.clave === "vencida" ? "Vencida" : "Vigente";
+    return g.dias === 0 ? "Vence hoy" : `Vence en ${g.dias} ${g.dias === 1 ? "día" : "días"}`;
+  }],
+  ["Documentos", (d) => d.cantidad_documentos || 0], ["Observaciones", (d) => d.observaciones],
+  ["Estado", (d) => (d.activo ? "Activo" : "Inactivo")], ["Registrado", (d) => (d.creado_en ? String(d.creado_en).slice(0, 10) : "")],
+];
+
+/** La lista de equipos (con los filtros aplicados) en un CSV para Excel. */
+const csvEquipos = (filas) => textoCsv([COLUMNAS_CSV.map(([t]) => t), ...filas.map((d) => COLUMNAS_CSV.map(([, f]) => f(d) ?? ""))]);
+
 export async function vistaDispositivos(cont, _params, ctx) {
   ctx.migas([{ texto: "Equipos" }]);
   const q = ctx.query || new URLSearchParams();
@@ -308,7 +410,10 @@ export async function vistaDispositivos(cont, _params, ctx) {
         <h1>Equipos</h1>
         <p>Inventario de equipos municipales: de red, computadoras, servidores, móviles, telefonía, impresión y más, con su responsable, ubicación, proveedor de soporte y documentos.</p>
       </div>
-      ${ctx.esAdmin ? `<div class="encabezado__acciones"><a class="btn btn--primario" href="#/red/dispositivos/nuevo">${icono("mas")}Nuevo equipo</a></div>` : ""}
+      <div class="encabezado__acciones">
+        <button type="button" class="btn btn--secundario" data-exportar-equipos disabled title="Descarga los equipos de la lista, con los filtros aplicados">${icono("descargar")}Exportar (CSV)</button>
+        ${ctx.esAdmin ? `<a class="btn btn--primario" href="#/red/dispositivos/nuevo">${icono("mas")}Nuevo equipo</a>` : ""}
+      </div>
     </div>
     <section class="panel">
       <div data-asignado-filtro hidden></div>
@@ -338,6 +443,7 @@ export async function vistaDispositivos(cont, _params, ctx) {
   const lista = cont.querySelector("#lista-dispositivos");
   const total = cont.querySelector("#total-dispositivos");
   const avisoAsignado = cont.querySelector("[data-asignado-filtro]");
+  const exportar = cont.querySelector("[data-exportar-equipos]");
   let filas = [];
   // Desde la ficha de una persona: #/red/dispositivos?id_asignado=5
   let idAsignado = q.get("id_asignado") || "";
@@ -405,14 +511,16 @@ export async function vistaDispositivos(cont, _params, ctx) {
     const qs = new URLSearchParams(Object.entries(query).filter(([n, v]) => v !== "" && !(n === "activo" && v === "true"))).toString();
     history.replaceState(null, "", `#/red/dispositivos${qs ? `?${qs}` : ""}`);
     lista.innerHTML = cargandoHTML();
+    exportar.disabled = true;
     try {
       filas = await api(`${RECURSO}/`, { query });
     } catch (e) {
-      if (esta === consulta) lista.innerHTML = `<div class="panel__cuerpo">${errorHTML(e.message)}</div>`;
+      if (esta === consulta) { filas = []; lista.innerHTML = `<div class="panel__cuerpo">${errorHTML(e.message)}</div>`; }
       return;
     }
     if (esta !== consulta || !ctx.vigente()) return;
     total.textContent = `${filas.length} ${filas.length === 1 ? "equipo" : "equipos"}`;
+    exportar.disabled = !filas.length;
 
     if (!filas.length) {
       const hayFiltros = idAsignado || FILTROS_LISTA.some((n) => n !== "activo" && form[n].value);
@@ -461,6 +569,11 @@ export async function vistaDispositivos(cont, _params, ctx) {
   lista.addEventListener("click", (ev) => {
     const r = eventoFila(ev, filas);
     if (r && !ev.target.closest("a")) location.hash = `#/red/dispositivos/${r.fila.id_disp}`;
+  });
+  exportar.addEventListener("click", () => {
+    if (!filas.length) return;
+    descargarTexto(csvEquipos(filas), `equipos_${marcaArchivo()}.csv`);
+    toast(`Se descargó el archivo con ${filas.length} ${filas.length === 1 ? "equipo" : "equipos"}.`);
   });
   form.addEventListener("submit", (ev) => { ev.preventDefault(); cargar(); });
   form.buscar.addEventListener("input", debounce(cargar, 300));
@@ -998,6 +1111,22 @@ function tipoSugerido(tipos, texto) {
     || null;
 }
 
+/* «Registrar uno igual»: lo que se copia de otro equipo. No se copia lo que
+   es de cada equipo: serie, placa, nombre en la red, IMEI, número de línea,
+   extensión, responsable, IP, MAC, documentos ni observaciones. */
+const CAMPOS_COPIA = [
+  "tipo_disp", "id_marca", "id_modelo", "id_os", "version_os", "procesador", "memoria_gb", "almacenamiento_gb", "tipo_almacenamiento",
+  "pulgadas", "resolucion", "cant_ptos_ethernet", "cant_ptos_sfp", "canales", "operador", "tecnologia_impresion", "a_color", "consumible",
+  "capacidad_va", "autonomia_min", "id_predio", "ubicacion", "cod_departamento", "id_proveedor", "fecha_compra", "garantia_hasta",
+];
+
+function datosCopia(origen, proveedores) {
+  const v = Object.fromEntries(CAMPOS_COPIA.filter((c) => origen[c] !== null && origen[c] !== undefined).map((c) => [c, origen[c]]));
+  // A un equipo nuevo no se le pone un proveedor inactivo
+  if (v.id_proveedor && !proveedores.some((p) => p.id === v.id_proveedor)) delete v.id_proveedor;
+  return v;
+}
+
 /* =====================================================================
    Nuevo dispositivo
    ===================================================================== */
@@ -1005,16 +1134,20 @@ export async function vistaDispositivoNuevo(cont, _params, ctx) {
   ctx.migas([{ texto: "Equipos", href: "#/red/dispositivos" }, { texto: "Nuevo equipo" }]);
   cont.innerHTML = cargandoHTML();
 
-  const [base, proveedores, tiposDoc, personal] = await Promise.all([
+  // Desde los logs (equipos sin agente, intrusos del DHCP):
+  // #/red/dispositivos/nuevo?ip=&mac=&equipo=&tipo= trae la IP, la MAC, el
+  // nombre en la red y el tipo que parece; desde la ficha de una persona, ?asignado=;
+  // desde la ficha de otro equipo («Registrar uno igual»), ?copiar=<id_disp>
+  const q = ctx.query || new URLSearchParams();
+  const idCopia = /^\d+$/.test(q.get("copiar") || "") ? q.get("copiar") : null;
+  const [base, proveedores, tiposDoc, personal, copia] = await Promise.all([
     datosBase(), api("proveedores/", { query: { activo: true } }), filasCatalogo("tipos-documentos"),
     api("usuarios/", { query: { activo: true } }),
+    idCopia ? api(ruta(RECURSO, idCopia)).catch((e) => { if (e instanceof ErrorApi) return { error: e.message }; throw e; }) : null,
   ]);
   if (!ctx.vigente()) return;
 
-  // Desde los logs (equipos sin agente, intrusos del DHCP):
-  // #/red/dispositivos/nuevo?ip=&mac=&equipo=&tipo= trae la IP, la MAC, el
-  // nombre en la red y el tipo que parece; desde la ficha de una persona, ?asignado=
-  const q = ctx.query || new URLSearchParams();
+  const copiados = copia && !copia.error ? datosCopia(copia, proveedores) : {};
   const previas = {
     ips: q.get("ip") ? [{ direccion_ip: q.get("ip") }] : [],
     macs: q.get("mac") ? [{ direccion_mac: q.get("mac") }] : [],
@@ -1024,10 +1157,11 @@ export async function vistaDispositivoNuevo(cont, _params, ctx) {
   const asignado = personal.find((u) => String(u.id) === q.get("asignado"));
   const valores = {
     id_os: base.sistemas.some((s) => s.id_os === 1) ? 1 : undefined,
+    ...copiados,
     nombre_equipo: deListado ? deListado.split(".")[0].toUpperCase() : undefined,
-    tipo_disp: sugerido?.tipo_disp,
+    tipo_disp: sugerido?.tipo_disp ?? copiados.tipo_disp,
     id_asignado: asignado?.id,
-    cod_departamento: asignado?.cod_departamento || undefined,
+    cod_departamento: asignado?.cod_departamento || copiados.cod_departamento || undefined,
   };
   const secciones = seccionesDispositivo(base, proveedores, personal, valores);
   const opcionesDoc = [...tiposDoc].sort((a, b) => a.id_doc - b.id_doc)
@@ -1039,6 +1173,11 @@ export async function vistaDispositivoNuevo(cont, _params, ctx) {
     ${deListado ? `<div class="aviso aviso--info">${icono("enlace")}<span>${previas.ips.length || previas.macs.length ? "El nombre en la red, la IP y la MAC vienen" : "El nombre en la red viene"} del equipo
       <strong>${esc(deListado)}</strong> de los logs${sugerido ? ` (tipo sugerido: ${esc(sugerido.descripcion)})` : ""}. Revise el tipo y complete la marca y la serie.</span></div>` : ""}
     ${asignado ? `<div class="aviso aviso--info">${icono("usuario")}<span>El equipo queda asignado a <strong>${esc(nombreCompleto(asignado))}</strong>.</span></div>` : ""}
+    ${copia && !copia.error ? `<div class="aviso aviso--info" data-aviso-copia>${icono("capas")}<span>Se copiaron los datos de
+      <a href="#/red/dispositivos/${copia.id_disp}">${esc(tituloDispositivo(copia))} (serie ${esc(copia.serie)})</a>: tipo, marca, modelo, características,
+      ubicación, departamento, proveedor y fechas. Escriba la serie, la placa y el nombre en la red de este equipo; el responsable, las IP y las MAC
+      son de cada equipo y no se copian.</span></div>` : ""}
+    ${copia?.error ? `<div class="aviso aviso--ocre">${icono("alerta")}<span>No se pudieron copiar los datos del equipo N.º ${esc(idCopia)}: ${esc(copia.error)}</span></div>` : ""}
     <form class="panel" id="form-dispositivo" novalidate>
       <div class="panel__cuerpo">
         <div data-error hidden style="margin-bottom:18px"></div>
@@ -1151,6 +1290,8 @@ export async function vistaDispositivoNuevo(cont, _params, ctx) {
 const PESTANAS = [
   { clave: "datos", titulo: "Datos generales", icono: "red" },
   { clave: "documentos", titulo: "Documentos", icono: "documento" },
+  // Lo importado en el módulo de logs (solo administradores, como ese módulo)
+  { clave: "en-la-red", titulo: "En la red", icono: "web", soloAdmin: true },
   { clave: "historial", titulo: "Historial", icono: "historial", soloAdmin: true },
 ];
 
@@ -1177,6 +1318,7 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
         <h1>${esc(titulo)}</h1>
         <div class="ficha__datos">
           ${pastillaEstado(d.activo)}
+          ${d.activo ? pastillaGarantia(d) : ""}
           <span>${esc(d.tipo_dispositivo)}${marca ? ` · ${esc(marca)}` : ""}</span>
           <span class="dato-mono">Serie ${esc(d.serie)}</span>
           ${d.placa ? `<span class="dato-mono" title="Placa (número de activo)">Placa ${esc(d.placa)}</span>` : ""}
@@ -1188,6 +1330,8 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
         </div>
       </div>
       <div class="ficha__acciones">
+        ${ctx.esAdmin ? `<a class="btn btn--secundario" href="#/red/dispositivos/nuevo?copiar=${d.id_disp}" data-copiar
+          title="Abre el formulario de un equipo nuevo con los datos de este: tipo, marca, modelo, características, ubicación, proveedor y fechas">${icono("capas")}Registrar uno igual</a>` : ""}
         ${ctx.esAdmin ? (d.activo
           ? `<button type="button" class="btn btn--secundario" data-estado>${icono("encender")}Desactivar</button>`
           : `<button type="button" class="btn btn--primario" data-estado>${icono("encender")}Activar</button>`) : ""}
@@ -1204,6 +1348,14 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
   async function mostrar(clave) {
     actual = clave;
     cont.querySelectorAll("[data-pestana]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.pestana === clave)));
+    // En el celular las pestañas no caben: se corre la tira para que se vea la elegida
+    const tira = cont.querySelector("[role=tablist]");
+    const elegida = tira?.querySelector(`[data-pestana="${clave}"]`);
+    if (elegida && tira.scrollWidth > tira.clientWidth) {
+      const r = elegida.getBoundingClientRect();
+      const rt = tira.getBoundingClientRect();
+      if (r.left < rt.left || r.right > rt.right) tira.scrollLeft += r.left + r.width / 2 - (rt.left + rt.width / 2);
+    }
     panel.setAttribute("aria-labelledby", `tab-${clave}`);
     history.replaceState(null, "", clave === "datos" ? base : `${base}/${clave}`);
     const caja = document.createElement("div");
@@ -1212,6 +1364,7 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
     try {
       if (clave === "datos") await pestanaDatos(caja, d, ctx, recargar);
       else if (clave === "documentos") await pestanaDocumentos(caja, d, ctx, recargar);
+      else if (clave === "en-la-red") await pestanaEnLaRed(caja, d, ctx, recargar);
       else if (clave === "historial") await pestanaHistorial(caja, d);
     } catch (e) {
       if (!ctx.vigente()) return;
@@ -1557,6 +1710,187 @@ async function pestanaDocumentos(panel, d, ctx, recargar) {
     }
     if (fallos.length) toast(`No se pudieron subir: ${fallos.join(" ")}`, "error");
     recargar("documentos");
+  });
+}
+
+/* --------------------------------------------------------------- En la red
+   Dónde aparece el equipo en lo último que se importó en el módulo de logs
+   (GET logs/equipos/<id>/): la lista del DHCP, el listado de Microclaudia y
+   su tráfico en los logs de Sophos, por sus IP, sus MAC y su nombre en la red. */
+const POR_RED = {
+  MAC: { texto: "Por su MAC", clase: "activo" },
+  nombre: { texto: "Por el nombre", clase: "aviso" },
+  IP: { texto: "Solo por la IP", clase: "aviso" },
+};
+const porRedHTML = (por) => `<span class="pastilla pastilla--${POR_RED[por]?.clase || "neutra"}">${esc(POR_RED[por]?.texto || por)}</span>`;
+const tipoConcesion = (c) => (c.tipo === "Reserva DHCP activa" ? "Reserva activa" : c.tipo === "Reserva DHCP inactiva" ? "Reserva inactiva"
+  : c.expira ? `Concesión hasta ${fechaLog(c.expira)}` : c.tipo || "—");
+
+/** Cabeza de cada fuente: insignia, título, de qué importación sale y su estado. */
+const cabezaRed = (clase, ic, titulo, texto, estado) => `
+  <div class="panel__cabeza">
+    <div class="en-red__titulo"><span class="insignia-log insignia-log--sm${clase ? ` insignia-log--${clase}` : ""}">${icono(ic)}</span>
+      <div><h2>${esc(titulo)}</h2><p>${texto}</p></div></div>
+    ${estado}
+  </div>`;
+const estadoRed = (clase, texto) => `<span class="pastilla pastilla--${clase}">${esc(texto)}</span>`;
+const notaRed = (html) => `<div class="panel__cuerpo"><p class="en-red__nota">${html}</p></div>`;
+
+function redDhcpHTML(r) {
+  const imp = r.dhcp.importacion;
+  const lista = r.dhcp.concesiones;
+  const eq = r.equipo;
+  const texto = imp
+    ? `Última lista: <a href="${rutaLogs("intrusos", { dhcp: imp.id_importacion })}">${esc(imp.nombre_archivo)}</a> (importada el ${esc(fecha(imp.creado_en))})`
+    : "Las direcciones que entrega el servidor DHCP.";
+  if (!imp) {
+    return `<section class="panel en-red__fuente">${cabezaRed("dhcp", "dhcp", "Servidor DHCP", texto, estadoRed("inactivo", "Sin lista"))}
+      ${notaRed(`Todavía no se ha importado una lista del DHCP. <a href="#/logs/importar/dhcp">Importar las concesiones</a>`)}</section>`;
+  }
+  if (!lista.length) {
+    return `<section class="panel en-red__fuente">${cabezaRed("dhcp", "dhcp", "Servidor DHCP", texto, estadoRed("inactivo", "No aparece"))}
+      ${notaRed(eq.macs.length || eq.nombre_equipo
+        ? "Ni su MAC ni su nombre aparecen en la última lista: tiene IP fija, estaba apagado, está en otra red o la MAC registrada no es la de la tarjeta que usa."
+        : "Sin MAC ni nombre en la red registrados no se puede buscar en el DHCP.")}</section>`;
+  }
+  const conectado = lista.some((c) => c.presente);
+  // «Agregar MAC» solo si la MAC no es de otro equipo del inventario
+  const agregable = (c) => c.por === "nombre" && c.mac && !c.mac_de;
+  const estado = conectado ? estadoRed("activo", lista.some((c) => c.presente && c.por === "MAC") ? "Con IP del DHCP" : "Con IP, por el nombre")
+    : estadoRed("inactivo", "Solo reserva o vencida");
+  const filas = lista.map((c) => `
+    <tr class="clicable${c.presente ? "" : " fila-ausente"}" data-evento="${c.id_evento}" tabindex="0">
+      <td class="en-red__dir"><span class="dato-mono">${esc(c.ip || "—")}</span><span class="secundario dato-mono">${c.mac ? esc(formatearMac(c.mac)) : "Sin MAC"}</span>
+        ${c.ip && !c.ip_registrada && eq.ips.length ? `<span class="secundario" title="IP registradas: ${esc(eq.ips.join(", "))}">No es la IP registrada</span>` : ""}</td>
+      <td><strong>${esc(c.nombre || "Sin nombre")}</strong>${c.descripcion ? `<span class="secundario">${esc(c.descripcion)}</span>` : ""}</td>
+      <td class="col-opcional"><span class="${c.presente ? "" : "sin-dato"}">${esc(tipoConcesion(c))}</span></td>
+      <td>${porRedHTML(c.por)}${c.por !== "nombre" ? "" : c.mac_de
+        ? `<span class="secundario">Esa MAC es de <a href="#/red/dispositivos/${c.mac_de.id_disp}">${esc(c.mac_de.equipo || `Dispositivo N.º ${c.mac_de.id_disp}`)}</a></span>`
+        : `<span class="secundario">Esa MAC no está registrada</span>`}</td>
+      <td class="col-acciones">${agregable(c)
+        ? `<button type="button" class="btn btn--secundario btn--sm" data-agregar-mac="${esc(c.mac)}" title="Agregar la MAC ${esc(formatearMac(c.mac))} a este equipo">${icono("mas")}Agregar MAC</button>` : ""}</td>
+    </tr>`).join("");
+  return `<section class="panel en-red__fuente">${cabezaRed("dhcp", "dhcp", "Servidor DHCP", texto, estado)}
+    <div class="tabla-envoltura"><table class="tabla tabla--compacta">
+      <thead><tr><th>IP y MAC</th><th>Nombre en el DHCP</th><th class="col-opcional">Concesión</th><th>Coincide</th><th class="col-acciones"><span class="visualmente-oculto">Acciones</span></th></tr></thead>
+      <tbody>${filas}</tbody></table></div>
+    ${lista.some(agregable) ? `<p class="en-red__pie">Una concesión que se llama como este equipo pero con otra MAC suele ser otra tarjeta de red del mismo equipo (por ejemplo la Wi-Fi): <strong>Agregar MAC</strong> la suma a sus direcciones.</p>` : ""}
+  </section>`;
+}
+
+/** Direcciones del agente sin partirlas; en negrita las que tiene registradas el equipo. */
+const dirsAgente = (lista_, registradas, formato) => lista_.map((x) => (registradas.includes(x)
+  ? `<strong class="sin-corte" title="Registrada en el equipo">${esc(formato(x))}</strong>` : `<span class="sin-corte">${esc(formato(x))}</span>`)).join(", ");
+
+function redAgenteHTML(r) {
+  const imp = r.agentes.importacion;
+  const lista = r.agentes.equipos;
+  const eq = r.equipo;
+  const texto = imp
+    ? `Último listado: <a href="${rutaLogs("cobertura", { agentes: imp.id_importacion })}">${esc(imp.nombre_archivo)}</a> (importado el ${esc(fecha(imp.creado_en))})`
+    : "Los equipos que tienen el agente instalado.";
+  if (!imp) {
+    return `<section class="panel en-red__fuente">${cabezaRed("agente", "agente", "Agente de Microclaudia", texto, estadoRed("inactivo", "Sin listado"))}
+      ${notaRed(`Todavía no se ha importado un listado de Microclaudia. <a href="#/logs/importar/microclaudia">Importar el listado</a>`)}</section>`;
+  }
+  if (!lista.length) {
+    return `<section class="panel en-red__fuente">${cabezaRed("agente", "agente", "Agente de Microclaudia", texto,
+      eq.lleva_agente ? estadoRed("aviso", "Sin el agente") : estadoRed("inactivo", "No lleva agente"))}
+      ${notaRed(eq.lleva_agente
+        ? "No aparece en el último listado de Microclaudia (por MAC, nombre ni IP): puede que no tenga el agente instalado o que no se haya conectado."
+        : `Los equipos de la categoría ${esc(nombreCategoria(eq.categoria))} no llevan el agente de Microclaudia.`)}</section>`;
+  }
+  const seguro = lista.some((a) => a.por !== "IP");
+  const filas = lista.map((a) => `
+    <tr class="clicable" data-evento="${a.id_evento}" tabindex="0">
+      <td><strong>${esc(a.nombre || "Sin nombre")}</strong><span class="secundario">${esc(a.sistema || "Sistema sin dato")}</span></td>
+      <td class="col-opcional">${esc(a.version || "—")}</td>
+      <td>${esc(fechaLog(a.ultima_conexion))}</td>
+      <td class="dato-mono col-opcional en-red__dirs">${dirsAgente(a.ips, eq.ips, (x) => x) || "—"}<span class="secundario">${dirsAgente(a.macs, eq.macs, formatearMac)}</span></td>
+      <td>${porRedHTML(a.por)}${a.por === "IP" ? `<span class="secundario">Puede ser otro equipo que usó esa IP</span>` : ""}</td>
+    </tr>`).join("");
+  return `<section class="panel en-red__fuente">${cabezaRed("agente", "agente", "Agente de Microclaudia", texto,
+    seguro ? `<span class="pastilla pastilla--agente">${icono("check", "ic--sm")}Con el agente</span>` : estadoRed("aviso", "Solo coincide la IP"))}
+    <div class="tabla-envoltura"><table class="tabla tabla--compacta">
+      <thead><tr><th>Equipo en Microclaudia</th><th class="col-opcional">Versión del agente</th><th>Última conexión</th><th class="col-opcional">IP y MAC</th><th>Coincide</th></tr></thead>
+      <tbody>${filas}</tbody></table></div>
+  </section>`;
+}
+
+function redSophosHTML(r) {
+  const s = r.sophos;
+  const texto = "El tráfico de sus IP y MAC en los logs del firewall que se importaron.";
+  if (!r.hay_logs) {
+    return `<section class="panel en-red__fuente">${cabezaRed("", "firewall", "Firewall Sophos", texto, estadoRed("inactivo", "Sin logs"))}
+      ${notaRed(`Todavía no se han importado logs de Sophos. <a href="#/logs/importar/sophos">Importar logs</a>`)}</section>`;
+  }
+  if (!s) {
+    return `<section class="panel en-red__fuente">${cabezaRed("", "firewall", "Firewall Sophos", texto, estadoRed("inactivo", "Sin IP ni MAC"))}
+      ${notaRed("Para buscar su tráfico el equipo necesita una IPv4 o una MAC registrada.")}</section>`;
+  }
+  if (!s.total) {
+    return `<section class="panel en-red__fuente">${cabezaRed("", "firewall", "Firewall Sophos", texto, estadoRed("inactivo", "Sin tráfico"))}
+      ${notaRed("Ningún log importado tiene tráfico de sus IP o MAC.")}</section>`;
+  }
+  const cifra = (valor, etiqueta, clase = "") => `<div class="cifra${clase ? ` ${clase}` : ""}"><b>${esc(num(valor))}</b><span>${esc(etiqueta)}</span></div>`;
+  return `<section class="panel en-red__fuente">${cabezaRed("", "firewall", "Firewall Sophos", texto, estadoRed("activo", "Con tráfico"))}
+    <div class="panel__cuerpo">
+      <div class="en-red__cifras">
+        ${cifra(s.total, s.total === 1 ? "Evento" : "Eventos")}
+        ${cifra(s.permitidos, "Permitidos", "cifra--ok")}
+        ${cifra(s.denegados, "Denegados", s.denegados ? "cifra--sin" : "")}
+        ${cifra(s.dominios, "Sitios distintos")}
+      </div>
+      <p class="en-red__nota">${esc(rangoFechas(s.desde, s.hasta))}, en ${esc(num(s.importaciones))} ${s.importaciones === 1 ? "importación" : "importaciones"}.
+        Filtro: <code>${esc(s.filtro)}</code></p>
+      <div class="en-red__acciones">
+        <a class="btn btn--secundario btn--sm" href="${rutaLogs("eventos", { q: s.filtro })}">${icono("filtro")}Ver sus eventos</a>
+        <a class="btn btn--secundario btn--sm" href="${rutaLogs("tablero", { q: s.filtro })}">${icono("grafico")}Ver su tablero</a>
+      </div>
+    </div>
+  </section>`;
+}
+
+async function pestanaEnLaRed(panel, d, ctx, recargar) {
+  const r = await api(`logs/equipos/${d.id_disp}/`);
+  const eq = r.equipo;
+  const claves = [
+    eq.nombre_equipo && `<span class="chip-dir" title="Nombre en la red">${esc(eq.nombre_equipo)}</span>`,
+    ...eq.ips.map((ip) => `<span class="chip-dir" title="IP registrada">${esc(ip)}</span>`),
+    ...eq.macs.map((m) => `<span class="chip-dir" title="MAC registrada">${esc(formatearMac(m))}</span>`),
+  ].filter(Boolean);
+  panel.innerHTML = `
+    <div class="en-red">
+      <div class="en-red__claves"><span class="etiqueta-dir">Se busca por</span>${claves.join("")
+        || `<span class="sin-dato">nada todavía</span>`}</div>
+      ${claves.length ? "" : `<div class="aviso aviso--ocre">${icono("alerta")}<span>El equipo no tiene nombre en la red, IP ni MAC registrados.
+        Agréguelos en Datos generales para encontrarlo en el DHCP, en Microclaudia y en los logs.</span></div>`}
+      ${redDhcpHTML(r)}
+      ${redAgenteHTML(r)}
+      ${redSophosHTML(r)}
+    </div>`;
+
+  const abrir = (tr) => abrirEvento(Number(tr.dataset.evento));
+  panel.addEventListener("click", async (ev) => {
+    const boton = ev.target.closest("[data-agregar-mac]");
+    if (boton) {
+      const mac = boton.dataset.agregarMac;
+      const nombre = `${tituloDispositivo(d)} (serie ${d.serie})`;
+      const ok = await confirmar({
+        titulo: "Agregar la MAC al equipo",
+        mensaje: `Se agregará la MAC ${formatearMac(mac)} a las direcciones de ${nombre}. Hágalo si esa concesión del DHCP es de este equipo (otra tarjeta de red, por ejemplo la Wi-Fi).`,
+        textoBoton: "Agregar MAC", peligro: false,
+        accion: () => api(ruta(RECURSO, d.id_disp, "macs"), { metodo: "POST", datos: { direccion_mac: mac } }),
+      });
+      if (ok) { toast(`Se agregó la MAC ${formatearMac(mac)}.`); recargar("en-la-red"); }
+      return;
+    }
+    const tr = ev.target.closest("tr[data-evento]");
+    if (tr && !ev.target.closest("a, button")) abrir(tr);
+  });
+  panel.addEventListener("keydown", (ev) => {
+    const tr = ev.target.closest?.("tr[data-evento]");
+    if (tr && ev.target === tr && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); abrir(tr); }
   });
 }
 

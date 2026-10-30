@@ -1,0 +1,100 @@
+Firewall
+
+2026-09-30 12:03:57
+	
+device_name="fw.mgrecia.net" 
+messageid="00001" 
+
+log_type="Firewall" 
+log_component="Firewall Rule" 
+log_subtype="Allowed" 
+status="Allow" 
+con_duration="37" 
+
+fw_rule_id="85" 
+fw_rule_name="WAN TO DMZ IN - HTTPS (PORT4)" 
+fw_rule_section="Local rule" 
+
+nat_rule_id="1" 
+nat_rule_name="DNAT to Servidor WEB_GRECIA.GO.CR" 
+policy_type="1" 
+
+sdwan_profile_id_request="0" 
+sdwan_profile_name_request="" 
+sdwan_profile_id_reply="0" 
+sdwan_profile_name_reply="" 
+
+gw_id_request="0" 
+gw_name_request="" 
+gw_id_reply="2" 
+gw_name_reply="WAN_SERVICIOS_WEB_GW"
+ 
+sdwan_route_id_request="0" 
+sdwan_route_name_request="" 
+sdwan_route_id_reply="0" 
+sdwan_route_name_reply="" 
+
+user="" 
+user_group="" 
+
+web_policy_id="0" 
+
+ips_policy_id="7" 
+
+appfilter_policy_id="0" 
+app_name="Secure Socket Layer Protocol" 
+app_risk="1" 
+app_technology="Network Protocol" 
+app_category="Infrastructure" 
+
+vlan_id="" 
+ether_type="Unknown (0x0000)" 
+
+bridge_name="" 
+bridge_display_name="" 
+
+in_interface="Port4" 
+in_display_interface="WAN IP SERVICIOS WEB 1" 
+
+out_interface="Port3" 
+out_display_interface="DMZ IP SERVICIOS WEB" 
+
+src_mac="00:A7:42:44:2A:0E" 
+dst_mac="7C:5A:1C:C5:A3:B6" 
+
+src_ip="8.242.197.250" 
+src_country="CRI" 
+
+dst_ip="181.193.107.58" 
+dst_country="CRI" 
+
+protocol="TCP" 
+src_port="49670" 
+dst_port="443" 
+
+packets_sent="27" 
+packets_received="68" 
+bytes_sent="8821" 
+bytes_received="137157" 
+
+src_trans_ip="" 
+src_trans_port="0"
+ 
+dst_trans_ip="10.1.12.2" 
+dst_trans_port="0" 
+
+src_zone_type="WAN" 
+src_zone="WAN" 
+
+dst_zone_type="DMZ" 
+dst_zone="DMZ" 
+
+con_direction="" 
+con_event="Stop" 
+con_id="1725959955" 
+virt_con_id="" 
+hb_status="No Heartbeat" message="" 
+appresolvedby="Signature" 
+app_is_cloud="0" 
+log_occurrence="1" 
+flags="0

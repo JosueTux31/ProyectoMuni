@@ -29,6 +29,7 @@ FUENTES = {
 }
 FUENTES_AGENTES = [k for k, v in FUENTES.items() if v["clase"] == "agentes"]
 FUENTES_DHCP = [k for k, v in FUENTES.items() if v["clase"] == "dhcp"]
+FUENTES_LOGS = [k for k, v in FUENTES.items() if v["clase"] == "logs"]
 
 # Tops que muestra el tablero de una importación o de un filtro
 TOPS_TABLERO = ["ip_origen", "ip_destino", "dominio", "regla_nombre", "categoria", "aplicacion", "puerto_destino",
@@ -422,8 +423,12 @@ def _ip(texto):
 
 
 def nombre_corto(nombre):
-    """'eacu-09.mgrecia.net' -> 'EACU-09' (para comparar nombres de equipo)."""
-    return (nombre or "").strip().split(".")[0].upper() or None
+    """Nombre de equipo para comparar: sin el dominio, en mayúscula y solo
+    letras y números. 'eacu-09.mgrecia.net' -> 'EACU09'; 'FILAS - KIOSCO'
+    -> 'FILASKIOSCO'. Así coinciden aunque uno lleve guion o espacios y el
+    otro no."""
+    corto = (nombre or "").strip().split(".")[0].upper()
+    return re.sub(r"[^A-Z0-9]", "", corto) or None
 
 
 def cobertura(id_agentes):
@@ -482,7 +487,7 @@ def cobertura(id_agentes):
     for d in inventario:
         ips = [_ip(x) for x in (d["ips"] or "").split(",") if x.strip()]
         macs = [x.strip().upper() for x in (d["macs"] or "").split(",") if x.strip()]
-        nombre = d["nombre_corto"]
+        nombre = nombre_corto(d["nombre_equipo"])
         por_m = unicos(por_mac.get(m, []) for m in macs)
         por_i = unicos(por_ip.get(ip, []) for ip in ips)
         por_n = unicos([por_nombre.get(nombre, [])]) if nombre else []
@@ -634,7 +639,7 @@ def intrusos(id_dhcp, id_agentes=None):
         for ip in d["_ips"]:
             if ip not in por_ip or (d["activo"] and not por_ip[ip]["activo"]):
                 por_ip[ip] = d
-        n = d["nombre_corto"]
+        n = nombre_corto(d["nombre_equipo"])
         if n and (n not in por_nombre or (d["activo"] and not por_nombre[n]["activo"])):
             por_nombre[n] = d
 
@@ -687,7 +692,7 @@ def intrusos(id_dhcp, id_agentes=None):
             pistas.append("ip_de_otro")
         if macs_antes is not None and mac and mac not in macs_antes and not d:
             pistas.append("nueva")
-        if d and d["nombre_corto"] and corto and nombre_corto(corto) != d["nombre_corto"]:
+        if d and nombre_corto(d["nombre_equipo"]) and corto and nombre_corto(corto) != nombre_corto(d["nombre_equipo"]):
             pistas.append("nombre_distinto")
         if not mac:
             estado = "sin_mac"
@@ -738,4 +743,95 @@ def intrusos(id_dhcp, id_agentes=None):
         },
         "concesiones": concesiones,
         "no_vistos": no_vistos,
+    }
+
+
+# --------------------------------------------------------------- un equipo en la red
+def _solo_ipv4(ips):
+    salida = []
+    for ip in ips:
+        try:
+            if ipaddress.ip_address(ip).version == 4:
+                salida.append(ip)
+        except ValueError:
+            pass
+    return salida
+
+
+def visto_en_red(id_disp):
+    """Dónde aparece un equipo del inventario en lo que se ha importado:
+      dhcp     la última lista del DHCP: sus concesiones o reservas, por su MAC
+               o por su nombre en la red (una MAC que no tiene registrada)
+      agentes  el último listado de Microclaudia: el equipo con el agente, por
+               MAC, por nombre o solo por la IP (puede ser otro equipo)
+      sophos   su tráfico en los logs de Sophos (por sus IP y MAC)
+    Devuelve None si el equipo no existe."""
+    filas, _ = llamar_sp("sp_equiposMuni_obtener", [id_disp])
+    if not filas:
+        return None
+    d = filas[0]
+    ips = [_ip(x) for x in (d["ips"] or "").split(",") if x.strip()]
+    macs = [x.strip().upper() for x in (d["macs"] or "").split(",") if x.strip()]
+    nombre = nombre_corto(d["nombre_equipo"])
+
+    imp_dhcp = ultima_importacion(FUENTES_DHCP[0])
+    concesiones = []
+    if imp_dhcp:
+        for f in llamar_sp("sp_log_dhcp_listar", [imp_dhcp["id_importacion"]])[0]:
+            mac = (f["mac"] or "").upper() or None
+            por = "MAC" if mac and mac in macs else "nombre" if nombre and nombre_corto(f["nombre"]) == nombre else None
+            if por:
+                concesiones.append({
+                    "id_evento": f["id_evento"], "ip": _ip(f["ip"]), "mac": mac, "nombre": f["nombre"], "tipo": f["tipo"],
+                    "presente": f["tipo"] in PRESENTES, "expira": f["expira"], "descripcion": f["descripcion"], "por": por,
+                    "mac_registrada": bool(mac and mac in macs), "ip_registrada": _ip(f["ip"]) in ips, "mac_de": None,
+                })
+    # Una concesión que coincide solo por el nombre puede traer la MAC de otro
+    # equipo del inventario: entonces no se ofrece agregarla a este
+    if any(c["por"] == "nombre" and c["mac"] for c in concesiones):
+        de_otro = {}
+        for x in llamar_sp("sp_log_red_inventario", [])[0]:
+            if x["id_disp"] != d["id_disp"]:
+                for m in (x["macs"] or "").split(","):
+                    if m.strip():
+                        de_otro[m.strip().upper()] = {"id_disp": x["id_disp"], "equipo": x["equipo"], "activo": bool(x["activo"])}
+        for c in concesiones:
+            if c["por"] == "nombre" and c["mac"]:
+                c["mac_de"] = de_otro.get(c["mac"])
+
+    imp_agentes = ultima_importacion(FUENTES_AGENTES[0])
+    agentes = []
+    if imp_agentes:
+        for a in llamar_sp("sp_log_agentes_listar", [imp_agentes["id_importacion"]])[0]:
+            a_macs = [x for x in (a["macs"] or "").split(",") if x]
+            a_ips = [_ip(x) for x in (a["ips"] or "").split(",") if x and not x.startswith(RED_VIRTUALBOX)]
+            por = ("MAC" if set(a_macs) & set(macs)
+                   else "nombre" if nombre and nombre_corto(a["nombre_equipo"]) == nombre
+                   else "IP" if set(a_ips) & set(ips) else None)
+            if por:
+                agentes.append({
+                    "id_evento": a["id_evento"], "nombre": a["nombre_equipo"], "sistema": a["sistema_operativo"],
+                    "version": a["version_agente"], "ultima_conexion": a["ultima_conexion"], "por": por,
+                    "ip": a["ip_principal"], "mac": a["mac_principal"], "ips": a_ips, "macs": a_macs,
+                })
+        orden = {"MAC": 0, "nombre": 1, "IP": 2}
+        agentes.sort(key=lambda x: (orden[x["por"]], -(x["ultima_conexion"].timestamp() if x["ultima_conexion"] else 0)))
+
+    # Tráfico en los logs de Sophos (solo IPv4: así vienen en los logs)
+    sophos = None
+    partes = [f"ip == {ip}" for ip in _solo_ipv4(ips)] + [f"mac == {m}" for m in macs]
+    if partes:
+        texto = f"fuente == sophos and ({' or '.join(partes)})"
+        where, _ = armar_filtro(texto)
+        resumen = llamar_sp("sp_log_eventos_resumen", [where])[0][0]
+        sophos = {"filtro": texto, **{k: resumen.get(k) for k in (
+            "total", "permitidos", "denegados", "dominios", "importaciones", "desde", "hasta")}}
+
+    return {
+        "equipo": {"id_disp": d["id_disp"], "nombre_equipo": d["nombre_equipo"], "ips": ips, "macs": macs,
+                   "lleva_agente": bool(d["lleva_agente"]), "categoria": d["categoria"]},
+        "dhcp": {"importacion": imp_dhcp, "concesiones": concesiones},
+        "agentes": {"importacion": imp_agentes, "equipos": agentes},
+        "sophos": sophos,
+        "hay_logs": any(ultima_importacion(f) for f in FUENTES_LOGS),
     }
