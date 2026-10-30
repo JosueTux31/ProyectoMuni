@@ -29,6 +29,13 @@ urlpatterns = [
     path(DISPOSITIVO + "historial/",
          v.DispositivoViewSet.as_view({"get": "historial"}), name="dispositivos-historial"),
 
+    # Puertos de los switches: qué equipo está conectado a cada uno
+    path("switches/", v.PuertoSwitchViewSet.as_view({"get": "equipos"}), name="switches"),
+    path(DISPOSITIVO + "puertos/", v.PuertoSwitchViewSet.as_view({"get": "listar_puertos"}), name="puertos-lista"),
+    path(DISPOSITIVO + "puertos/<str:tipo_puerto>/<int:num_puerto>/",
+         v.PuertoSwitchViewSet.as_view({"put": "guardar", "delete": "liberar"}), name="puertos-detalle"),
+    path(DISPOSITIVO + "conexiones/", v.PuertoSwitchViewSet.as_view({"get": "conexiones"}), name="conexiones"),
+
     # Archivo de cada documento
     path(DOCUMENTO + "archivo/",
          v.DocumentoDispositivoViewSet.as_view({"get": "descargar"}), name="documentos-archivo"),

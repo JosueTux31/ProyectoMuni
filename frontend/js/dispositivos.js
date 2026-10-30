@@ -16,6 +16,7 @@ import { coordenadas, embebidoMaps, enlaceMaps, enlazarCampoMapa, validarMapaLoc
 import { feedAuditoria } from "./auditoria.js";
 import { abrirVisor, abrirVistaPrevia } from "./zoom.js";
 import { abrirEvento, descargarTexto, fechaLog, marcaArchivo, num, rangoFechas, rutaLogs, textoCsv } from "./logs_ui.js";
+import { conexionesHTML, pestanaPuertos, tienePuertos } from "./switch.js";
 
 const RECURSO = "dispositivos";
 const MAX_MB_DOCUMENTO = 1024;   // igual que MUNI_MAX_MB_DOCUMENTO_RED en settings.py
@@ -27,7 +28,7 @@ const EXT_BLOQUEADAS = [".html", ".htm", ".xhtml", ".svg", ".js", ".mjs", ".php"
 const normalizar = (s) => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 /* Categorías de equipo (códigos fijos de cat_categorias_dispositivos) */
-const CAT = { RED: 1, COMPUTO: 2, SERVIDOR: 3, MOVIL: 4, TELEFONIA: 5, IMPRESION: 6, PANTALLA: 7, ENERGIA: 8, VIDEO: 9, OTRO: 10 };
+export const CAT = { RED: 1, COMPUTO: 2, SERVIDOR: 3, MOVIL: 4, TELEFONIA: 5, IMPRESION: 6, PANTALLA: 7, ENERGIA: 8, VIDEO: 9, OTRO: 10 };
 const ICONO_CATEGORIA = {
   1: "red", 2: "escritorio", 3: "servidor", 4: "celular", 5: "telefono-ip", 6: "impresora", 7: "monitor", 8: "ups", 9: "cctv", 10: "equipo",
 };
@@ -52,14 +53,14 @@ export function iconoTipo(descripcion, idCategoria) {
   return ICONOS_TIPO.find(([patron]) => patron.test(n))?.[1] || ICONO_CATEGORIA[idCategoria] || "red";
 }
 
-const insigniaTipo = (d, tam = "") =>
+export const insigniaTipo = (d, tam = "") =>
   `<span class="insignia-tipo${tam ? ` insignia-tipo--${tam}` : ""}" aria-hidden="true">${icono(iconoTipo(d.tipo_dispositivo, d.id_categoria))}</span>`;
 
 /** Nombre del equipo: el modelo (ya incluye la marca) o la marca si no tiene modelo. */
 export const tituloDispositivo = (d) => d.modelo || d.marca || `Dispositivo ${d.id_disp}`;
 
 /** La marca solo se agrega si el modelo no la trae ya (CISCO ASA ya dice CISCO). */
-const marcaAparte = (d) => (d.modelo && !normalizar(d.modelo).startsWith(normalizar(d.marca)) ? d.marca : "");
+export const marcaAparte = (d) => (d.modelo && !normalizar(d.modelo).startsWith(normalizar(d.marca)) ? d.marca : "");
 
 const extension = (nombre) => (String(nombre).match(/\.[^.]+$/)?.[0] || "").toLowerCase();
 
@@ -317,6 +318,7 @@ function atajosRed(ctx) {
     ctx.esAdmin
       ? item("#/red/dispositivos/nuevo", "mas", "Registrar un equipo", "Laptop, impresora, celular, switch… con los datos de cada uno")
       : item("#/red/dispositivos", "red", "Buscar un equipo", "Por serie, placa, nombre en la red, responsable, IP o MAC"),
+    item("#/red/switches", "switch", "Switches y puertos", "Qué equipo está conectado a cada puerto"),
     item("#/red/edificios", "edificio", "Edificios", "Dónde están los equipos"),
     item("#/red/marcas", "etiqueta", "Marcas y modelos", "Por tipo de equipo"),
     item("#/red/catalogos/tipos-dispositivos", "equipo", "Tipos de equipo", "Cada uno en su categoría"),
@@ -378,7 +380,8 @@ const COLUMNAS_CSV = [
   ["Memoria RAM (GB)", (d) => d.memoria_gb], ["Almacenamiento (GB)", (d) => d.almacenamiento_gb],
   ["Tipo de disco", (d) => ALMACENAMIENTOS.find(([v]) => v === d.tipo_almacenamiento)?.[1] || d.tipo_almacenamiento],
   ["Pantalla (pulgadas)", (d) => decimal(d.pulgadas)], ["Resolución", (d) => d.resolucion],
-  ["Puertos Ethernet", (d) => d.cant_ptos_ethernet], ["Puertos SFP", (d) => d.cant_ptos_sfp], ["Canales de video", (d) => d.canales],
+  ["Puertos Ethernet", (d) => d.cant_ptos_ethernet], ["Puertos SFP", (d) => d.cant_ptos_sfp],
+  ["SFP combinados", (d) => (d.id_categoria === CAT.RED && d.cant_ptos_sfp ? (d.sfp_combo ? "Sí" : "No") : "")], ["Canales de video", (d) => d.canales],
   ["IMEI", (d) => d.imei], ["IMEI 2", (d) => d.imei2], ["Número de línea", (d) => d.numero_linea], ["Operador", (d) => d.operador],
   ["Extensión", (d) => d.extension], ["Tecnología de impresión", (d) => d.tecnologia_impresion],
   ["Imprime a color", (d) => (d.id_categoria === CAT.IMPRESION ? (d.a_color ? "Sí" : "No") : "")], ["Tóner o cartucho", (d) => d.consumible],
@@ -398,6 +401,12 @@ const COLUMNAS_CSV = [
   ["Documentos", (d) => d.cantidad_documentos || 0], ["Observaciones", (d) => d.observaciones],
   ["Estado", (d) => (d.activo ? "Activo" : "Inactivo")], ["Registrado", (d) => (d.creado_en ? String(d.creado_en).slice(0, 10) : "")],
 ];
+
+/** Todos los datos de un equipo que tienen valor: [[etiqueta, texto], ...] (los
+    mismos del CSV). Los usa el detalle del equipo conectado a un puerto. */
+export const datosCompletos = (d) => COLUMNAS_CSV
+  .map(([t, f]) => [t, f(d)])
+  .filter(([t, v]) => v !== null && v !== undefined && v !== "" && !(["Documentos", "Puertos Ethernet", "Puertos SFP"].includes(t) && !Number(v)));
 
 /** La lista de equipos (con los filtros aplicados) en un CSV para Excel. */
 const csvEquipos = (filas) => textoCsv([COLUMNAS_CSV.map(([t]) => t), ...filas.map((d) => COLUMNAS_CSV.map(([, f]) => f(d) ?? ""))]);
@@ -666,6 +675,10 @@ function seccionesDispositivo(base, proveedores, personal, valores = {}) {
       campos: [
         numero("cant_ptos_ethernet", "Puertos Ethernet", [CAT.RED, CAT.SERVIDOR, CAT.TELEFONIA, CAT.VIDEO], { minimo: 0, maximo: 9999, placeholder: "0" }),
         numero("cant_ptos_sfp", "Puertos SFP", [CAT.RED, CAT.SERVIDOR], { minimo: 0, maximo: 9999, placeholder: "0" }),
+        {
+          nombre: "sfp_combo", etiqueta: "SFP combinados (45F comparte número con 45T)", tipo: "checkbox", cats: [CAT.RED], completo: true,
+          ayuda: "Márquelo si los SFP comparten número con los últimos puertos de cobre, como el D-Link DGS-3120 (45F a 48F). Si no, los SFP siguen la numeración (49, 50…). Así se dibujan en la pestaña Puertos.",
+        },
         numero("canales", "Canales de video", [CAT.VIDEO], { maximo: 512, placeholder: "16" }),
       ],
     },
@@ -1121,7 +1134,7 @@ function tipoSugerido(tipos, texto) {
    extensión, responsable, IP, MAC, documentos ni observaciones. */
 const CAMPOS_COPIA = [
   "tipo_disp", "id_marca", "id_modelo", "id_os", "version_os", "procesador", "memoria_gb", "almacenamiento_gb", "tipo_almacenamiento",
-  "pulgadas", "resolucion", "cant_ptos_ethernet", "cant_ptos_sfp", "canales", "operador", "tecnologia_impresion", "a_color", "consumible",
+  "pulgadas", "resolucion", "cant_ptos_ethernet", "cant_ptos_sfp", "sfp_combo", "canales", "operador", "tecnologia_impresion", "a_color", "consumible",
   "capacidad_va", "autonomia_min", "id_predio", "ubicacion", "cod_departamento", "id_proveedor", "fecha_compra", "garantia_hasta",
 ];
 
@@ -1295,6 +1308,8 @@ export async function vistaDispositivoNuevo(cont, _params, ctx) {
 const PESTANAS = [
   { clave: "datos", titulo: "Datos generales", icono: "red" },
   { clave: "documentos", titulo: "Documentos", icono: "documento" },
+  // Switches y demás equipos de red con puertos: qué está conectado a cada uno
+  { clave: "puertos", titulo: "Puertos", icono: "switch", si: tienePuertos },
   // Lo importado en el módulo de logs (solo administradores, como ese módulo)
   { clave: "en-la-red", titulo: "En la red", icono: "web", soloAdmin: true },
   { clave: "historial", titulo: "Historial", icono: "historial", soloAdmin: true },
@@ -1310,7 +1325,7 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
   ctx.migas([{ texto: "Equipos", href: "#/red/dispositivos" }, { texto: `${titulo} · ${d.serie}` }]);
 
   const base = `#/red/dispositivos/${d.id_disp}`;
-  const pestanas = PESTANAS.filter((t) => !t.soloAdmin || ctx.esAdmin);
+  const pestanas = PESTANAS.filter((t) => (!t.soloAdmin || ctx.esAdmin) && (!t.si || t.si(d)));
   let actual = pestanas.find((t) => t.clave === pestanaInicial)?.clave || "datos";
   const recargar = (pestana = actual) => vistaDispositivo(cont, [String(d.id_disp), pestana], ctx);
   const marca = marcaAparte(d);
@@ -1334,6 +1349,7 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
           ${d.edificio ? `<span class="ficha__dato-icono">${icono("edificio", "ic--sm")}${esc(d.edificio)}</span>` : ""}
           ${d.ips ? `<span class="ficha__dato-icono dato-mono" title="Direcciones IP">${icono("web", "ic--sm")}${resumenDirecciones(d.ips)}</span>` : ""}
           ${d.macs ? `<span class="ficha__dato-icono dato-mono" title="Direcciones MAC">${icono("puertos", "ic--sm")}${resumenDirecciones(d.macs, formatearMac)}</span>` : ""}
+          <span class="ficha__conexiones" data-conexiones></span>
         </div>
       </div>
       <div class="ficha__acciones">
@@ -1350,6 +1366,11 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
     <div id="panel-pestana" role="tabpanel"></div>`;
 
   cont.querySelector("[data-estado]")?.addEventListener("click", () => cambiarEstado(d, () => recargar()));
+  // A qué switch y puerto está conectado (si se registró en la pestaña Puertos del switch)
+  conexionesHTML(d.id_disp).then((html) => {
+    const caja = cont.querySelector("[data-conexiones]");
+    if (caja && ctx.vigente()) caja.innerHTML = html;
+  }).catch(() => {});
 
   const panel = cont.querySelector("#panel-pestana");
   async function mostrar(clave) {
@@ -1371,6 +1392,7 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
     try {
       if (clave === "datos") await pestanaDatos(caja, d, ctx, recargar);
       else if (clave === "documentos") await pestanaDocumentos(caja, d, ctx, recargar);
+      else if (clave === "puertos") await pestanaPuertos(caja, d, ctx);
       else if (clave === "en-la-red") await pestanaEnLaRed(caja, d, ctx, recargar);
       else if (clave === "historial") await pestanaHistorial(caja, d);
     } catch (e) {

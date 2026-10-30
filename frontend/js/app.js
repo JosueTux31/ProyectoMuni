@@ -14,6 +14,7 @@ import { feedAuditoria, vistaAuditoria } from "./auditoria.js";
 import {
   vistaDispositivo, vistaDispositivoNuevo, vistaDispositivos, vistaEdificios, vistaInicioRed, vistaMarcas,
 } from "./dispositivos.js";
+import { vistaSwitches } from "./switch.js";
 import {
   vistaCamposLogs, vistaCobertura, vistaComparar, vistaEventos, vistaImportacion, vistaImportaciones, vistaImportarDhcp,
   vistaImportarMicroclaudia, vistaImportarSophos, vistaInicioLogs, vistaIntrusos, vistaInventarioLogs, vistaTablero,
@@ -192,6 +193,7 @@ const RUTAS = [
   { patron: /^red\/dispositivos$/, vista: vistaDispositivos },
   { patron: /^red\/dispositivos\/nuevo$/, vista: vistaDispositivoNuevo, soloAdmin: true },
   { patron: /^red\/dispositivos\/(\d+)(?:\/([\w-]+))?$/, vista: vistaDispositivo },
+  { patron: /^red\/switches$/, vista: vistaSwitches },
   { patron: /^red\/marcas$/, vista: vistaMarcas },
   { patron: /^red\/edificios$/, vista: vistaEdificios },
   { patron: /^red\/catalogos\/([\w-]+)$/, vista: (cont, params, ctx) => vistaCatalogo(cont, params, ctx, "red") },

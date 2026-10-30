@@ -129,7 +129,7 @@ CAMPOS_DISPOSITIVO = (
     "tecnologia_impresion", "a_color", "consumible", "pulgadas", "resolucion",
     "capacidad_va", "autonomia_min", "canales",
     "id_predio", "ubicacion", "cod_departamento", "id_asignado", "id_proveedor",
-    "fecha_compra", "garantia_hasta", "observaciones", "tiene_microclaudia",
+    "fecha_compra", "garantia_hasta", "observaciones", "tiene_microclaudia", "sfp_combo",
     "ips", "macs",
 )
 DIRECCIONES = ("ips", "macs")
@@ -169,6 +169,9 @@ class DispositivoViewSet(SPViewSet):
     - "tiene_microclaudia": el check de la licencia de Microclaudia, que marca
       el administrador. Si no se manda (o va en null) se conserva el que tenía;
       PATCH {"tiene_microclaudia": true} cambia solo el check.
+    - "sfp_combo" (switches): los SFP comparten número con los últimos puertos
+      de cobre (45F = 45T, como el D-Link DGS-3120). Igual que el anterior:
+      sin mandar se conserva. Los puertos están en /dispositivos/<id>/puertos/.
     - DELETE desactiva. POST /<id>/activar/ lo activa de nuevo.
       DELETE /<id>/eliminar-fisico/ lo borra con sus documentos y archivos.
     - GET /<id>/historial/ (solo administradores): quién lo registró y
@@ -181,7 +184,7 @@ class DispositivoViewSet(SPViewSet):
     filtros_listar = ("activo", "id_categoria", "tipo_disp", "id_marca", "id_predio", "cod_departamento",
                       "id_asignado", "id_proveedor", "buscar")
     insertar_devuelve_codigo = True
-    campos_bool = ("activo", "a_color", "lleva_agente", "tiene_microclaudia")
+    campos_bool = ("activo", "a_color", "lleva_agente", "tiene_microclaudia", "sfp_combo")
 
     serializer_class = s.DispositivoSerializer
     serializer_filtros_class = s.DispositivoFiltrosSerializer
@@ -233,6 +236,105 @@ class DispositivoViewSet(SPViewSet):
             "resultados": [formatear(x) for x in filas[:limite]],
             "hay_mas": len(filas) > limite,
         })
+
+
+# =====================================================================
+# Puertos de los switches: qué equipo está conectado a cada uno
+# =====================================================================
+BOOL_PUERTOS = ("activo", "sfp_combo", "fuera_de_rango", "switch_activo")
+CATEGORIA_RED = 1
+
+
+def _bools(filas):
+    for f in filas:
+        for c in BOOL_PUERTOS:
+            if f.get(c) is not None:
+                f[c] = bool(f[c])
+    return filas
+
+
+def _puertos_de(id_switch=None):
+    filas, _ = llamar_sp("sp_red_puertos_switch_listar", [id_switch])
+    return _bools(filas)
+
+
+class PuertoSwitchViewSet(SPViewSet):
+    """Puertos de los switches y demás equipos de red con puertos
+    (sp_red_puertos_switch_*). Solo se guardan los puertos con algún dato;
+    los demás están libres. Consultar: cualquier usuario con sesión;
+    asignar y liberar: solo administradores.
+
+    - GET    /dispositivos/switches/?activo=true   equipos de red con puertos,
+             cada uno con sus puertos ("puertos")
+    - GET    /dispositivos/<id>/puertos/            el switch y sus puertos
+    - PUT    /dispositivos/<id>/puertos/<T|F>/<n>/  {"id_disp", "estado", "vlan", "nota"}
+             T = cobre (1..puertos Ethernet), F = SFP (1..puertos SFP). Con
+             equipo el puerto queda EN_USO. Devuelve el switch y sus puertos.
+    - DELETE /dispositivos/<id>/puertos/<T|F>/<n>/  libera el puerto (ídem)
+    - GET    /dispositivos/<id>/conexiones/         dónde está conectado un equipo
+    Cada puerto trae "rotulo" (12, 45T, 45F, 49: según sfp_combo del switch),
+    el equipo conectado (serie, tipo, marca, modelo, nombre en la red, IP,
+    MAC, persona asignada, edificio...) y "fuera_de_rango" si el switch ya
+    no tiene ese puerto (se le bajó la cantidad).
+    """
+    sp = "sp_equiposMuni"
+    campos_pk = ("id_disp",)
+    campos_bool = ("activo", "a_color", "lleva_agente", "tiene_microclaudia", "sfp_combo")
+
+    def _switch(self, id_disp):
+        sw = self.salida(self._obtener([id_disp]))
+        sw["tiene_puertos"] = sw.get("id_categoria") == CATEGORIA_RED and (
+            (sw.get("cant_ptos_ethernet") or 0) + (sw.get("cant_ptos_sfp") or 0)) > 0
+        return sw
+
+    def _respuesta(self, id_disp):
+        return Response({"switch": self._switch(id_disp), "puertos": _puertos_de(id_disp)})
+
+    @staticmethod
+    def _tipo(tipo_puerto):
+        tipo = (tipo_puerto or "").upper()
+        if tipo not in ("T", "F"):
+            raise NotFound("El tipo de puerto debe ser T (cobre) o F (SFP).")
+        return tipo
+
+    # GET /dispositivos/switches/
+    def equipos(self, request):
+        f = self._validar(s.SwitchesFiltrosSerializer, request.query_params)
+        equipos, _ = llamar_sp("sp_red_puertos_switch_equipos", [f.get("activo")])
+        _bools(equipos)
+        por_switch = {}
+        for p in _puertos_de(None):
+            por_switch.setdefault(p["id_switch"], []).append(p)
+        for e in equipos:
+            e["puertos"] = por_switch.get(e["id_disp"], [])
+        return Response(equipos)
+
+    # GET /dispositivos/<id>/puertos/
+    def listar_puertos(self, request, id_disp):
+        return self._respuesta(id_disp)
+
+    # PUT /dispositivos/<id>/puertos/<T|F>/<n>/
+    def guardar(self, request, id_disp, tipo_puerto, num_puerto):
+        tipo = self._tipo(tipo_puerto)
+        self._obtener([id_disp])   # 404 si el switch no existe
+        datos = self._validar(s.PuertoSerializer, request.data)
+        llamar_sp("sp_red_puertos_switch_guardar", [
+            id_disp, tipo, num_puerto, datos.get("id_disp"), datos.get("estado"), datos.get("vlan"), datos.get("nota"),
+        ])
+        return self._respuesta(id_disp)
+
+    # DELETE /dispositivos/<id>/puertos/<T|F>/<n>/
+    def liberar(self, request, id_disp, tipo_puerto, num_puerto):
+        tipo = self._tipo(tipo_puerto)
+        self._obtener([id_disp])
+        llamar_sp("sp_red_puertos_switch_eliminar", [id_disp, tipo, num_puerto])
+        return self._respuesta(id_disp)
+
+    # GET /dispositivos/<id>/conexiones/
+    def conexiones(self, request, id_disp):
+        self._obtener([id_disp])
+        filas, _ = llamar_sp("sp_red_puertos_switch_de_equipo", [id_disp])
+        return Response(_bools(filas))
 
 
 # =====================================================================

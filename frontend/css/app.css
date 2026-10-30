@@ -1830,3 +1830,184 @@ button.cifra { font: inherit; text-align: left; cursor: pointer; }
 }
 .cobertura-controles--tres .campo { flex-basis: 260px; }
 .cobertura-controles--tres .campo:first-child { flex-basis: 380px; flex-grow: 2; }
+
+/* =====================================================================
+   Switches: frente con sus puertos, tooltip y detalle del puerto
+   ===================================================================== */
+.switch-envoltura { overflow-x: auto; padding: 4px 2px 8px; }
+.switch-envoltura:focus { outline: none; }
+.switch-desliza { display: flex; align-items: center; gap: 4px; margin: 2px 0 0; font-size: 12.5px; color: var(--tinta-3); }
+.switch-desliza[hidden] { display: none; }
+
+.frente {
+  display: inline-flex; align-items: stretch; gap: 12px; min-width: max-content; padding: 10px;
+  border-radius: 6px; border: 1px solid #1d1f22; color: #e8eaed;
+  background: linear-gradient(180deg, #5a5e62 0%, #3d4145 16%, #2f3236 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), inset 0 -2px 0 rgba(0, 0, 0, .35), 0 2px 8px rgba(23, 32, 28, .22);
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.frente__oreja {
+  width: 14px; flex: none; border-radius: 3px;
+  background: radial-gradient(circle at 50% 22%, #26292c 3px, transparent 3.6px),
+              radial-gradient(circle at 50% 78%, #26292c 3px, transparent 3.6px),
+              linear-gradient(90deg, #8b9095, #cfd3d6 50%, #8b9095);
+}
+.frente__marca {
+  width: 96px; flex: none; display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  padding-right: 10px; border-right: 1px solid rgba(255, 255, 255, .14);
+}
+.frente__marca strong { font-size: 17px; font-style: italic; font-weight: 800; letter-spacing: .01em; color: #fff; line-height: 1.1; }
+.frente__marca span { font-size: 11px; font-weight: 700; color: #cfd3d6; line-height: 1.2; overflow-wrap: anywhere; }
+.frente__marca small { font-size: 10.5px; color: #a2a8ad; font-family: ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+.frente__leds { display: flex !important; align-items: center; gap: 4px; margin-top: 4px; font-size: 9.5px !important; color: #a2a8ad !important; }
+.frente__led { width: 6px; height: 6px; border-radius: 50%; background: #5b6064; display: inline-block; }
+.frente__led--on { background: #4ade70; box-shadow: 0 0 5px #4ade70; }
+.frente__puertos { display: flex; align-items: center; gap: 14px; }
+.frente__grupo { display: flex; gap: 9px; }
+.frente__bloque { display: flex; gap: 3px; padding: 3px 5px; border-radius: 4px; background: rgba(0, 0, 0, .25); box-shadow: inset 0 1px 3px rgba(0, 0, 0, .55); }
+.frente__col { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.frente__num { min-width: 26px; height: 12px; font-size: 10px; line-height: 12px; font-weight: 700; text-align: center; color: #f1f3f4; font-variant-numeric: tabular-nums; }
+.frente__num--combo { color: #f7c948; }
+
+/* Un puerto: marco metálico y la boca del RJ45 (o la jaula del SFP) del color de su estado */
+.puerto--libre { --hueco: #0e1012; --ic: #fff; }
+.puerto--en-uso { --hueco: linear-gradient(180deg, #74e283, #2b9a43); --ic: #fff; }
+.puerto--revisar { --hueco: linear-gradient(180deg, #ffc857, #e2850b); --ic: #3d2600; }
+.puerto--danado { --hueco: linear-gradient(180deg, #ff7a7a, #c92a2a); --ic: #fff; }
+.puerto--deshabilitado { --hueco: repeating-linear-gradient(45deg, #646a70 0 3px, #41454a 3px 6px); --ic: #fff; }
+.puerto {
+  position: relative; width: 26px; height: 22px; padding: 0; border: 0; border-radius: 2px; cursor: pointer;
+  display: grid; place-items: center; background: linear-gradient(180deg, #c8ccd0, #8d9298);
+  transition: transform .08s, filter .08s;
+}
+.puerto::before { content: ""; position: absolute; inset: 2px; background: var(--hueco); }
+.puerto--rj45.puerto--arriba::before { clip-path: polygon(0 32%, 26% 32%, 26% 0, 74% 0, 74% 32%, 100% 32%, 100% 100%, 0 100%); }
+.puerto--rj45.puerto--abajo::before { clip-path: polygon(0 0, 100% 0, 100% 68%, 74% 68%, 74% 100%, 26% 100%, 26% 68%, 0 68%); }
+.puerto--sfp { width: 28px; height: 20px; border-radius: 1px; background: linear-gradient(180deg, #dfe2e5, #9ea3a8); }
+.puerto--sfp::before { inset: 3px 3px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .35); }
+.puerto__ic { position: relative; z-index: 1; width: 12px; height: 12px; color: var(--ic); filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .35)); }
+.puerto--arriba .puerto__ic { margin-top: 5px; }
+.puerto--abajo .puerto__ic { margin-bottom: 5px; }
+.puerto--vacio { visibility: hidden; cursor: default; }
+.puerto[data-puerto]:hover { filter: brightness(1.18); transform: translateY(-1px); }
+.puerto[data-puerto]:focus-visible { outline: 2px solid #ffd43b; outline-offset: 2px; z-index: 2; }
+.puerto--elegido { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #ffd43b, 0 0 12px rgba(255, 212, 59, .75); z-index: 2; }
+
+.leyenda-puertos { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; margin: 10px 0 0; padding: 0; font-size: 13px; color: var(--tinta-2); }
+.leyenda-puertos li { display: inline-flex; align-items: flex-start; gap: 6px; }
+.leyenda-puertos__color { margin-top: 3px; flex: none; }
+.leyenda-puertos b { color: var(--tinta); }
+.leyenda-puertos--cero { opacity: .55; }
+.leyenda-puertos__color { width: 18px; height: 13px; border-radius: 2px; background: var(--hueco); box-shadow: 0 0 0 1px rgba(0, 0, 0, .3); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+.tooltip-puerto {
+  position: fixed; z-index: 1000; max-width: 320px; padding: 10px 12px; border-radius: var(--r-md);
+  background: #17201c; color: #eef3f0; font-size: 13px; line-height: 1.4; pointer-events: none;
+  box-shadow: 0 10px 28px rgba(15, 42, 32, .3);
+}
+.tooltip-puerto[hidden] { display: none; }
+.tooltip-puerto p { display: flex; gap: 6px; align-items: flex-start; margin: 3px 0 0; overflow-wrap: anywhere; }
+.tooltip-puerto .ic { flex: none; margin-top: 2px; color: #9fd3b4; }
+.tooltip-puerto__cab { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, .14); }
+.tooltip-puerto__vlan { padding: 0 7px; border-radius: 10px; background: rgba(255, 255, 255, .14); font-size: 12px; font-weight: 700; }
+.tooltip-puerto__aviso { color: #ffd27a; }
+.tooltip-puerto__aviso .ic { color: #ffd27a; }
+.tooltip-puerto__vacio { color: #c7d0cb; }
+.tooltip-puerto__pie { color: #9aa8a1; font-size: 12px; margin-top: 7px !important; }
+
+.estado-puerto { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; }
+.estado-puerto--en-uso { background: #d3f4da; color: #1b6e2c; }
+.estado-puerto--revisar { background: var(--ocre-100); color: #6b4a0b; }
+.estado-puerto--danado { background: var(--rojo-100); color: var(--rojo-700); }
+.estado-puerto--deshabilitado { background: #e6e9eb; color: #495057; }
+.estado-puerto--libre { background: #eceeed; color: var(--tinta-3); }
+
+.detalle-puerto { margin-top: 16px; scroll-margin-top: 16px; }
+.detalle-puerto:empty { display: none; }
+.panel--puerto { border-top: 4px solid var(--verde-700); }
+.detalle-puerto__titulo { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.detalle-puerto__titulo h3 { font-size: 16px; }
+.detalle-puerto__titulo p { margin-top: 3px; font-size: 13.5px; color: var(--tinta-3); }
+.detalle-puerto__puerto {
+  flex: none; min-width: 46px; height: 34px; padding: 0 6px; border-radius: 6px; display: grid; place-items: center;
+  background: var(--hueco); color: #fff; font-weight: 800; text-shadow: 0 1px 2px rgba(0, 0, 0, .45);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .15); -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.detalle-puerto__acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.panel--puerto > .panel__cabeza { position: relative; padding-right: 60px; }
+.detalle-puerto__cerrar { position: absolute; top: 12px; right: 12px; }
+.equipo-puerto { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.equipo-puerto .secundario { display: block; }
+.equipo-puerto + .aviso, .panel--puerto .aviso + .aviso, .panel--puerto .aviso + .lista-datos { margin-top: 12px; }
+.panel--puerto .aviso + .lista-datos, .equipo-puerto + .lista-datos { margin-top: 4px; }
+.lista-datos--puerto { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.lista-datos--puerto dd { overflow-wrap: anywhere; }
+
+.form-puerto { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; }
+.form-puerto__aviso, .form-puerto__botones { grid-column: 1 / -1; }
+.form-puerto__botones { display: flex; flex-wrap: wrap; gap: 10px; }
+.elegir-equipo__elegido { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--linea); border-radius: var(--r-md); background: var(--verde-50); }
+.elegir-equipo__elegido > span:not(.insignia-tipo) { flex: 1; min-width: 0; }
+.elegir-equipo__elegido small, .elegir-equipo__resultados small { display: block; color: var(--tinta-3); font-size: 12.5px; overflow-wrap: anywhere; }
+.elegir-equipo__resultados { list-style: none; margin: 6px 0 0; padding: 0; max-height: 300px; overflow: auto; border: 1px solid var(--linea); border-radius: var(--r-md); }
+.elegir-equipo__resultados:empty { display: none; }
+.elegir-equipo__resultados button {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-bottom: 1px solid var(--linea-2);
+  background: none; font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.elegir-equipo__resultados li:last-child button { border-bottom: 0; }
+.elegir-equipo__resultados button:hover, .elegir-equipo__resultados button:focus-visible { background: var(--verde-50); outline: none; box-shadow: inset 3px 0 0 var(--verde-700); }
+.elegir-equipo__nada { padding: 10px; color: var(--tinta-3); }
+/* Lista de todos los equipos para asignar a un puerto */
+.elegir-equipo__filtros { display: flex; flex-wrap: wrap; gap: 10px; }
+.elegir-equipo__filtros .buscador { flex: 1 1 280px; }
+.elegir-equipo__filtros select { flex: 0 1 260px; }
+.elegir-equipo__vista { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.elegir-equipo__total { margin: 8px 0 0; font-size: 13px; color: var(--tinta-3); }
+.elegir-equipo__resultados--todos { max-height: 360px; }
+.elegir-equipo__grupo {
+  position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; padding: 5px 10px;
+  background: var(--papel); border-bottom: 1px solid var(--linea-2); font-size: 12px; font-weight: 700; color: var(--tinta-2);
+  text-transform: uppercase; letter-spacing: .03em;
+}
+.elegir-equipo__grupo span { color: var(--tinta-3); }
+.elegir-equipo__resultados button > span:not(.insignia-tipo):not(.elegir-equipo__conectado):not(.elegir-equipo__libre) { flex: 1; min-width: 0; }
+.elegir-equipo__resultados button[aria-current="true"] { background: var(--verde-50); box-shadow: inset 3px 0 0 var(--verde-700); }
+.elegir-equipo__libre, .elegir-equipo__conectado {
+  flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+.elegir-equipo__libre { background: #d3f4da; color: #1b6e2c; }
+.elegir-equipo__conectado { background: var(--ocre-100); color: #6b4a0b; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+.elegir-equipo__elegido .btn { flex: none; }
+.elegir-equipo__otro { display: flex !important; align-items: center; gap: 4px; color: #6b4a0b !important; }
+
+
+.tarjeta-switch + .tarjeta-switch { margin-top: 20px; }
+.tarjeta-switch h2 a { color: inherit; }
+.tarjeta-switch .panel__cabeza p { font-size: 13.5px; }
+.tarjeta-switch .panel__cabeza p .ic { vertical-align: -2px; }
+.tarjeta-switch--baja .frente { filter: grayscale(.6); }
+.filtros-switches { margin-bottom: 16px; }
+.filtros-switches .filtros { border-bottom: 0; }
+.filtros .campo--interruptor { width: auto; align-self: center; padding-top: 18px; }
+.ficha__conexiones { display: contents; }
+
+@media (max-width: 1100px) {
+  .lista-datos--puerto { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .lista-datos--puerto, .form-puerto { grid-template-columns: minmax(0, 1fr); }
+  .elegir-equipo__filtros select { flex-basis: 100%; }
+  .elegir-equipo__elegido { flex-wrap: wrap; }
+  .elegir-equipo__resultados button { flex-wrap: wrap; }
+  .elegir-equipo__conectado { max-width: 100%; margin-left: 46px; }
+  .elegir-equipo__libre { margin-left: 46px; }
+  .detalle-puerto__titulo { align-items: flex-start; }
+  .filtros .campo--interruptor { padding-top: 0; }
+}
+@media print {
+  .tooltip-puerto, .switch-desliza, .detalle-puerto__acciones, .form-puerto { display: none !important; }
+  .switch-envoltura { overflow: visible !important; }
+  .frente { zoom: .8; }
+  .tarjeta-switch { break-inside: avoid; }
+}

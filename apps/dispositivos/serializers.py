@@ -236,6 +236,8 @@ class DispositivoSerializer(serializers.Serializer):
     observaciones = serializers.CharField(max_length=500, **TEXTO_OPCIONAL)
     # Licencia de Microclaudia (la marca el administrador). Sin mandar = no cambia
     tiene_microclaudia = serializers.BooleanField(**OPCIONAL)
+    # Switches: los SFP comparten número con los últimos de cobre (45F = 45T). Sin mandar = no cambia
+    sfp_combo = serializers.BooleanField(**OPCIONAL)
     # Todas las IP y MAC del dispositivo; se guardan junto con él. Si no
     # vienen (o vienen en null) no se tocan las que ya tiene.
     ips = serializers.ListField(child=serializers.DictField(), required=False, allow_null=True)
@@ -376,3 +378,43 @@ class DocumentoSerializer(serializers.Serializer):
 
 class DocumentoFiltrosSerializer(serializers.Serializer):
     id_doc = serializers.IntegerField(**OPCIONAL)
+
+
+# ------------------------------------------------------------ puertos de los switches
+ESTADOS_PUERTO = ("EN_USO", "LIBRE", "DESHABILITADO", "DANADO")
+_VLAN = re.compile(r"^\d{1,4}([,-]\d{1,4})*$")
+
+
+class PuertoSerializer(serializers.Serializer):
+    """Un puerto de un switch: el equipo conectado (id_disp), el estado, la
+    VLAN y una nota. Con equipo el puerto queda EN_USO."""
+    id_disp = serializers.IntegerField(**OPCIONAL)
+    estado = serializers.CharField(max_length=15, **TEXTO_OPCIONAL)
+    vlan = serializers.CharField(max_length=30, **TEXTO_OPCIONAL)
+    nota = serializers.CharField(max_length=255, **TEXTO_OPCIONAL)
+
+    def validate_estado(self, valor):
+        valor = _texto_o_nulo(valor)
+        if valor is None:
+            return None
+        valor = valor.upper().replace(" ", "_").replace("Ñ", "N")
+        if valor not in ESTADOS_PUERTO:
+            raise serializers.ValidationError("El estado debe ser en uso, libre, deshabilitado o dañado.")
+        return valor
+
+    def validate_vlan(self, valor):
+        valor = (_texto_o_nulo(valor) or "").replace(" ", "")
+        if not valor:
+            return None
+        if not _VLAN.match(valor):
+            raise serializers.ValidationError("Escriba un número (10), una lista (10,20) o un rango (1-100).")
+        if any(not 1 <= int(n) <= 4094 for n in re.split(r"[,-]", valor)):
+            raise serializers.ValidationError("Las VLAN van de 1 a 4094.")
+        return valor
+
+    def validate_nota(self, valor):
+        return _texto_o_nulo(valor)
+
+
+class SwitchesFiltrosSerializer(serializers.Serializer):
+    activo = serializers.BooleanField(required=False, allow_null=True, default=True)

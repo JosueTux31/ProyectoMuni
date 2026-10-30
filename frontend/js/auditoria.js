@@ -32,6 +32,7 @@ const TABLAS = {
   red_ips_dispositivos: { art: "la", nom: "dirección IP", grupo: "Equipos municipales", filtro: "Direcciones IP", anterior: true },
   red_macs_dispositivos: { art: "la", nom: "dirección MAC", grupo: "Equipos municipales", filtro: "Direcciones MAC" },
   red_documentos_dispositivos: { art: "el", nom: "documento", grupo: "Equipos municipales", filtro: "Documentos de dispositivos" },
+  red_puertos_switch: { art: "el", nom: "puerto de switch", grupo: "Equipos municipales", filtro: "Puertos de switches" },
   cat_edificios: { art: "el", nom: "edificio", grupo: "Equipos municipales", filtro: "Edificios" },
   cat_marcas: { art: "la", nom: "marca", grupo: "Equipos municipales", filtro: "Marcas" },
   cat_modelos: { art: "el", nom: "modelo", grupo: "Equipos municipales", filtro: "Modelos" },
@@ -73,7 +74,8 @@ const ETIQUETAS = {
   pulgadas: "Pulgadas", resolucion: "Resolución", capacidad_va: "Capacidad (VA)", autonomia_min: "Autonomía (minutos)",
   canales: "Canales de video", id_asignado: "Funcionario responsable", fecha_compra: "Fecha de compra",
   garantia_hasta: "Garantía hasta", observaciones: "Observaciones", tiene_microclaudia: "Tiene Microclaudia",
-  cant_ptos_ethernet: "Puertos Ethernet", cant_ptos_sfp: "Puertos SFP", id_os: "Sistema operativo",
+  cant_ptos_ethernet: "Puertos Ethernet", cant_ptos_sfp: "Puertos SFP", sfp_combo: "SFP combinados", id_os: "Sistema operativo",
+  id_switch: "Switch (N.º)", tipo_puerto: "Tipo de puerto", num_puerto: "Puerto", id_disp: "Equipo conectado (N.º)", vlan: "VLAN", nota: "Nota",
   gps: "Coordenadas", id_predio: "Edificio", id_edificio: "Edificio", ubicacion: "Ubicación en el edificio",
   id_proveedor: "Proveedor", direccion_ip: "Dirección IP", direccion_mac: "Dirección MAC", interfaz: "Interfaz",
   id_doc: "Tipo de documento", path_docs: "Archivo",
@@ -94,7 +96,8 @@ const CAMPO_CATALOGO = {
   id_categoria: "categorias-dispositivos",
   id_predio: "edificios", id_edificio: "edificios",
 };
-const BOOLEANOS = new Set(["activo", "es_whatsapp", "es_proveedor", "a_color", "tiene_microclaudia"]);
+const BOOLEANOS = new Set(["activo", "es_whatsapp", "es_proveedor", "a_color", "tiene_microclaudia", "sfp_combo"]);
+const ESTADOS_PUERTO = { EN_USO: "En uso", LIBRE: "Libre", DESHABILITADO: "Deshabilitado", DANADO: "Dañado" };
 const OCULTOS = new Set(["id", "id_usuario", "num_linea", "id_disp"]);
 
 /** AABBCCDDEEFF (o AA:BB:...) -> AA-BB-CC-DD-EE-FF */
@@ -143,6 +146,8 @@ function valorLegible(campo, valor) {
   if (campo === "path_docs") return esc(nombreDocumento(valor));
   if (campo === "direccion_mac") return esc(macConGuiones(valor));
   if (campo === "clave") return "guardada (cifrada)";
+  if (campo === "estado" && ESTADOS_PUERTO[valor]) return ESTADOS_PUERTO[valor];
+  if (campo === "tipo_puerto") return valor === "F" ? "SFP" : "Cobre";
   return esc(valor);
 }
 
@@ -228,6 +233,28 @@ function frase(e) {
     if (e.accion === "ELIMINAR") return `eliminó el documento ${doc}${del}`;
     return camposCambiados(e).includes("path_docs")
       ? `reemplazó el archivo ${doc}${del}` : `cambió el tipo del documento ${doc}${del}`;
+  }
+
+  if (e.tabla === "red_puertos_switch") {
+    const [idSw, cual] = String(e.llave || "").split("/");
+    const a = e.antes || {};
+    const d = e.despues || {};
+    const m = String(e.descripcion || "").match(/^PUERTO (\S+) DEL (.+)$/);
+    const texto = m ? `puerto ${m[1]} de ${m[2]}` : (e.descripcion || "puerto").toLowerCase();
+    const puerto = idSw ? `<a href="#/red/dispositivos/${esc(idSw)}/puertos?puerto=${esc(cual || "")}">${esc(texto)}</a>` : esc(texto);
+    const equipo = (id) => `<a href="#/red/dispositivos/${esc(id)}">equipo N.º ${esc(id)}</a>`;
+    const segunEstado = (x) => ({
+      EN_USO: `marcó en uso el ${puerto}`, DESHABILITADO: `deshabilitó el ${puerto}`, DANADO: `marcó como dañado el ${puerto}`,
+    }[x.estado] || `anotó la VLAN o la nota del ${puerto}`);
+    if (e.accion === "INSERTAR") return d.id_disp ? `conectó el ${equipo(d.id_disp)} al ${puerto}` : segunEstado(d);
+    if (e.accion === "ELIMINAR") return a.id_disp ? `desconectó el ${equipo(a.id_disp)} y liberó el ${puerto}` : `liberó el ${puerto}`;
+    const cambios = camposCambiados(e);
+    if (cambios.includes("id_disp")) {
+      if (!d.id_disp) return `desconectó el ${equipo(a.id_disp)} del ${puerto}`;
+      return a.id_disp ? `cambió el equipo del ${puerto}: ahora es el ${equipo(d.id_disp)}` : `conectó el ${equipo(d.id_disp)} al ${puerto}`;
+    }
+    if (cambios.includes("estado")) return d.estado === "LIBRE" ? `marcó como libre el ${puerto}` : segunEstado(d);
+    return `modificó el ${puerto}`;
   }
 
   if (e.tabla === "log_importaciones") {

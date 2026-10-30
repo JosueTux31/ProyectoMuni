@@ -155,6 +155,7 @@ class Dispositivo(models.Model):
     garantia_hasta = models.DateField(null=True, blank=True)
     observaciones = models.CharField(max_length=500, null=True, blank=True)
     tiene_microclaudia = models.BooleanField(default=False)     # licencia de Microclaudia (la marca el administrador)
+    sfp_combo = models.BooleanField(default=False)              # switches: 45F comparte número con 45T
     activo = models.BooleanField(default=True)
     creado_en = models.DateTimeField(editable=False)
     actualizado_en = models.DateTimeField(editable=False)
@@ -230,3 +231,33 @@ class DocumentoDispositivo(models.Model):
 
     def __str__(self):
         return self.path_docs
+
+
+class PuertoSwitch(models.Model):
+    """Qué equipo está conectado a cada puerto de un switch, con su estado,
+    VLAN y nota. Solo se guardan los puertos con algún dato (los demás
+    están libres). tipo_puerto T = cobre (1..cant_ptos_ethernet), F = SFP
+    (1..cant_ptos_sfp); el rótulo (12, 45T, 45F, 49) depende de sfp_combo."""
+    ESTADOS = [("EN_USO", "En uso"), ("LIBRE", "Libre"), ("DESHABILITADO", "Deshabilitado"), ("DANADO", "Dañado")]
+
+    pk = models.CompositePrimaryKey("switch_id", "tipo_puerto", "num_puerto")
+    switch = models.ForeignKey(Dispositivo, on_delete=models.CASCADE, db_column="id_switch",
+                               related_name="puertos")
+    tipo_puerto = models.CharField(max_length=1, choices=[("T", "Cobre"), ("F", "SFP")])
+    num_puerto = models.PositiveSmallIntegerField()
+    equipo = models.ForeignKey(Dispositivo, on_delete=models.SET_NULL, db_column="id_disp", null=True, blank=True,
+                               related_name="conexiones")
+    estado = models.CharField(max_length=15, choices=ESTADOS, default="LIBRE")
+    vlan = models.CharField(max_length=30, null=True, blank=True)       # 10, 10,20 o 1-100
+    nota = models.CharField(max_length=255, null=True, blank=True)      # rótulo del cable, patch panel...
+    actualizado_en = models.DateTimeField(editable=False)
+
+    class Meta:
+        managed = False
+        db_table = "red_puertos_switch"
+        verbose_name = "puerto de switch"
+        verbose_name_plural = "puertos de switches"
+        ordering = ["switch_id", "-tipo_puerto", "num_puerto"]
+
+    def __str__(self):
+        return f"{self.tipo_puerto}{self.num_puerto}"
