@@ -1992,6 +1992,17 @@ button.cifra { font: inherit; text-align: left; cursor: pointer; }
 .filtros .campo--interruptor { width: auto; align-self: center; padding-top: 18px; }
 .ficha__conexiones { display: contents; }
 
+/* Tamaño del switch en el formulario: botones rápidos y vista previa */
+.diseno-switch { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.diseno-switch__titulo { margin: 0; font-size: 13.5px; color: var(--tinta-3); }
+.diseno-switch__fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.diseno-switch__etiqueta { min-width: 132px; font-size: 13.5px; font-weight: 700; color: var(--tinta-2); }
+.diseno-switch__fila .chip-alerta { min-width: 48px; justify-content: center; }
+.diseno-switch__vista { margin-top: 16px; }
+.diseno-switch__vista .diseno-switch__titulo { margin-bottom: 8px; }
+.switch-envoltura--vista { padding: 4px 0 6px; }
+.diseno-switch__resumen { margin: 6px 0 0; font-size: 13.5px; color: var(--tinta-2); }
+
 @media (max-width: 1100px) {
   .lista-datos--puerto { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -2004,6 +2015,7 @@ button.cifra { font: inherit; text-align: left; cursor: pointer; }
   .elegir-equipo__libre { margin-left: 46px; }
   .detalle-puerto__titulo { align-items: flex-start; }
   .filtros .campo--interruptor { padding-top: 0; }
+  .diseno-switch__etiqueta { min-width: 100%; }
 }
 @media print {
   .tooltip-puerto, .switch-desliza, .detalle-puerto__acciones, .form-puerto { display: none !important; }

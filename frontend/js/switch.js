@@ -148,6 +148,158 @@ function leyendaHTML(c) {
     <li${c[k] ? "" : ' class="leyenda-puertos--cero"'}><span class="leyenda-puertos__color puerto--${k}"></span><span>${esc(t)} <b>${c[k]}</b></span></li>`).join("")}</ul>`;
 }
 
+/** Si el frente se pasa un poco del ancho, se achica (hasta `minimo`); si
+ *  aun así no cabe (celular), se desliza de lado dentro de su envoltura.
+ *  `achicarSiempre`: en la vista previa se achica hasta `minimo` aunque no quepa. */
+export function ajustarFrente(env, minimo = 0.8, achicarSiempre = false) {
+  const frente = env?.querySelector(".frente");
+  if (!frente) return;
+  frente.style.zoom = "";
+  const disponible = env.clientWidth - 4;
+  const natural = frente.offsetWidth;
+  if (!(natural > disponible && disponible > 0)) return;
+  const escala = disponible / natural;
+  if (escala >= minimo) frente.style.zoom = escala.toFixed(3);
+  else if (achicarSiempre) frente.style.zoom = String(minimo);
+}
+
+/* =====================================================================
+   Tamaño del switch en el formulario del equipo: botones rápidos y vista
+   previa del frente mientras se elige (solo equipos de red)
+   ===================================================================== */
+const TAMANOS_COBRE = [8, 12, 16, 24, 48];
+const TAMANOS_SFP = [0, 2, 4];
+const MAX_VISTA = 96;   // la vista previa se dibuja hasta esta cantidad de puertos
+
+/** Descripción del frente en palabras: cuántos puertos y cómo se numeran. */
+export function resumenFrente(sw) {
+  const eth = Number(sw.cant_ptos_ethernet) || 0;
+  const sfp = Number(sw.cant_ptos_sfp) || 0;
+  const combo = Boolean(sw.sfp_combo) && sfp > 0;
+  const partes = [`${eth} ${eth === 1 ? "puerto" : "puertos"} de cobre`];
+  if (sfp) {
+    partes.push(combo
+      ? `y ${sfp} SFP combinados con los últimos de cobre: del ${rotuloPuerto(sw, "F", 1)} al ${rotuloPuerto(sw, "F", sfp)}`
+      : `y ${sfp} SFP numerados ${sfp === 1 ? `como ${eth + 1}` : `del ${eth + 1} al ${eth + sfp}`}`);
+  }
+  return `${partes.join(" ")}. ${eth > 8 ? "Impares arriba y pares abajo." : "En una fila."}`;
+}
+
+/**
+ * Agrega a la sección «Puertos» del formulario los botones de tamaño (8, 12,
+ * 16, 24, 48 de cobre; sin SFP, 2 o 4 SFP) y la vista previa del frente, que
+ * se redibuja al cambiar la cantidad, el check «SFP combinados», la marca, el
+ * modelo o el nombre. Devuelve { categoria(idCategoria) }: solo se muestra
+ * para los equipos de red. Sin permiso de edición solo se ve la vista previa.
+ */
+export function enlazarDisenoSwitch(form, { soloLectura = false } = {}) {
+  const seccion = form.querySelector('[data-seccion="puertos"]');
+  const eth = form.elements.namedItem("cant_ptos_ethernet");
+  const sfp = form.elements.namedItem("cant_ptos_sfp");
+  const combo = form.elements.namedItem("sfp_combo");
+  const rejilla = seccion?.querySelector(".rejilla");
+  if (!rejilla || !eth || !sfp) return { categoria() {} };
+
+  const fila = (nombre, valores, etiqueta, ayuda) => `
+    <div class="diseno-switch__fila" role="group" aria-label="${esc(etiqueta)}">
+      <span class="diseno-switch__etiqueta">${esc(etiqueta)}</span>
+      ${valores.map((v) => `<button type="button" class="chip-alerta" data-tamano="${nombre}" data-valor="${v}" aria-pressed="false">${v === 0 ? "Sin SFP" : v}</button>`).join("")}
+      <button type="button" class="chip-alerta" data-tamano="${nombre}" data-valor="otro" aria-pressed="false" title="${esc(ayuda)}">Otro</button>
+    </div>`;
+  const arriba = document.createElement("div");
+  arriba.className = "diseno-switch";
+  arriba.hidden = true;
+  arriba.innerHTML = `
+    <p class="diseno-switch__titulo">Tamaño del switch: elija uno de los comunes o escriba la cantidad abajo.</p>
+    ${fila("cant_ptos_ethernet", TAMANOS_COBRE, "Puertos de cobre", "Escriba la cantidad en «Puertos Ethernet»")}
+    ${fila("cant_ptos_sfp", TAMANOS_SFP, "Puertos SFP", "Escriba la cantidad en «Puertos SFP»")}`;
+  if (!soloLectura) rejilla.before(arriba);
+
+  const abajo = document.createElement("div");
+  abajo.className = "diseno-switch__vista";
+  abajo.hidden = true;
+  abajo.innerHTML = `
+    <p class="diseno-switch__titulo">Vista previa del frente</p>
+    <div class="switch-envoltura switch-envoltura--vista" inert></div>
+    <p class="diseno-switch__resumen" aria-live="polite"></p>`;
+  rejilla.after(abajo);
+  const env = abajo.querySelector(".switch-envoltura");
+  const resumen = abajo.querySelector(".diseno-switch__resumen");
+
+  let esRed = false;
+  const cantidad = (control) => Math.max(0, Math.trunc(Number(control.value) || 0));
+  const texto = (nombre) => {
+    const o = form.elements.namedItem(nombre)?.selectedOptions?.[0];
+    return o && o.value ? o.textContent.trim() : "";
+  };
+
+  function pintar() {
+    const nEth = cantidad(eth);
+    const nSfp = cantidad(sfp);
+    for (const b of arriba.querySelectorAll("[data-tamano]")) {
+      const cobre = b.dataset.tamano === "cant_ptos_ethernet";
+      const v = cobre ? nEth : nSfp;
+      const comunes = cobre ? TAMANOS_COBRE : TAMANOS_SFP;
+      const lleno = (cobre ? eth : sfp).value.trim() !== "";
+      b.setAttribute("aria-pressed", String(b.dataset.valor === "otro" ? lleno && !comunes.includes(v) : lleno && Number(b.dataset.valor) === v));
+    }
+    if (!esRed) return;
+    const total = nEth + nSfp;
+    if (!total) {
+      env.innerHTML = "";
+      resumen.textContent = soloLectura ? "Este equipo no tiene puertos registrados." : "Elija el tamaño para ver cómo queda el frente del switch.";
+      return;
+    }
+    const sw = {
+      cant_ptos_ethernet: nEth, cant_ptos_sfp: nSfp, sfp_combo: Boolean(combo?.checked) && nSfp > 0,
+      marca: texto("id_marca"), modelo: texto("id_modelo"), tipo_dispositivo: texto("tipo_disp"),
+      nombre_equipo: (form.elements.namedItem("nombre_equipo")?.value || "").trim().toUpperCase(),
+      serie: (form.elements.namedItem("serie")?.value || "").trim().toUpperCase() || "NUEVO",
+    };
+    if (total > MAX_VISTA) {
+      env.innerHTML = "";
+      resumen.textContent = `${resumenFrente(sw)} La vista previa se dibuja hasta ${MAX_VISTA} puertos.`;
+      return;
+    }
+    env.innerHTML = frenteHTML(sw, []);
+    ajustarFrente(env, 0.5, true);
+    resumen.textContent = resumenFrente(sw);
+  }
+
+  let pendiente = 0;
+  const repintar = () => { cancelAnimationFrame(pendiente); pendiente = requestAnimationFrame(pintar); };
+  const DE_LA_VISTA = new Set(["cant_ptos_ethernet", "cant_ptos_sfp", "sfp_combo", "id_marca", "id_modelo", "tipo_disp", "nombre_equipo", "serie"]);
+  form.addEventListener("input", (ev) => { if (DE_LA_VISTA.has(ev.target.name)) repintar(); });
+  form.addEventListener("change", (ev) => { if (DE_LA_VISTA.has(ev.target.name)) repintar(); });
+  arriba.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-tamano]");
+    if (!b) return;
+    const control = form.elements.namedItem(b.dataset.tamano);
+    if (b.dataset.valor === "otro") {
+      control.focus();
+      control.select?.();
+    } else {
+      control.value = b.dataset.valor;
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+      control.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    pintar();
+  });
+  if ("ResizeObserver" in window) {
+    let ancho = 0;
+    new ResizeObserver(() => { if (abajo.clientWidth && abajo.clientWidth !== ancho) { ancho = abajo.clientWidth; ajustarFrente(env, 0.5, true); } }).observe(abajo);
+  }
+
+  return {
+    categoria(idCategoria) {
+      esRed = idCategoria === CAT.RED;
+      arriba.hidden = !esRed;
+      abajo.hidden = !esRed;
+      pintar();
+    },
+  };
+}
+
 /* =====================================================================
    Tooltip (uno para toda la página, fuera del contenedor que se desliza)
    ===================================================================== */
@@ -249,16 +401,10 @@ export function montarSwitch(caja, sw, puertosIniciales, opciones = {}) {
     }
   }
 
-  // Si el frente se pasa un poco del ancho, se achica (hasta el 80 %); si aun así
-  // no cabe (celular), se desliza de lado
   function ajustar() {
     const env = caja.querySelector(".switch-envoltura");
-    const frente = env?.querySelector(".frente");
-    if (!frente) return;
-    frente.style.zoom = "";
-    const disponible = env.clientWidth - 4;
-    const natural = frente.offsetWidth;
-    if (natural > disponible && disponible / natural >= 0.8) frente.style.zoom = (disponible / natural).toFixed(3);
+    if (!env) return;
+    ajustarFrente(env);
     caja.querySelector(".switch-desliza").hidden = env.scrollWidth <= env.clientWidth + 1;
   }
   if ("ResizeObserver" in window) {

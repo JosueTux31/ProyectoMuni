@@ -16,7 +16,7 @@ import { coordenadas, embebidoMaps, enlaceMaps, enlazarCampoMapa, validarMapaLoc
 import { feedAuditoria } from "./auditoria.js";
 import { abrirVisor, abrirVistaPrevia } from "./zoom.js";
 import { abrirEvento, descargarTexto, fechaLog, marcaArchivo, num, rangoFechas, rutaLogs, textoCsv } from "./logs_ui.js";
-import { conexionesHTML, pestanaPuertos, tienePuertos } from "./switch.js";
+import { conexionesHTML, enlazarDisenoSwitch, pestanaPuertos, tienePuertos } from "./switch.js";
 
 const RECURSO = "dispositivos";
 const MAX_MB_DOCUMENTO = 1024;   // igual que MUNI_MAX_MB_DOCUMENTO_RED en settings.py
@@ -1226,7 +1226,9 @@ export async function vistaDispositivoNuevo(cont, _params, ctx) {
   enlazarAsignacion(form, personal);
   pintarDirecciones(form, previas, false);
   enlazarDirecciones(form);
-  await enlazarEquipo(form, base, valores, false, (cat) => { categoria = cat; aplicarCategoria(form, secciones, cat, false); });
+  // Switches: botones de tamaño y vista previa del frente
+  const diseno = enlazarDisenoSwitch(form);
+  await enlazarEquipo(form, base, valores, false, (cat) => { categoria = cat; aplicarCategoria(form, secciones, cat, false); diseno.categoria(cat); });
 
   let contador = 0;
   form.addEventListener("click", (ev) => {
@@ -1485,7 +1487,8 @@ async function pestanaDatos(panel, d, ctx, recargar) {
   if (!soloLectura) enlazarAsignacion(form, personal);
   pintarDirecciones(form, { ips, macs }, soloLectura);
   if (!soloLectura) enlazarDirecciones(form);
-  await enlazarEquipo(form, base, d, soloLectura, (cat) => { categoria = cat; aplicarCategoria(form, secciones, cat, soloLectura); });
+  const diseno = enlazarDisenoSwitch(form, { soloLectura });
+  await enlazarEquipo(form, base, d, soloLectura, (cat) => { categoria = cat; aplicarCategoria(form, secciones, cat, soloLectura); diseno.categoria(cat); });
 
   // Enlace a la ficha del proveedor (módulo de usuarios y proveedores)
   if (d.id_proveedor) {
