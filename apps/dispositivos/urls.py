@@ -20,6 +20,11 @@ urlpatterns = [
     *rutas_crud("sistemas-operativos/", "<int:id_os>/", v.SistemaOperativoViewSet, "sistemas-operativos"),
     *rutas_crud("tipos-documentos/", "<int:id_doc>/", v.TipoDocumentoViewSet, "tipos-documentos"),
     *rutas_crud("edificios/", "<int:id_predio>/", v.EdificioViewSet, "edificios"),
+    *rutas_crud("procesadores/", "<int:id_proc>/", v.ProcesadorViewSet, "procesadores"),
+    *rutas_crud("firmwares/", "<int:id_firmw>/", v.FirmwareViewSet, "firmwares"),
+    *rutas_crud("estados/", "<int:id_estado>/", v.EstadoEquipoViewSet, "estados"),
+    *rutas_crud("roles/", "<int:id_rol>/", v.TipoRolViewSet, "roles"),
+    *rutas_crud("herramientas/", "<int:id_herram>/", v.TipoHerramientaViewSet, "herramientas"),
 
     # Acciones especiales de los dispositivos
     path(DISPOSITIVO + "activar/",
@@ -42,9 +47,11 @@ urlpatterns = [
     path(DOCUMENTO + "vista-previa/",
          v.DocumentoDispositivoViewSet.as_view({"get": "vista_previa"}), name="documentos-vista-previa"),
 
-    # CRUD de dispositivos, de sus direcciones IP y MAC, y de sus documentos
+    # CRUD de equipos y de sus tablas de detalle: IP, MAC, líneas, IMEI y documentos
     *rutas_crud("", DISPOSITIVO, v.DispositivoViewSet, "dispositivos"),
     *rutas_crud(DISPOSITIVO + "ips/", "<int:num_linea>/", v.IpDispositivoViewSet, "ips"),
     *rutas_crud(DISPOSITIVO + "macs/", "<int:num_linea>/", v.MacDispositivoViewSet, "macs"),
+    *rutas_crud(DISPOSITIVO + "moviles/", "<int:num_linea>/", v.MovilDispositivoViewSet, "moviles"),
+    *rutas_crud(DISPOSITIVO + "imeis/", "<int:num_linea>/", v.ImeiDispositivoViewSet, "imeis"),
     *rutas_crud(DISPOSITIVO + "documentos/", "<int:num_linea>/", v.DocumentoDispositivoViewSet, "documentos"),
 ]

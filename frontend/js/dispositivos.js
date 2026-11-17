@@ -1,7 +1,7 @@
 // Módulo de equipos municipales (antes dispositivos de red): inicio del
 // módulo, lista, registro, ficha (datos, documentos e historial), marcas y
 // modelos, y edificios. Equipos de red, computadoras, servidores, móviles,
-// telefonía, impresión, pantallas, UPS, cámaras... en la tabla equiposMuni:
+// telefonía, impresión, pantallas, UPS, cámaras... en la tabla equipos:
 // cada tipo es de una categoría y el formulario pide los datos de esa
 // categoría. Todo pasa por las APIs de /api/dispositivos/ (procedimientos
 // almacenados).
@@ -10,7 +10,7 @@ import {
   abrirFormulario, botonCargando, botonesFila, camposHTML, cargandoHTML, confirmar, debounce, errorHTML, esc, eventoFila,
   fecha, icono, leerCampos, limpiarErrores, mostrarErrores, nombreCompleto, tablaHTML, toast, urlApi, vacioHTML,
 } from "./ui.js";
-import { filasCatalogo, olvidarCatalogo } from "./datos.js";
+import { filasCatalogo, olvidarCatalogo, cascadaGeo, NIVELES_GEO } from "./datos.js";
 import { pastillaEstado, todosLosCampos } from "./usuarios.js";
 import { coordenadas, embebidoMaps, enlaceMaps, enlazarCampoMapa, validarMapaLocal } from "./proveedores.js";
 import { feedAuditoria } from "./auditoria.js";
@@ -111,18 +111,41 @@ export function macValida(mac) {
 const MENSAJE_IP = "Escriba una dirección IPv4 (por ejemplo 192.168.1.1) o una IPv6 válida.";
 const MENSAJE_MAC = "Escriba la MAC con 12 dígitos hexadecimales, por ejemplo AA-BB-CC-DD-EE-FF.";
 
-const MAX_DIRECCIONES = 50;   // IP o MAC por dispositivo (igual que el servidor)
+const MAX_DIRECCIONES = 50;   // filas de cada lista por equipo (igual que el servidor)
+const MENSAJE_LINEA = "Escriba el número de la línea con sus dígitos (por ejemplo 8888-8888).";
+const MENSAJE_IMEI = "El IMEI tiene 15 dígitos (en el celular: marque *#06#).";
+const INTERFAZ = { campo: "interfaz", etiqueta: "Interfaz", max: 50, placeholder: "WAN, LAN, GESTIÓN…" };
 
+/* Listas de filas del equipo (tablas dir_ips, dir_macs, num_moviles y
+   dir_imeis). seccion: las que van en otra sección (no en Direcciones de
+   red); cats: categorías que las piden; segundo: el dato que acompaña. */
 const DIRECCIONES = {
   ips: {
     titulo: "Direcciones IP", etiqueta: "Dirección IP", singular: "dirección IP", plural: "direcciones IP", corto: "IP",
-    campo: "direccion_ip", icono: "web", placeholder: "192.168.1.1", max: 45, valida: ipValida, mensaje: MENSAJE_IP,
+    la: "la", esta: "Esta", otra: "otra", campo: "direccion_ip", icono: "web", placeholder: "192.168.1.1", max: 45,
+    valida: ipValida, mensaje: MENSAJE_IP, segundo: INTERFAZ,
     mostrar: (x) => x, normalizar: (x) => String(x || "").trim().toLowerCase(),
   },
   macs: {
     titulo: "Direcciones MAC", etiqueta: "Dirección MAC", singular: "dirección MAC", plural: "direcciones MAC", corto: "MAC",
-    campo: "direccion_mac", icono: "puertos", placeholder: "AA-BB-CC-DD-EE-FF", max: 30, valida: macValida, mensaje: MENSAJE_MAC,
+    la: "la", esta: "Esta", otra: "otra", campo: "direccion_mac", icono: "puertos", placeholder: "AA-BB-CC-DD-EE-FF", max: 30,
+    valida: macValida, mensaje: MENSAJE_MAC, segundo: INTERFAZ, mayus: true,
     mostrar: formatearMac, normalizar: (x) => String(x || "").replace(/[^0-9a-f]/gi, "").toUpperCase(),
+  },
+  moviles: {
+    titulo: "Líneas móviles", etiqueta: "Número de línea", singular: "línea", plural: "líneas", corto: "línea",
+    la: "la", esta: "Esta", otra: "otra", campo: "num_movil", icono: "telefono", placeholder: "8888-8888", max: 20,
+    valida: (x) => /^\+?[0-9][0-9 -]{3,18}$/.test(String(x || "").trim()), mensaje: MENSAJE_LINEA,
+    segundo: { campo: "operador", etiqueta: "Operador", max: 50, placeholder: "KÖLBI, CLARO, LIBERTY…" },
+    seccion: "linea", cats: [CAT.MOVIL, CAT.TELEFONIA],
+    mostrar: (x) => x, normalizar: (x) => String(x || "").replace(/[^0-9+]/g, ""),
+  },
+  imeis: {
+    titulo: "IMEI", etiqueta: "IMEI", singular: "IMEI", plural: "IMEI", corto: "IMEI",
+    la: "el", esta: "Este", otra: "otro", campo: "dir_imei", icono: "telefono", placeholder: "15 dígitos", max: 20,
+    valida: (x) => /^[0-9]{15}$/.test(String(x || "").replace(/[\s-]/g, "")), mensaje: MENSAJE_IMEI, segundo: null,
+    seccion: "linea", cats: [CAT.MOVIL],
+    mostrar: (x) => x, normalizar: (x) => String(x || "").replace(/[\s-]/g, ""),
   },
 };
 
@@ -138,10 +161,14 @@ function validarArchivo(archivo) {
 function precisarError(e) {
   if (Object.keys(e.campos || {}).length) return e;
   const m = e.message || "";
-  if (e.estado === 409 && /uk_disp_placa/.test(e.db)) e.campos = { placa: "Esa placa ya la tiene otro equipo." };
-  else if (e.estado === 409 && /uk_disp_imei/.test(e.db)) e.campos = { imei: "Ese IMEI ya está registrado en otro equipo." };
+  if (e.estado === 409 && /uk_equipos_placa/.test(e.db)) e.campos = { placa: "Esa placa ya la tiene otro equipo." };
+  else if (e.estado === 409 && /uk_dir_imeis_imei/.test(e.db)) e.campos = { dir_imei: "Ese IMEI ya está registrado en otro equipo." };
   else if (/placa/i.test(m)) e.campos = { placa: m };
-  else if (/IMEI/.test(m)) e.campos = { [/segundo/i.test(m) ? "imei2" : "imei"]: m };
+  else if (/IMEI/.test(m)) e.campos = { dir_imei: m };
+  else if (/\bl[ií]nea\b/i.test(m) && !/direcci/i.test(m)) e.campos = { num_movil: m };
+  else if (/herramienta/i.test(m)) e.campos = { herramientas: m };
+  else if (/\brol\b/i.test(m)) e.campos = { roles: m };
+  else if (/estado/i.test(m)) e.campos = { id_estado: m };
   else if (/nombre de equipo/i.test(m)) e.campos = { nombre_equipo: m };
   else if (/asignad/i.test(m)) e.campos = { id_asignado: m };
   else if (/garant/i.test(m)) e.campos = { garantia_hasta: m };
@@ -149,9 +176,9 @@ function precisarError(e) {
   else if (/almacenamiento/i.test(m)) e.campos = { tipo_almacenamiento: m };
   else if (/impresi/i.test(m)) e.campos = { tecnologia_impresion: m };
   else if (/pulgadas/i.test(m)) e.campos = { pulgadas: m };
-  else if (e.estado === 409 && /uk_disp_serie/.test(e.db)) e.campos = { serie: "Ya hay otro dispositivo de esa marca con la misma serie." };
-  else if (e.estado === 409 && /uk_macs_mac/.test(e.db)) e.campos = { direccion_mac: "Esa dirección MAC ya está registrada en un dispositivo." };
-  else if (e.estado === 409 && /uk_ips_dispositivo/.test(e.db)) e.campos = { direccion_ip: "El dispositivo ya tiene esa dirección IP." };
+  else if (e.estado === 409 && /uk_equipos_serie/.test(e.db)) e.campos = { serie: "Ya hay otro dispositivo de esa marca con la misma serie." };
+  else if (e.estado === 409 && /uk_dir_macs_mac/.test(e.db)) e.campos = { direccion_mac: "Esa dirección MAC ya está registrada en un dispositivo." };
+  else if (e.estado === 409 && /uk_dir_ips_equipo/.test(e.db)) e.campos = { direccion_ip: "El dispositivo ya tiene esa dirección IP." };
   else {
     const campo = /serie/i.test(m) ? "serie" : /\bMAC\b/.test(m) ? "direccion_mac" : /\bIP\b/.test(m) ? "direccion_ip"
       : /proveedor/i.test(m) ? "id_proveedor" : /modelo/i.test(m) ? "id_modelo" : /marca/i.test(m) ? "id_marca"
@@ -181,12 +208,15 @@ function olvidarMarcasYModelos() {
 }
 
 async function datosBase() {
-  const [tipos, marcas, sistemas, edificios, categorias, departamentos] = await Promise.all([
-    filasCatalogo("tipos-dispositivos"), filasCatalogo("marcas"),
-    filasCatalogo("sistemas-operativos"), filasCatalogo("edificios"),
-    filasCatalogo("categorias-dispositivos"), filasCatalogo("departamentos"),
-  ]);
-  return { tipos, marcas, sistemas, edificios, categorias, departamentos };
+  const [tipos, marcas, sistemas, edificios, categorias, departamentos, procesadores, firmwares, estados, roles, herramientas] =
+    await Promise.all([
+      filasCatalogo("tipos-dispositivos"), filasCatalogo("marcas"),
+      filasCatalogo("sistemas-operativos"), filasCatalogo("edificios"),
+      filasCatalogo("categorias-dispositivos"), filasCatalogo("departamentos"),
+      filasCatalogo("procesadores"), filasCatalogo("firmwares"), filasCatalogo("estados-equipos"),
+      filasCatalogo("roles-equipos"), filasCatalogo("herramientas"),
+    ]);
+  return { tipos, marcas, sistemas, edificios, categorias, departamentos, procesadores, firmwares, estados, roles, herramientas };
 }
 
 /** Categoría de un tipo de equipo (por su código). */
@@ -204,6 +234,10 @@ function opcionesTiposHTML(tipos, categorias, elegido = null) {
 
 /** EQUIPOS DE RED -> Equipos de red */
 const nombreCategoria = (texto) => String(texto || "").charAt(0) + String(texto || "").slice(1).toLowerCase();
+// Nombre de un lugar (vienen en mayúscula): «SAN ISIDRO» -> «San Isidro»
+const nombreLugar = (texto) => String(texto || "").toLowerCase().replace(/(^|[\s-])(\p{L})/gu, (_, a, l) => a + l.toUpperCase());
+/** Estado del equipo (tabla estado_equipos): Activo, Inactivo, N/D… */
+const nombreEstado = (d) => (d.estado ? (d.estado === "N/D" ? "N/D" : nombreCategoria(d.estado)) : (d.activo ? "Activo" : "Inactivo"));
 
 /* ------------------------------------------------------------ Garantía */
 const DIAS_AVISO_GARANTIA = 90;   // «por vencer»: vence dentro de estos días
@@ -267,7 +301,7 @@ export async function vistaInicioRed(cont, _params, ctx) {
     </section>` : ""}`;
 
   if (ctx.esAdmin) {
-    feedAuditoria(cont.querySelector("#actividad-red"), { tabla: "equiposMuni" }, {
+    feedAuditoria(cont.querySelector("#actividad-red"), { tabla: "equipos" }, {
       limite: 8, paginar: false, vacio: "Todavía no hay cambios en los equipos.",
     }).catch((e) => { cont.querySelector("#actividad-red").innerHTML = errorHTML(e.message); });
   }
@@ -322,7 +356,7 @@ function atajosRed(ctx) {
     item("#/red/edificios", "edificio", "Edificios", "Dónde están los equipos"),
     item("#/red/marcas", "etiqueta", "Marcas y modelos", "Por tipo de equipo"),
     item("#/red/catalogos/tipos-dispositivos", "equipo", "Tipos de equipo", "Cada uno en su categoría"),
-    item("#/red/catalogos/tipos-documentos", "documento", "Tipos de documento", "Manuales, firmware, facturas, actas…"),
+    item("#/red/catalogos/tipos-documentos", "documento", "Tipos de archivo", "Manual, garantía, configuración, backup…"),
   ];
 }
 
@@ -376,13 +410,16 @@ const decimal = (v) => (v === null || v === undefined || v === "" ? "" : Number(
 const COLUMNAS_CSV = [
   ["Serie", (d) => d.serie], ["Placa", (d) => d.placa], ["Categoría", (d) => nombreCategoria(d.categoria)],
   ["Tipo", (d) => d.tipo_dispositivo], ["Marca", (d) => d.marca], ["Modelo", (d) => d.modelo], ["Nombre en la red", (d) => d.nombre_equipo],
-  ["Sistema operativo", (d) => d.sistema_operativo], ["Versión del sistema o firmware", (d) => d.version_os], ["Procesador", (d) => d.procesador],
+  ["Sistema operativo", (d) => d.sistema_operativo], ["Firmware o versión", (d) => (d.id_firmw > 1 ? d.firmware : "")], ["Procesador", (d) => d.procesador],
   ["Memoria RAM (GB)", (d) => d.memoria_gb], ["Almacenamiento (GB)", (d) => d.almacenamiento_gb],
   ["Tipo de disco", (d) => ALMACENAMIENTOS.find(([v]) => v === d.tipo_almacenamiento)?.[1] || d.tipo_almacenamiento],
   ["Pantalla (pulgadas)", (d) => decimal(d.pulgadas)], ["Resolución", (d) => d.resolucion],
+  ["Puertos serie", (d) => d.cant_ptos_serie], ["Puertos USB", (d) => d.cant_ptos_usb],
   ["Puertos Ethernet", (d) => d.cant_ptos_ethernet], ["Puertos SFP", (d) => d.cant_ptos_sfp],
+  ["Puertos inalámbricos", (d) => d.cant_ptos_wireless], ["Puertos Bluetooth", (d) => d.cant_ptos_bluetooth],
+  ["Puertos celular (SIM)", (d) => d.cant_ptos_celular],
   ["SFP combinados", (d) => (d.id_categoria === CAT.RED && d.cant_ptos_sfp ? (d.sfp_combo ? "Sí" : "No") : "")], ["Canales de video", (d) => d.canales],
-  ["IMEI", (d) => d.imei], ["IMEI 2", (d) => d.imei2], ["Número de línea", (d) => d.numero_linea], ["Operador", (d) => d.operador],
+  ["IMEI", (d) => lista(d.imeis).join(" ")], ["Líneas móviles", (d) => d.moviles],
   ["Extensión", (d) => d.extension], ["Tecnología de impresión", (d) => d.tecnologia_impresion],
   ["Imprime a color", (d) => (d.id_categoria === CAT.IMPRESION ? (d.a_color ? "Sí" : "No") : "")], ["Tóner o cartucho", (d) => d.consumible],
   ["Capacidad (VA)", (d) => d.capacidad_va], ["Autonomía (minutos)", (d) => d.autonomia_min],
@@ -398,8 +435,9 @@ const COLUMNAS_CSV = [
     return g.dias === 0 ? "Vence hoy" : `Vence en ${g.dias} ${g.dias === 1 ? "día" : "días"}`;
   }],
   ["Tiene Microclaudia", (d) => ([CAT.COMPUTO, CAT.SERVIDOR].includes(d.id_categoria) || d.tiene_microclaudia ? (d.tiene_microclaudia ? "Sí" : "No") : "")],
+  ["Herramientas de seguridad", (d) => d.herramientas_texto], ["Roles", (d) => d.roles_texto],
   ["Documentos", (d) => d.cantidad_documentos || 0], ["Observaciones", (d) => d.observaciones],
-  ["Estado", (d) => (d.activo ? "Activo" : "Inactivo")], ["Registrado", (d) => (d.creado_en ? String(d.creado_en).slice(0, 10) : "")],
+  ["Estado", (d) => nombreEstado(d)], ["Registrado", (d) => (d.creado_en ? String(d.creado_en).slice(0, 10) : "")],
 ];
 
 /** Todos los datos de un equipo que tienen valor: [[etiqueta, texto], ...] (los
@@ -602,6 +640,8 @@ const SIN_PANTALLA = [CAT.RED, CAT.COMPUTO, CAT.SERVIDOR, CAT.MOVIL, CAT.TELEFON
 const FIRMWARE = { [CAT.RED]: "Versión del firmware", [CAT.TELEFONIA]: "Versión del firmware", [CAT.IMPRESION]: "Versión del firmware",
   [CAT.ENERGIA]: "Versión del firmware", [CAT.VIDEO]: "Versión del firmware" };
 const TECNOLOGIAS = ["LÁSER", "TINTA", "TINTA CONTINUA", "TÉRMICA", "MATRIZ DE PUNTO"];
+// Herramientas de seguridad (Bitdefender, Microclaudia, Cisco Umbrella…): equipos con sistema operativo
+const HERRAMIENTAS = [CAT.RED, CAT.COMPUTO, CAT.SERVIDOR, CAT.MOVIL, CAT.OTRO];
 const ALMACENAMIENTOS = [["SSD", "SSD"], ["NVME", "SSD NVMe"], ["HDD", "Disco duro (HDD)"], ["EMMC", "eMMC"]];
 
 /** Personas para «Funcionario responsable»: el personal activo (y la asignada, aunque esté inactiva). */
@@ -620,6 +660,7 @@ function seccionesDispositivo(base, proveedores, personal, valores = {}) {
     provOpciones.push({ valor: valores.id_proveedor, texto: `${valores.proveedor || `Proveedor ${valores.id_proveedor}`} (inactivo)` });
   }
   const numero = (nombre, etiqueta, cats, extra = {}) => ({ nombre, etiqueta, tipo: "number", entero: true, minimo: 1, cats, ...extra });
+  const PUERTO = { minimo: 0, maximo: 9999, placeholder: "0" };
   return [
     {
       clave: "equipo", titulo: "Equipo", icono: "red",
@@ -634,6 +675,10 @@ function seccionesDispositivo(base, proveedores, personal, valores = {}) {
           nombre: "nombre_equipo", etiqueta: "Nombre en la red", max: 100, placeholder: "PC-FIN-01", cats: SIN_PANTALLA,
           ayuda: "El nombre del equipo en la red (hostname): se compara con el DHCP y con Microclaudia.",
         },
+        {
+          nombre: "id_estado", etiqueta: "Estado", tipo: "select", opciones: opciones(base.estados, "id_estado", (e) => (e.descripcion === "N/D" ? "N/D" : nombreCategoria(e.descripcion))),
+          entero: true, sinVacio: true, ayuda: "INACTIVO es un equipo dado de baja: no se compara con la red ni se puede conectar a un switch.",
+        },
       ],
     },
     {
@@ -644,10 +689,25 @@ function seccionesDispositivo(base, proveedores, personal, valores = {}) {
           nombre: "id_os", etiqueta: "Sistema operativo", tipo: "select", opciones: opciones(base.sistemas, "id_os"), entero: true, sinVacio: true,
           cats: [CAT.RED, CAT.COMPUTO, CAT.SERVIDOR, CAT.MOVIL, CAT.TELEFONIA, CAT.IMPRESION, CAT.VIDEO, CAT.OTRO],
         },
-        { nombre: "version_os", etiqueta: "Versión del sistema", max: 100, placeholder: "11 PRO 23H2", cats: SIN_PANTALLA, etiquetas: FIRMWARE },
         {
-          nombre: "tiene_microclaudia", etiqueta: "Tiene Microclaudia (licencia del antivirus)", tipo: "checkbox", cats: [CAT.COMPUTO, CAT.SERVIDOR],
-          completo: true, ayuda: "Márquelo cuando el equipo tenga el agente de Microclaudia instalado. En Licencias y reportes se compara con el listado de Microclaudia.",
+          nombre: "id_firmw", etiqueta: "Versión del sistema", tipo: "select", opciones: opciones(base.firmwares, "id_firmw"), entero: true,
+          sinVacio: true, cats: SIN_PANTALLA, etiquetas: FIRMWARE,
+          ayuda: "Si no está en la lista, agréguela en Catálogos › Firmwares.",
+        },
+      ],
+    },
+    {
+      clave: "seguridad", titulo: "Herramientas y roles", icono: "escudo",
+      texto: "Herramientas de seguridad instaladas y, en servidores y equipos de red, los roles que cumple.",
+      campos: [
+        {
+          nombre: "herramientas", etiqueta: "Herramientas de seguridad", tipo: "casillas", cats: HERRAMIENTAS,
+          opciones: opciones(base.herramientas.filter((h) => h.id_herram !== 1), "id_herram"),
+          ayuda: "MICROCLAUDIA es el agente del antivirus: en Licencias y reportes se compara con el listado de Microclaudia.",
+        },
+        {
+          nombre: "roles", etiqueta: "Roles del servidor", tipo: "casillas", cats: [CAT.SERVIDOR, CAT.RED],
+          opciones: opciones(base.roles.filter((r) => r.id_rol !== 1), "id_rol"),
         },
       ],
     },
@@ -655,7 +715,10 @@ function seccionesDispositivo(base, proveedores, personal, valores = {}) {
       clave: "hardware", titulo: "Características", icono: "equipo",
       texto: "Procesador, memoria, disco y pantalla.",
       campos: [
-        { nombre: "procesador", etiqueta: "Procesador", max: 150, placeholder: "INTEL CORE I7-1365U", cats: [CAT.COMPUTO, CAT.SERVIDOR] },
+        {
+          nombre: "id_proces", etiqueta: "Procesador", tipo: "select", opciones: opciones(base.procesadores, "id_proc"), entero: true,
+          vacioTexto: "Sin indicar", cats: [CAT.COMPUTO, CAT.SERVIDOR, CAT.RED], ayuda: "Si no está en la lista, agréguelo en Catálogos › Procesadores.",
+        },
         numero("memoria_gb", "Memoria RAM (GB)", [CAT.COMPUTO, CAT.SERVIDOR, CAT.MOVIL], { maximo: 4096, placeholder: "16" }),
         numero("almacenamiento_gb", "Almacenamiento (GB)", [CAT.COMPUTO, CAT.SERVIDOR, CAT.MOVIL, CAT.VIDEO], { maximo: 1000000, placeholder: "512" }),
         {
@@ -673,8 +736,13 @@ function seccionesDispositivo(base, proveedores, personal, valores = {}) {
       clave: "puertos", titulo: "Puertos", icono: "puertos",
       texto: "Cantidad de puertos del equipo.",
       campos: [
-        numero("cant_ptos_ethernet", "Puertos Ethernet", [CAT.RED, CAT.SERVIDOR, CAT.TELEFONIA, CAT.VIDEO], { minimo: 0, maximo: 9999, placeholder: "0" }),
-        numero("cant_ptos_sfp", "Puertos SFP", [CAT.RED, CAT.SERVIDOR], { minimo: 0, maximo: 9999, placeholder: "0" }),
+        numero("cant_ptos_ethernet", "Puertos Ethernet", [CAT.RED, CAT.COMPUTO, CAT.SERVIDOR, CAT.TELEFONIA, CAT.IMPRESION, CAT.VIDEO], PUERTO),
+        numero("cant_ptos_sfp", "Puertos SFP", [CAT.RED, CAT.SERVIDOR], PUERTO),
+        numero("cant_ptos_serie", "Puertos serie o consola", [CAT.RED, CAT.COMPUTO, CAT.SERVIDOR, CAT.ENERGIA], PUERTO),
+        numero("cant_ptos_usb", "Puertos USB", [CAT.RED, CAT.COMPUTO, CAT.SERVIDOR, CAT.MOVIL, CAT.IMPRESION, CAT.PANTALLA, CAT.VIDEO], PUERTO),
+        numero("cant_ptos_wireless", "Puertos inalámbricos (radios)", [CAT.RED, CAT.COMPUTO, CAT.MOVIL, CAT.TELEFONIA, CAT.IMPRESION], PUERTO),
+        numero("cant_ptos_bluetooth", "Puertos Bluetooth", [CAT.COMPUTO, CAT.MOVIL, CAT.TELEFONIA], PUERTO),
+        numero("cant_ptos_celular", "Puertos celular (SIM)", [CAT.RED, CAT.COMPUTO, CAT.MOVIL], PUERTO),
         {
           nombre: "sfp_combo", etiqueta: "SFP combinados (45F comparte número con 45T)", tipo: "checkbox", cats: [CAT.RED], completo: true,
           ayuda: "Márquelo si los SFP comparten número con los últimos puertos de cobre, como el D-Link DGS-3120 (45F a 48F). Si no, los SFP siguen la numeración (49, 50…). Así se dibujan en la pestaña Puertos.",
@@ -684,14 +752,11 @@ function seccionesDispositivo(base, proveedores, personal, valores = {}) {
     },
     {
       clave: "linea", titulo: "Línea telefónica", icono: "telefono",
-      texto: "IMEI del equipo (en el celular: marque *#06#) y la línea que usa.",
+      texto: "Las líneas que usa el equipo con su operador, el IMEI de cada SIM (en el celular: marque *#06#) y la extensión del teléfono IP.",
       campos: [
-        { nombre: "imei", etiqueta: "IMEI", max: 20, placeholder: "15 dígitos", mayus: false, cats: [CAT.MOVIL] },
-        { nombre: "imei2", etiqueta: "IMEI 2 (segundo SIM)", max: 20, placeholder: "15 dígitos", mayus: false, cats: [CAT.MOVIL] },
-        { nombre: "numero_linea", etiqueta: "Número de línea", tipo: "tel", max: 20, placeholder: "8888-8888", cats: [CAT.MOVIL, CAT.TELEFONIA] },
-        { nombre: "operador", etiqueta: "Operador", max: 50, placeholder: "KÖLBI, CLARO, LIBERTY…", cats: [CAT.MOVIL] },
         { nombre: "extension", etiqueta: "Extensión", max: 10, placeholder: "1234", mayus: false, cats: [CAT.TELEFONIA] },
       ],
+      listas: ["moviles", "imeis"],
     },
     {
       clave: "impresion", titulo: "Impresión", icono: "impresora",
@@ -750,6 +815,7 @@ const seccionEquipoHTML = (s, valores, soloLectura) => `
     <h3>${icono(s.icono)}${esc(s.titulo)}</h3>
     <p>${esc(s.texto)}</p>
     <div class="rejilla">${camposHTML(s.campos, valores, { soloLectura })}</div>
+    ${(s.listas || []).map((clave) => repetibleHTML(clave, soloLectura)).join("")}
   </section>`;
 
 /** Las secciones del equipo, las direcciones de red y las de ubicación, asignación y soporte. */
@@ -765,14 +831,20 @@ const pideCampo = (c, idCategoria) => !c.cats || (idCategoria !== null && c.cats
 function aplicarCategoria(form, secciones, idCategoria, soloLectura) {
   for (const s of secciones) {
     let alguno = false;
+    for (const clave of s.listas || []) {
+      const ver = pideCampo(DIRECCIONES[clave], idCategoria);
+      const caja = form.querySelector(`[data-repetible="${clave}"]`);
+      if (caja) caja.hidden = !ver;
+      alguno ||= ver;
+    }
     for (const c of s.campos) {
       const caja = form.querySelector(`.campo[data-campo="${c.nombre}"]`);
       if (!caja) continue;
       const ver = pideCampo(c, idCategoria);
       caja.hidden = !ver;
       alguno ||= ver;
-      const control = form.elements.namedItem(c.nombre);
-      if (c.cats && control && !soloLectura) control.disabled = !ver;
+      const controles = c.tipo === "casillas" ? [...caja.querySelectorAll("input[type=checkbox]")] : [form.elements.namedItem(c.nombre)];
+      if (c.cats && !soloLectura) controles.filter(Boolean).forEach((x) => { x.disabled = !ver; });
       if (c.etiquetas) {
         const etiqueta = caja.querySelector("label");
         if (etiqueta) etiqueta.textContent = c.etiquetas[idCategoria] || c.etiqueta;
@@ -783,10 +855,11 @@ function aplicarCategoria(form, secciones, idCategoria, soloLectura) {
   }
 }
 
-/** Datos del formulario: los que no lleva la categoría van vacíos. */
+/** Datos del formulario: los que no lleva la categoría van vacíos (las
+ *  casillas, sin ninguna marcada). */
 function leerEquipo(form, campos, idCategoria) {
   const datos = leerCampos(form, campos);
-  for (const c of campos) if (!pideCampo(c, idCategoria)) datos[c.nombre] = null;
+  for (const c of campos) if (!pideCampo(c, idCategoria)) datos[c.nombre] = c.tipo === "casillas" ? [] : null;
   return datos;
 }
 
@@ -844,14 +917,17 @@ function enlazarAsignacion(form, personal) {
   });
 }
 
-/** Formulario de un edificio: nombre, otras señas y ubicación GPS. Lo usan la
- *  lista de edificios y el formulario del dispositivo. Devuelve el edificio
- *  guardado (o null si se cancela). */
+/** Formulario de un edificio (tabla edificios): nombre, provincia, cantón y
+ *  distrito, otras señas y ubicación GPS. Lo usan la lista de edificios y el
+ *  formulario del dispositivo. Devuelve el edificio guardado (o null si se
+ *  cancela). */
+const GEO_EDIFICIO = ["id_pais", "id_provincia", "id_canton", "id_distrito"];
 export async function formularioEdificio(fila) {
   const r = await abrirFormulario({
     titulo: fila ? "Editar edificio" : "Agregar edificio",
     campos: [
       { nombre: "descripcion", etiqueta: "Nombre del edificio", requerido: true, max: 150, placeholder: "PALACIO MUNICIPAL" },
+      ...GEO_EDIFICIO.map((nombre, i) => ({ nombre, etiqueta: NIVELES_GEO[i].titulo, tipo: "select" })),
       { nombre: "otras_senas", etiqueta: "Otras señas", tipo: "textarea", placeholder: "Opcional: dirección o referencias" },
       {
         nombre: "gps", etiqueta: "Ubicación GPS", max: 2000, mayus: false, placeholder: "10.0732, -84.3116",
@@ -860,8 +936,15 @@ export async function formularioEdificio(fila) {
     ],
     valores: fila || {},
     textoGuardar: fila ? "Guardar cambios" : "Agregar",
-    alAbrir: (form) => enlazarCampoMapa(form, "gps"),
+    alAbrir: (form) => {
+      enlazarCampoMapa(form, "gps");
+      // País → provincia → cantón → distrito (sin distrito no se guarda la dirección)
+      cascadaGeo(GEO_EDIFICIO.map((n) => form.elements.namedItem(n)), {
+        valores: Object.fromEntries(NIVELES_GEO.map((nivel, i) => [nivel.campo, fila?.[GEO_EDIFICIO[i]] || (i === 0 ? "CR" : null)])),
+      });
+    },
     alGuardar: (datos, form) => {
+      if (!datos.id_distrito) for (const n of GEO_EDIFICIO) datos[n] = null;
       if (!validarMapaLocal(form, "gps")) throw new ErrorApi("", 400, { gps: "Escriba latitud y longitud separadas por coma (por ejemplo 10.0732, -84.3116) o pegue un enlace de Google Maps que las incluya." });
       return api(fila ? ruta(`${RECURSO}/edificios`, fila.id_predio) : `${RECURSO}/edificios/`, {
         metodo: fila ? "PUT" : "POST", datos,
@@ -953,18 +1036,24 @@ function enlazarEdificio(form, edificios, esAdmin) {
 
 /* --------------------------------------- Direcciones IP y MAC del formulario */
 /** Sección con varias IP y varias MAC. Se guardan con el botón del formulario. */
+/** Una lista de filas (IP, MAC, líneas o IMEI) con su botón para agregar. */
+function repetibleHTML(clave, soloLectura) {
+  const def = DIRECCIONES[clave];
+  return `
+    <div class="repetible" data-repetible="${clave}">
+      <p class="repetible__titulo">${icono(def.icono, "ic--sm")}${esc(def.titulo)}</p>
+      <div class="repetible__filas"></div>
+      <p class="repetible__vacio" data-vacio hidden>Sin ${esc(def.plural)}.</p>
+      ${soloLectura ? "" : `<div><button type="button" class="btn btn--fantasma btn--sm" data-agregar-dir="${clave}">${icono("mas")}Agregar ${def.otra} ${def.corto}</button></div>`}
+    </div>`;
+}
+
 const seccionDireccionesHTML = (soloLectura) => `
   <section class="seccion-form" data-seccion-direcciones>
     <h3>${icono("web")}Direcciones de red</h3>
     <p>${soloLectura ? "Direcciones IP y MAC del equipo."
     : "Puede agregar varias IP y varias MAC; las filas vacías no se guardan. La MAC se escribe con o sin separadores, se guarda entera y se muestra como AA-BB-CC-DD-EE-FF."}</p>
-    ${Object.entries(DIRECCIONES).map(([clave, def]) => `
-    <div class="repetible" data-repetible="${clave}">
-      <p class="repetible__titulo">${icono(def.icono, "ic--sm")}${esc(def.titulo)}</p>
-      <div class="repetible__filas"></div>
-      <p class="repetible__vacio" data-vacio hidden>Sin ${esc(def.plural)}.</p>
-      ${soloLectura ? "" : `<div><button type="button" class="btn btn--fantasma btn--sm" data-agregar-dir="${clave}">${icono("mas")}Agregar otra ${def.corto}</button></div>`}
-    </div>`).join("")}
+    ${Object.keys(DIRECCIONES).filter((clave) => !DIRECCIONES[clave].seccion).map((clave) => repetibleHTML(clave, soloLectura)).join("")}
   </section>`;
 
 function filaDireccion(clave, valores = {}, soloLectura = false) {
@@ -975,12 +1064,14 @@ function filaDireccion(clave, valores = {}, soloLectura = false) {
   if (valores.num_linea) fila.dataset.numLinea = valores.num_linea;
   const valor = valores[def.campo] ? def.mostrar(valores[def.campo]) : "";
   const bloqueo = soloLectura ? " disabled" : "";
+  const seg = def.segundo;
+  if (!seg) fila.classList.add("repetible__fila--uno");
   fila.innerHTML = `
     <div class="campo" data-campo="${clave}-${n}"><label for="${clave}-dir-${n}">${esc(def.etiqueta)}</label>
-      <input id="${clave}-dir-${n}" data-k="${def.campo}" value="${esc(valor)}" maxlength="${def.max}" placeholder="${soloLectura ? "" : esc(def.placeholder)}" class="dato-mono${clave === "macs" ? " mayus" : ""}" autocomplete="off" spellcheck="false"${bloqueo}><p class="error-campo" hidden></p></div>
-    <div class="campo"><label for="${clave}-int-${n}">Interfaz</label>
-      <input id="${clave}-int-${n}" data-k="interfaz" value="${esc(valores.interfaz || "")}" maxlength="50" placeholder="${soloLectura ? "" : "WAN, LAN, GESTIÓN…"}" class="mayus" autocomplete="off"${bloqueo}></div>
-    ${soloLectura ? "" : `<button type="button" class="btn-icono btn-icono--peligro" data-quitar-dir aria-label="Quitar esta ${esc(def.singular)}">${icono("cerrar")}</button>`}`;
+      <input id="${clave}-dir-${n}" data-k="${def.campo}" value="${esc(valor)}" maxlength="${def.max}" placeholder="${soloLectura ? "" : esc(def.placeholder)}" class="dato-mono${def.mayus ? " mayus" : ""}" autocomplete="off" spellcheck="false"${clave === "moviles" ? ' inputmode="tel"' : clave === "imeis" ? ' inputmode="numeric"' : ""}${bloqueo}><p class="error-campo" hidden></p></div>
+    ${seg ? `<div class="campo"><label for="${clave}-seg-${n}">${esc(seg.etiqueta)}</label>
+      <input id="${clave}-seg-${n}" data-k="${seg.campo}" value="${esc(valores[seg.campo] || "")}" maxlength="${seg.max}" placeholder="${soloLectura ? "" : esc(seg.placeholder)}" class="mayus" autocomplete="off"${bloqueo}></div>` : ""}
+    ${soloLectura ? "" : `<button type="button" class="btn-icono btn-icono--peligro" data-quitar-dir aria-label="Quitar ${def.esta.toLowerCase()} ${esc(def.singular)}">${icono("cerrar")}</button>`}`;
   return fila;
 }
 
@@ -988,6 +1079,7 @@ function filaDireccion(clave, valores = {}, soloLectura = false) {
 function pintarDirecciones(form, valores, soloLectura) {
   for (const clave of Object.keys(DIRECCIONES)) {
     const caja = form.querySelector(`[data-repetible="${clave}"]`);
+    if (!caja) continue;
     const filas = caja.querySelector(".repetible__filas");
     filas.replaceChildren(...(valores[clave] || []).map((v) => filaDireccion(clave, v, soloLectura)));
     if (!soloLectura && !filas.children.length) filas.appendChild(filaDireccion(clave));
@@ -1002,7 +1094,7 @@ function enlazarDirecciones(form) {
       const clave = agregar.dataset.agregarDir;
       const filas = form.querySelector(`[data-repetible="${clave}"] .repetible__filas`);
       if (filas.children.length >= MAX_DIRECCIONES) {
-        toast(`Un dispositivo puede tener hasta ${MAX_DIRECCIONES} ${DIRECCIONES[clave].plural}.`, "error");
+        toast(`Un equipo puede tener hasta ${MAX_DIRECCIONES} ${DIRECCIONES[clave].plural}.`, "error");
         return;
       }
       const fila = filaDireccion(clave);
@@ -1027,27 +1119,32 @@ function enlazarDirecciones(form) {
   });
 }
 
-/** Lee y revisa las filas de IP y MAC (las vacías se ignoran).
- *  Devuelve { datos: {ips, macs}, filas: {ips, macs}, errores } donde filas
- *  son los elementos en el mismo orden que datos, para ubicar los errores. */
+/** Lee y revisa las filas de IP, MAC, líneas e IMEI (las vacías se ignoran).
+ *  Devuelve { datos: {ips, macs, moviles, imeis}, filas: {...}, errores }
+ *  donde filas son los elementos en el mismo orden que datos, para ubicar
+ *  los errores. Las listas que no están en el formulario no se mandan. */
 function leerDirecciones(form) {
-  const datos = { ips: [], macs: [] };
-  const filas = { ips: [], macs: [] };
+  const datos = {};
+  const filas = {};
   const errores = {};
   for (const [clave, def] of Object.entries(DIRECCIONES)) {
+    if (!form.querySelector(`[data-repetible="${clave}"]`)) continue;
+    datos[clave] = [];
+    filas[clave] = [];
     const vistas = new Set();
     form.querySelectorAll(`[data-repetible="${clave}"] .repetible__fila`).forEach((fila) => {
       const input = fila.querySelector(`[data-k="${def.campo}"]`);
       const campo = input.closest(".campo").dataset.campo;
       const valor = input.value.trim();
-      const interfaz = fila.querySelector('[data-k="interfaz"]').value.trim().toUpperCase();
-      if (!valor && !interfaz) return;
-      if (!valor) { errores[campo] = `Escriba la ${def.singular} o quite la fila.`; return; }
+      const segundo = def.segundo ? fila.querySelector(`[data-k="${def.segundo.campo}"]`).value.trim().toUpperCase() : "";
+      if (!valor && !segundo) return;
+      if (!valor) { errores[campo] = `Escriba ${def.la} ${def.singular} o quite la fila.`; return; }
       if (!def.valida(valor)) { errores[campo] = def.mensaje; return; }
       const llave = def.normalizar(valor);
-      if (vistas.has(llave)) { errores[campo] = `Esta ${def.singular} ya está en la lista.`; return; }
+      if (vistas.has(llave)) { errores[campo] = `${def.esta} ${def.singular} ya está en la lista.`; return; }
       vistas.add(llave);
-      const item = { [def.campo]: valor, interfaz: interfaz || null };
+      const item = { [def.campo]: valor };
+      if (def.segundo) item[def.segundo.campo] = segundo || null;
       if (fila.dataset.numLinea) item.num_linea = Number(fila.dataset.numLinea);
       datos[clave].push(item);
       filas[clave].push(fila);
@@ -1063,6 +1160,7 @@ function erroresDirecciones(e, filas) {
   const campos = {};
   const texto = `${e.message || ""} ${e.db || ""}`.toUpperCase();
   for (const [clave, def] of Object.entries(DIRECCIONES)) {
+    if (!filas[clave]) continue;
     const campoDe = (fila) => fila.querySelector(".campo[data-campo]").dataset.campo;
     const porFila = e.cuerpo?.[clave];
     if (Array.isArray(porFila)) {
@@ -1078,24 +1176,31 @@ function erroresDirecciones(e, filas) {
       if (!v) continue;
       const nombrada = texto.includes(def.mostrar(v).toUpperCase()) || (clave === "macs" && texto.includes(v));
       if (nombrada && !campos[campoDe(fila)]) {
-        campos[campoDe(fila)] = e.estado === 409
-          ? (clave === "macs" ? "Esa dirección MAC ya está registrada en otro dispositivo." : "Esa dirección IP está repetida.")
-          : e.message;
+        campos[campoDe(fila)] = e.estado === 409 ? REPETIDO[clave] : e.message;
       }
     }
   }
   return campos;
 }
 
-/** El servidor devuelve las IP y MAC que quedaron guardadas. Si no coinciden
- *  con las que se mandaron, el backend o la base no son de esta versión. */
+// Mensaje cuando la base dice que el valor ya existe (409)
+const REPETIDO = {
+  ips: "Esa dirección IP está repetida.",
+  macs: "Esa dirección MAC ya está registrada en otro dispositivo.",
+  moviles: "Esa línea está repetida.",
+  imeis: "Ese IMEI ya está registrado en otro equipo.",
+};
+
+/** El servidor devuelve las IP, MAC, líneas e IMEI que quedaron guardadas.
+ *  Si no coinciden con las que se mandaron, el backend o la base no son de
+ *  esta versión. */
 function direccionesNoGuardadas(respuesta, datos) {
   const faltan = Object.entries(DIRECCIONES)
-    .filter(([clave]) => String(respuesta?.[clave] || "").length < 1000
+    .filter(([clave]) => datos[clave] && String(respuesta?.[clave] || "").length < 1000
       && lista(respuesta?.[clave]).length !== datos[clave].length)
-    .map(([, def]) => def.corto);
+    .map(([, def]) => def.plural);
   return faltan.length
-    ? `El servidor no guardó las direcciones ${faltan.join(" ni las ")}. Copie de nuevo apps/dispositivos (serializers.py y views.py), ejecute procedimientosDispositivos.sql y reinicie Django.`
+    ? `El servidor no guardó ${faltan.join(" ni ")}. Copie de nuevo apps/dispositivos (serializers.py y views.py), ejecute bash reinstalar_base.sh y reinicie Django.`
     : "";
 }
 
@@ -1130,11 +1235,13 @@ function tipoSugerido(tipos, texto) {
 }
 
 /* «Registrar uno igual»: lo que se copia de otro equipo. No se copia lo que
-   es de cada equipo: serie, placa, nombre en la red, IMEI, número de línea,
-   extensión, responsable, IP, MAC, documentos ni observaciones. */
+   es de cada equipo: serie, placa, nombre en la red, IMEI, líneas,
+   extensión, responsable, estado, IP, MAC, documentos ni observaciones. */
 const CAMPOS_COPIA = [
-  "tipo_disp", "id_marca", "id_modelo", "id_os", "version_os", "procesador", "memoria_gb", "almacenamiento_gb", "tipo_almacenamiento",
-  "pulgadas", "resolucion", "cant_ptos_ethernet", "cant_ptos_sfp", "sfp_combo", "canales", "operador", "tecnologia_impresion", "a_color", "consumible",
+  "tipo_disp", "id_marca", "id_modelo", "id_os", "id_firmw", "id_proces", "memoria_gb", "almacenamiento_gb", "tipo_almacenamiento",
+  "pulgadas", "resolucion", "cant_ptos_serie", "cant_ptos_usb", "cant_ptos_ethernet", "cant_ptos_sfp", "cant_ptos_wireless",
+  "cant_ptos_bluetooth", "cant_ptos_celular", "sfp_combo", "canales", "tecnologia_impresion", "a_color", "consumible",
+  "herramientas", "roles",
   "capacidad_va", "autonomia_min", "id_predio", "ubicacion", "cod_departamento", "id_proveedor", "fecha_compra", "garantia_hasta",
 ];
 
@@ -1169,13 +1276,17 @@ export async function vistaDispositivoNuevo(cont, _params, ctx) {
   const previas = {
     ips: q.get("ip") ? [{ direccion_ip: q.get("ip") }] : [],
     macs: q.get("mac") ? [{ direccion_mac: q.get("mac") }] : [],
+    moviles: [],
+    imeis: [],
   };
   const deListado = q.get("equipo");
   const sugerido = tipoSugerido(base.tipos, q.get("tipo"));
   const asignado = personal.find((u) => String(u.id) === q.get("asignado"));
   const valores = {
     id_os: base.sistemas.some((s) => s.id_os === 1) ? 1 : undefined,
+    id_firmw: 1,      // N/D
     ...copiados,
+    id_estado: 2,     // ACTIVO
     nombre_equipo: deListado ? deListado.split(".")[0].toUpperCase() : undefined,
     tipo_disp: sugerido?.tipo_disp ?? copiados.tipo_disp,
     id_asignado: asignado?.id,
@@ -1342,7 +1453,8 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
           ${pastillaEstado(d.activo)}
           ${d.activo ? pastillaGarantia(d) : ""}
           ${[CAT.COMPUTO, CAT.SERVIDOR].includes(d.id_categoria) || d.tiene_microclaudia
-            ? `<span class="pastilla pastilla--sin-punto ${d.tiene_microclaudia ? "pastilla--agente" : "pastilla--inactivo"}" title="Check de la licencia de Microclaudia (se marca en Datos generales)">${icono(d.tiene_microclaudia ? "check" : "agente", "ic--sm")}${d.tiene_microclaudia ? "Con Microclaudia" : "Sin Microclaudia"}</span>` : ""}
+            ? `<span class="pastilla pastilla--sin-punto ${d.tiene_microclaudia ? "pastilla--agente" : "pastilla--inactivo"}" title="Herramienta MICROCLAUDIA (se marca en Datos generales, Herramientas y roles)">${icono(d.tiene_microclaudia ? "check" : "agente", "ic--sm")}${d.tiene_microclaudia ? "Con Microclaudia" : "Sin Microclaudia"}</span>` : ""}
+          ${d.id_estado === 1 ? `<span class="pastilla pastilla--sin-punto pastilla--inactivo" title="Estado del equipo">Estado N/D</span>` : ""}
           <span>${esc(d.tipo_dispositivo)}${marca ? ` · ${esc(marca)}` : ""}</span>
           <span class="dato-mono">Serie ${esc(d.serie)}</span>
           ${d.placa ? `<span class="dato-mono" title="Placa (número de activo)">Placa ${esc(d.placa)}</span>` : ""}
@@ -1444,9 +1556,10 @@ async function cambiarEstado(d, alTerminar) {
 
 /* --------------------------------------------------------- Datos generales */
 async function pestanaDatos(panel, d, ctx, recargar) {
-  const [base, proveedores, ips, macs, personal] = await Promise.all([
+  const [base, proveedores, ips, macs, moviles, imeis, personal] = await Promise.all([
     datosBase(), api("proveedores/", { query: { activo: true } }),
     api(ruta(RECURSO, d.id_disp, "ips")), api(ruta(RECURSO, d.id_disp, "macs")),
+    api(ruta(RECURSO, d.id_disp, "moviles")), api(ruta(RECURSO, d.id_disp, "imeis")),
     api("usuarios/", { query: { activo: true } }),
   ]);
   const secciones = seccionesDispositivo(base, proveedores, personal, d);
@@ -1474,7 +1587,7 @@ async function pestanaDatos(panel, d, ctx, recargar) {
       <div class="panel__cabeza"><h2>Acciones sobre el equipo</h2></div>
       <div class="fila-riesgo">
         <div><strong>Eliminar definitivamente</strong>
-          <p>Borra el equipo con sus direcciones IP y MAC, sus documentos y archivos. No se puede deshacer. Si solo se retiró de servicio, use Desactivar.</p></div>
+          <p>Borra el equipo con sus direcciones IP y MAC, sus líneas, IMEI, roles, herramientas, documentos y archivos. No se puede deshacer. Si solo se retiró de servicio, use Desactivar.</p></div>
         <button type="button" class="btn btn--peligro-suave" data-eliminar>${icono("borrar")}Eliminar equipo</button>
       </div>
     </section>` : ""}`;
@@ -1485,7 +1598,7 @@ async function pestanaDatos(panel, d, ctx, recargar) {
   prepararNumeros(form, campos);
   enlazarEdificio(form, base.edificios, ctx.esAdmin);
   if (!soloLectura) enlazarAsignacion(form, personal);
-  pintarDirecciones(form, { ips, macs }, soloLectura);
+  pintarDirecciones(form, { ips, macs, moviles, imeis }, soloLectura);
   if (!soloLectura) enlazarDirecciones(form);
   const diseno = enlazarDisenoSwitch(form, { soloLectura });
   await enlazarEquipo(form, base, d, soloLectura, (cat) => { categoria = cat; aplicarCategoria(form, secciones, cat, soloLectura); diseno.categoria(cat); });
@@ -2149,7 +2262,7 @@ export async function vistaEdificios(cont, _params, ctx) {
 
   function pintar() {
     const q = normalizar(buscar.value.trim());
-    visibles = q ? filas.filter((f) => normalizar(`${f.descripcion} ${f.otras_senas || ""}`).includes(q)) : filas;
+    visibles = q ? filas.filter((f) => normalizar(`${f.descripcion} ${f.otras_senas || ""} ${f.nombre_distrito || ""} ${f.nombre_canton || ""}`).includes(q)) : filas;
     total.textContent = `${visibles.length} de ${filas.length}`;
     if (!visibles.length) {
       lista.innerHTML = vacioHTML({
@@ -2162,7 +2275,7 @@ export async function vistaEdificios(cont, _params, ctx) {
     const columnas = [
       {
         titulo: "Edificio",
-        html: (f) => `<div class="persona"><span class="insignia-tipo" aria-hidden="true">${icono("edificio")}</span><div><strong>${esc(f.descripcion)}</strong>${f.otras_senas ? `<span class="secundario">${esc(f.otras_senas)}</span>` : ""}</div></div>`,
+        html: (f) => `<div class="persona"><span class="insignia-tipo" aria-hidden="true">${icono("edificio")}</span><div><strong>${esc(f.descripcion)}</strong>${f.otras_senas || f.nombre_distrito ? `<span class="secundario">${esc([f.nombre_distrito && `${nombreLugar(f.nombre_distrito)}, ${nombreLugar(f.nombre_canton)}, ${nombreLugar(f.nombre_provincia)}`, f.otras_senas].filter(Boolean).join(" · "))}</span>` : ""}</div></div>`,
       },
       {
         titulo: "Ubicación GPS", clase: "col-opcional",

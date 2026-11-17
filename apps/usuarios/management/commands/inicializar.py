@@ -17,9 +17,9 @@ from apps.core.db import llamar_sp
 CATALOGOS = {
     "sp_cat_roles_usuarios": ["Administrador", "Estándar"],
     "sp_cat_tipos_autenticaciones": ["Sistema App", "Active Directory"],
-    "sp_cat_tipos_identificaciones": ["Cédula Física", "Cédula Jurídica", "DIMEX", "Pasaporte"],
-    "sp_cat_tipos_telefonos": ["Celular", "Casa", "Oficina"],
-    "sp_cat_tipos_correos": ["Institucional", "Personal"],
+    "sp_cat_tipos_identificaciones": ["Cédula Física", "Cédula Jurídica", "DIMEX", "Pasaporte", "Sin Identificación"],
+    "sp_cat_tipos_telefonos": ["Personal Celular", "Personal Fijo", "Trabajo Celular", "Trabajo Fijo"],
+    "sp_cat_tipos_correos": ["Institucional", "Personal", "Trabajo"],
     "sp_cat_departamentos": ["Tecnologías de Información"],
 }
 
@@ -42,7 +42,7 @@ class Command(BaseCommand):
         codigos = {sp: self._asegurar_catalogo(sp, valores) for sp, valores in CATALOGOS.items()}
         self._asegurar_geografia()
 
-        filas, _ = llamar_sp("sp_usr_usuarios_obtener_por_login", [opts["usuario"]])
+        filas, _ = llamar_sp("sp_personas_obtener_por_login", [opts["usuario"]])
         if filas:
             self.stdout.write(f"El usuario '{opts['usuario']}' ya existe; no se modificó.")
             return
@@ -56,7 +56,7 @@ class Command(BaseCommand):
         if cod_rol is None:
             raise CommandError(f"No existe el rol '{rol_admin}' en cat_roles_usuarios.")
 
-        _, nuevo_id = llamar_sp("sp_usr_usuarios_insertar", [
+        _, nuevo_id = llamar_sp("sp_personas_insertar", [
             cod_rol,
             self._codigo(codigos["sp_cat_tipos_autenticaciones"], "Sistema App"),
             self._codigo(codigos["sp_cat_tipos_identificaciones"], "Cédula Física"),
@@ -104,5 +104,5 @@ class Command(BaseCommand):
             self.stdout.write("  + cantón: Grecia")
 
         if not llamar_sp("sp_geo_distritos_obtener", ["CR", "2", "03", "01"])[0]:
-            llamar_sp("sp_geo_distritos_insertar", ["CR", "2", "03", "01", "Grecia"])
+            llamar_sp("sp_geo_distritos_insertar", ["CR", "2", "03", "01", "Grecia", None])
             self.stdout.write("  + distrito: Grecia")

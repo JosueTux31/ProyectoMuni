@@ -30,7 +30,7 @@ def _nombre(fila):
 
 
 class UsuarioViewSet(archivos.ArchivosMixin, SPViewSet):
-    """CRUD de usuarios (sp_usr_usuarios_*).
+    """CRUD de usuarios (sp_personas_*).
 
     - Consultar: cualquier usuario con sesión. Modificar: solo administradores.
     - DELETE desactiva (eliminación lógica). Para borrar de verdad use
@@ -41,7 +41,7 @@ class UsuarioViewSet(archivos.ArchivosMixin, SPViewSet):
       enlace firmado que sirve directo en un <img>.
     - El código postal lo asigna la base de datos según el distrito.
     """
-    sp = "sp_usr_usuarios"
+    sp = "sp_personas"
     campos_pk = ("id",)
     campos_insertar = CAMPOS_INSERTAR
     campos_actualizar = CAMPOS_ACTUALIZAR
@@ -57,7 +57,7 @@ class UsuarioViewSet(archivos.ArchivosMixin, SPViewSet):
     tipos_archivo = {
         "foto": {
             "nombre": "foto", "carpeta": "usuarios/fotos", "campo": "imagen_path",
-            "sp": "sp_usr_usuarios_actualizar_imagen", "extensiones": archivos.EXT_IMAGEN,
+            "sp": "sp_personas_actualizar_imagen", "extensiones": archivos.EXT_IMAGEN,
             "ajuste_max_mb": "MUNI_MAX_MB_FOTO", "max_mb_defecto": 5,
             "en_linea": True, "firmable": True,
         },
@@ -111,10 +111,10 @@ class UsuarioViewSet(archivos.ArchivosMixin, SPViewSet):
     # POST /usuarios/login/  (también /usuarios/validar-credenciales/)
     def login(self, request):
         datos = self._validar(s.CredencialesSerializer, request.data)
-        filas, _ = llamar_sp("sp_usr_usuarios_obtener_por_login", [datos["usuario_red"]])
+        filas, _ = llamar_sp("sp_personas_obtener_por_login", [datos["usuario_red"]])
 
         def fallido(motivo, id_persona=None):
-            registrar_evento("INICIO_FALLIDO", tabla="usr_usuarios", llave=datos["usuario_red"],
+            registrar_evento("INICIO_FALLIDO", tabla="personas", llave=datos["usuario_red"],
                              id_persona=id_persona, descripcion=f"Usuario de red: {datos['usuario_red']}",
                              detalle={"motivo": motivo})
 
@@ -134,7 +134,7 @@ class UsuarioViewSet(archivos.ArchivosMixin, SPViewSet):
             raise PermissionDenied("El usuario está inactivo. Contacte a un administrador.")
 
         fijar_usuario(usuario["id"], _nombre(usuario))
-        registrar_evento("INICIO_SESION", tabla="usr_usuarios", llave=usuario["id"],
+        registrar_evento("INICIO_SESION", tabla="personas", llave=usuario["id"],
                          id_persona=usuario["id"], descripcion=_nombre(usuario))
 
         perfil = self.salida(usuario)
@@ -147,7 +147,7 @@ class UsuarioViewSet(archivos.ArchivosMixin, SPViewSet):
 
     # POST /usuarios/logout/  (registra el cierre de sesión en la auditoría)
     def logout(self, request):
-        registrar_evento("CIERRE_SESION", tabla="usr_usuarios", llave=request.user.id,
+        registrar_evento("CIERRE_SESION", tabla="personas", llave=request.user.id,
                          id_persona=request.user.id, descripcion=request.user.nombre_completo)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -159,7 +159,7 @@ class UsuarioViewSet(archivos.ArchivosMixin, SPViewSet):
 
     # POST /usuarios/<id>/activar/
     def activar(self, request, id):
-        llamar_sp("sp_usr_usuarios_activar", [id])
+        llamar_sp("sp_personas_activar", [id])
         return Response(self.salida(self._obtener([id])))
 
     # DELETE /usuarios/<id>/eliminar-fisico/
@@ -167,7 +167,7 @@ class UsuarioViewSet(archivos.ArchivosMixin, SPViewSet):
         if self._es_propio(id):
             raise ValidationError({"detail": "No puede eliminar su propio usuario."})
         usuario = self._obtener([id])
-        llamar_sp("sp_usr_usuarios_eliminar_fisico", [id])
+        llamar_sp("sp_personas_eliminar_fisico", [id])
         archivos.borrar(usuario.get("imagen_path"))
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -187,7 +187,7 @@ class UsuarioViewSet(archivos.ArchivosMixin, SPViewSet):
             actual = datos.get("password_actual")
             if not actual:
                 raise ValidationError({"password_actual": ["Indique su clave actual."]})
-            filas, _ = llamar_sp("sp_usr_usuarios_obtener_por_login", [request.user.usuario_red])
+            filas, _ = llamar_sp("sp_personas_obtener_por_login", [request.user.usuario_red])
             if not filas or not check_password(actual, filas[0]["password_hash"] or ""):
                 raise ValidationError({"password_actual": ["La clave actual no es correcta."]})
 
@@ -198,7 +198,7 @@ class UsuarioViewSet(archivos.ArchivosMixin, SPViewSet):
             if any(check_password(password, f["password_hash"]) for f in previas):
                 raise ValidationError({"password": ["La clave ya fue utilizada recientemente."]})
 
-        llamar_sp("sp_usr_usuarios_cambiar_clave", [id, make_password(password), 0])
+        llamar_sp("sp_personas_cambiar_clave", [id, make_password(password), 0])
         return Response({"detail": "Clave actualizada."})
 
 

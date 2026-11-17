@@ -420,11 +420,11 @@ class _Analizador:
 
 
 def _virtual(nombre):
-    origen = ("(EXISTS (SELECT 1 FROM equipos q WHERE q.direccion_ip = e.ip_origen)"
-              " OR EXISTS (SELECT 1 FROM red_macs_dispositivos qm WHERE qm.direccion_mac = e.mac_origen))")
+    origen = ("(EXISTS (SELECT 1 FROM dir_ips q WHERE q.dir_ip = e.ip_origen)"
+              " OR EXISTS (SELECT 1 FROM dir_macs qm WHERE qm.dir_mac = e.mac_origen))")
     # Destino: también la IP traducida por NAT de destino (el servidor interno real)
-    destino = ("(EXISTS (SELECT 1 FROM equipos q WHERE q.direccion_ip IN (e.ip_destino, e.ip_destino_nat))"
-               " OR EXISTS (SELECT 1 FROM red_macs_dispositivos qm WHERE qm.direccion_mac = e.mac_destino))")
+    destino = ("(EXISTS (SELECT 1 FROM dir_ips q WHERE q.dir_ip IN (e.ip_destino, e.ip_destino_nat))"
+               " OR EXISTS (SELECT 1 FROM dir_macs qm WHERE qm.dir_mac = e.mac_destino))")
     if nombre == "equipo_origen":
         return origen
     if nombre == "equipo_destino":
@@ -435,7 +435,7 @@ def _virtual(nombre):
         return ("EXISTS (SELECT 1 FROM log_direcciones d WHERE d.id_importacion = "
                 "(SELECT MAX(i.id_importacion) FROM log_importaciones i WHERE i.fuente = 'MICROCLAUDIA')"
                 " AND ((d.tipo = 'IP' AND d.direccion = e.ip_origen) OR (d.tipo = 'MAC' AND d.direccion = e.mac_origen)))")
-    return ("EXISTS (SELECT 1 FROM usr_usuarios u WHERE u.usuario_red = e.usuario AND u.es_proveedor = FALSE)")
+    return ("EXISTS (SELECT 1 FROM personas u WHERE u.usuario_red = e.usuario AND u.es_proveedor = FALSE)")
 
 
 def a_sql(texto, alias_fuente=None):

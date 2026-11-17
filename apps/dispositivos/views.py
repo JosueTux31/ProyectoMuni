@@ -1,6 +1,9 @@
 """APIs del módulo de equipos municipales (antes dispositivos de red): equipos
 de red, computadoras, servidores, móviles, telefonía, impresión, pantallas,
-UPS, cámaras... en la tabla equiposMuni.
+UPS, cámaras... en la tabla equipos (modelo de datos de la especificación
+«2 - Sistema - Tablas»). Las respuestas conservan los nombres que usa la
+página (id_disp, tipo_disp, placa...), aunque las columnas se llamen id,
+tipo_equipo, placa_equipo...
 
 Igual que el resto del sistema: cada recurso llama a sus procedimientos
 almacenados sp_<tabla>_listar / _obtener / _insertar / _actualizar /
@@ -24,7 +27,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.auditoria.views import formatear
-from apps.catalogos.serializers import Descripcion150Serializer
+from apps.catalogos.serializers import Descripcion50Serializer, Descripcion150Serializer
 from apps.catalogos.views import CatalogoViewSet
 from apps.core import archivos
 from apps.core.db import llamar_sp
@@ -38,21 +41,21 @@ from . import serializers as s
 # Catálogos del módulo
 # =====================================================================
 class CategoriaDispositivoViewSet(SPViewSet):
-    """Categorías de equipo (sp_cat_categorias_dispositivos_*): equipos de red,
+    """Categorías de equipo (sp_categoria_equipos_*): equipos de red,
     computadoras, servidores, móviles, telefonía, impresión... Son fijas
     (la página sabe qué datos pide cada una): solo se consultan.
     lleva_agente: se espera que sus equipos tengan el agente de Microclaudia."""
-    sp = "sp_cat_categorias_dispositivos"
+    sp = "sp_categoria_equipos"
     campos_pk = ("id_categoria",)
     campos_bool = ("lleva_agente",)
 
 
 class TipoDispositivoViewSet(SPViewSet):
-    """Modem, firewall, laptop, impresora, celular... (sp_cat_tipos_dispositivos_*).
+    """Modem, firewall, laptop, impresora, celular... (sp_tipo_equipos_*).
     Cada tipo es de una categoría (id_categoria). Al crear sin categoría se
     toma la que dice el nombre (LAPTOP -> computadoras) o «otros equipos».
     GET /tipos/?id_categoria=2 lista solo los de esa categoría."""
-    sp = "sp_cat_tipos_dispositivos"
+    sp = "sp_tipo_equipos"
     campos_pk = ("tipo_disp",)
     campos_insertar = ("descripcion", "id_categoria")
     campos_actualizar = ("descripcion", "id_categoria")
@@ -64,23 +67,62 @@ class TipoDispositivoViewSet(SPViewSet):
 
 
 class SistemaOperativoViewSet(CatalogoViewSet):
-    """N/D, Linux, Windows... (sp_cat_sistemas_operativos_*)."""
-    sp = "sp_cat_sistemas_operativos"
+    """N/D, Linux, Windows... (sp_sis_operativos_*)."""
+    sp = "sp_sis_operativos"
     campos_pk = ("id_os",)
     serializer_class = s.Descripcion100Serializer
 
 
 class TipoDocumentoViewSet(CatalogoViewSet):
-    """Manuales, imagen, firmware, respaldo, configuración... (sp_cat_tipos_documentos_*)."""
-    sp = "sp_cat_tipos_documentos"
+    """Tipos de archivo: manual, garantía, soporte, configuración, backup,
+    nota... (tabla tipo_archivos, sp_tipo_archivos_*)."""
+    sp = "sp_tipo_archivos"
     campos_pk = ("id_doc",)
     serializer_class = s.Descripcion100Serializer
 
 
+class ProcesadorViewSet(CatalogoViewSet):
+    """Tabla catálogo procesadores (sp_procesadores_*)."""
+    sp = "sp_procesadores"
+    campos_pk = ("id_proc",)
+    serializer_class = Descripcion150Serializer
+
+
+class FirmwareViewSet(CatalogoViewSet):
+    """Tabla catálogo firmwares: versión del sistema o firmware (sp_firmwares_*).
+    El 1 (N/D) lo usa el sistema."""
+    sp = "sp_firmwares"
+    campos_pk = ("id_firmw",)
+    serializer_class = s.Descripcion100Serializer
+
+
+class EstadoEquipoViewSet(CatalogoViewSet):
+    """Tabla catálogo estado_equipos (sp_estado_equipos_*): N/D, ACTIVO e
+    INACTIVO los usa el sistema (dar de baja y activar)."""
+    sp = "sp_estado_equipos"
+    campos_pk = ("id_estado",)
+    serializer_class = Descripcion50Serializer
+
+
+class TipoRolViewSet(CatalogoViewSet):
+    """Tabla catálogo tipo_roles: roles de un servidor (sp_tipo_roles_*)."""
+    sp = "sp_tipo_roles"
+    campos_pk = ("id_rol",)
+    serializer_class = s.Descripcion100Serializer
+
+
+class TipoHerramientaViewSet(CatalogoViewSet):
+    """Tabla catálogo tipo_herramientas (sp_tipo_herramientas_*). La 3,
+    MICROCLAUDIA, la usa el sistema para compararla con su listado."""
+    sp = "sp_tipo_herramientas"
+    campos_pk = ("id_herram",)
+    serializer_class = s.Descripcion100Serializer
+
+
 class MarcaViewSet(SPViewSet):
-    """Marcas, cada una de un tipo de dispositivo (sp_cat_marcas_*).
+    """Marcas, cada una de un tipo de dispositivo (sp_marcas_*).
     GET /marcas/?tipo_disp=2 lista solo las de ese tipo."""
-    sp = "sp_cat_marcas"
+    sp = "sp_marcas"
     campos_pk = ("id_marca",)
     campos_insertar = ("tipo_disp", "descripcion")
     campos_actualizar = ("tipo_disp", "descripcion")
@@ -91,10 +133,10 @@ class MarcaViewSet(SPViewSet):
 
 
 class ModeloViewSet(SPViewSet):
-    """Modelos de cada marca (sp_cat_modelos_*). Se identifican con
+    """Modelos de cada marca (sp_modelos_*). Se identifican con
     /modelos/<id_marca>/<id_modelo>/; el tipo de dispositivo sale de la marca.
     GET /modelos/?tipo_disp=2&id_marca=3 filtra (los dos son opcionales)."""
-    sp = "sp_cat_modelos"
+    sp = "sp_modelos"
     campos_pk = ("id_marca", "id_modelo")
     campos_insertar = ("id_marca", "descripcion")
     campos_actualizar = ("descripcion",)
@@ -107,44 +149,60 @@ class ModeloViewSet(SPViewSet):
 
 class EdificioViewSet(SPViewSet):
     """Edificios de la Municipalidad: nombre, otras señas y coordenadas para
-    el mapa (sp_cat_edificios_*). El mapa de cada dispositivo es el de su
+    el mapa (sp_edificios_*). El mapa de cada dispositivo es el de su
     edificio. Cada uno trae cantidad_dispositivos (dispositivos activos)."""
-    sp = "sp_cat_edificios"
+    sp = "sp_edificios"
     campos_pk = ("id_predio",)
-    campos_insertar = ("descripcion", "otras_senas", "gps")
-    campos_actualizar = ("descripcion", "otras_senas", "gps")
+    campos_insertar = ("descripcion", "otras_senas", "gps", "id_pais", "id_provincia", "id_canton", "id_distrito")
+    campos_actualizar = ("descripcion", "otras_senas", "gps", "id_pais", "id_provincia", "id_canton", "id_distrito")
     insertar_devuelve_codigo = True
     serializer_class = s.EdificioSerializer
 
 
 # =====================================================================
-# Equipos (tabla equiposMuni)
+# Equipos (tabla equipos)
 # =====================================================================
-# En el orden de los parámetros de sp_equiposMuni_insertar / _actualizar
+# En el orden de los parámetros de sp_equipos_insertar / _actualizar
+# (los nombres son los de la página; la columna de la tabla equipos va al lado
+# cuando se llama distinto)
 CAMPOS_DISPOSITIVO = (
-    "serie", "tipo_disp", "id_marca", "id_modelo", "nombre_equipo", "placa",
-    "cant_ptos_ethernet", "cant_ptos_sfp", "id_os", "version_os",
-    "procesador", "memoria_gb", "almacenamiento_gb", "tipo_almacenamiento",
-    "imei", "imei2", "numero_linea", "operador", "extension",
+    "serie", "tipo_disp",                       # tipo_equipo
+    "id_marca", "id_modelo", "nombre_equipo",
+    "placa",                                    # placa_equipo
+    "id_proces",
+    "memoria_gb", "almacenamiento_gb",          # cant_mem, cant_almac
+    "tipo_almacenamiento",
+    "cant_ptos_serie", "cant_ptos_usb",
+    "cant_ptos_ethernet",                       # cant_ptos_eth
+    "cant_ptos_sfp", "cant_ptos_wireless", "cant_ptos_bluetooth", "cant_ptos_celular",
+    "id_os",                                    # id_so
+    "id_firmw", "extension",
     "tecnologia_impresion", "a_color", "consumible", "pulgadas", "resolucion",
     "capacidad_va", "autonomia_min", "canales",
-    "id_predio", "ubicacion", "cod_departamento", "id_asignado", "id_proveedor",
-    "fecha_compra", "garantia_hasta", "observaciones", "tiene_microclaudia", "sfp_combo",
-    "ips", "macs",
+    "id_predio", "ubicacion", "id_estado", "cod_departamento",
+    "id_asignado",                              # id_usuario
+    "id_proveedor", "fecha_compra", "garantia_hasta", "observaciones", "sfp_combo",
+    # listas: dir_ips, dir_macs, num_moviles, dir_imeis, roles, herramientas
+    "ips", "macs", "moviles", "imeis", "roles", "herramientas", "tiene_microclaudia",
 )
-DIRECCIONES = ("ips", "macs")
+DIRECCIONES = ("ips", "macs", "moviles", "imeis")      # filas con num_linea
+CODIGOS = ("roles", "herramientas")                    # códigos de sus catálogos
+# Lo que sale al leer un equipo y no se vuelve a mandar en un PATCH: las
+# listas salen como texto y el procesador o el firmware como descripción
+NO_SE_REENVIA = DIRECCIONES + CODIGOS + ("tiene_microclaudia",) + s.CAMPOS_VIEJOS
 
 
 def lista_json(filas):
-    """Lista de IP o MAC validada -> texto JSON para el procedimiento.
+    """Lista validada (filas o códigos) -> texto JSON para el procedimiento.
     Las llaves sin valor no se mandan (NULL en la base)."""
     if filas is None:
         return None
-    return json.dumps([{k: v for k, v in f.items() if v is not None} for f in filas], ensure_ascii=False)
+    return json.dumps([{k: v for k, v in f.items() if v is not None} if isinstance(f, dict) else f for f in filas],
+                      ensure_ascii=False)
 
 
 class DispositivoViewSet(SPViewSet):
-    """CRUD de equipos municipales (sp_equiposMuni_*).
+    """CRUD de equipos municipales (tabla equipos, sp_equipos_*).
 
     - Cada equipo es de un tipo, y el tipo de una categoría (red,
       computadoras, móviles, impresión...): la página pide los datos de su
@@ -154,11 +212,16 @@ class DispositivoViewSet(SPViewSet):
       proveedor sea un proveedor, la persona asignada un funcionario, y que
       no se repitan la serie (por marca), la placa, el IMEI ni el nombre en
       la red entre los equipos activos.
-    - Las IP y MAC se guardan con el dispositivo, en la misma transacción:
-      POST y PUT reciben "ips" y "macs" como listas
+    - Las IP, MAC, líneas e IMEI (tablas dir_ips, dir_macs, num_moviles y
+      dir_imeis) y los roles y herramientas se guardan con el equipo, en la
+      misma transacción. POST y PUT reciben "ips", "macs", "moviles" e
+      "imeis" como listas de filas, y "roles" y "herramientas" como listas
+      de códigos ([2, 3]):
         "ips":  [{"num_linea": 1, "direccion_ip": "192.168.1.1", "interfaz": "LAN"},
                  {"direccion_ip": "10.0.0.1"}]
         "macs": [{"direccion_mac": "AA-BB-CC-DD-EE-FF", "interfaz": "WAN"}]
+        "moviles": [{"num_movil": "8888-8888", "operador": "KÖLBI"}]
+        "imeis": [{"dir_imei": "356938035643809"}]
       Las que traen num_linea se modifican, las que no lo traen se agregan
       y las que ya no vienen se borran. Si no se mandan, no se tocan.
       También se pueden manejar una por una en /dispositivos/<id>/ips/ y
@@ -166,18 +229,19 @@ class DispositivoViewSet(SPViewSet):
     - Cada dispositivo trae "ips" y "macs" (todas, separadas por coma; la
       MAC sin separadores) y "gps_edificio" (las coordenadas de su
       edificio, para el mapa: el GPS se pone en el edificio).
-    - "tiene_microclaudia": el check de la licencia de Microclaudia, que marca
-      el administrador. Si no se manda (o va en null) se conserva el que tenía;
-      PATCH {"tiene_microclaudia": true} cambia solo el check.
+    - "tiene_microclaudia": la herramienta 3 (MICROCLAUDIA). Al leer dice si
+      la tiene; PATCH {"tiene_microclaudia": true} la agrega sin tocar las
+      demás herramientas. "id_estado": 1 N/D, 2 ACTIVO, 3 INACTIVO ("activo"
+      sale en true mientras no esté INACTIVO).
     - "sfp_combo" (switches): los SFP comparten número con los últimos puertos
       de cobre (45F = 45T, como el D-Link DGS-3120). Igual que el anterior:
       sin mandar se conserva. Los puertos están en /dispositivos/<id>/puertos/.
-    - DELETE desactiva. POST /<id>/activar/ lo activa de nuevo.
+    - DELETE lo deja INACTIVO. POST /<id>/activar/ lo deja ACTIVO de nuevo.
       DELETE /<id>/eliminar-fisico/ lo borra con sus documentos y archivos.
     - GET /<id>/historial/ (solo administradores): quién lo registró y
       modificó, y los cambios a sus documentos.
     """
-    sp = "sp_equiposMuni"
+    sp = "sp_equipos"
     campos_pk = ("id_disp",)
     campos_insertar = CAMPOS_DISPOSITIVO
     campos_actualizar = CAMPOS_DISPOSITIVO
@@ -195,7 +259,7 @@ class DispositivoViewSet(SPViewSet):
         return super().get_permissions()
 
     def preparar_datos(self, datos, accion):
-        for campo in DIRECCIONES:
+        for campo in DIRECCIONES + CODIGOS:
             datos[campo] = lista_json(datos.get(campo))
         return datos
 
@@ -203,9 +267,9 @@ class DispositivoViewSet(SPViewSet):
         pk = self._valores_pk(kwargs)
         entrada = request.data
         if partial:
-            # PATCH: se completa con los datos actuales. Las IP y MAC de la
+            # PATCH: se completa con los datos actuales. Las listas de la
             # lectura vienen como texto ("a, b"): si no se mandan, no se tocan.
-            actual = {k: v for k, v in self._obtener(pk).items() if k not in DIRECCIONES}
+            actual = {k: v for k, v in self._obtener(pk).items() if k not in NO_SE_REENVIA}
             entrada = {**actual, **request.data}
         datos = self.preparar_datos(self._validar(self.serializer_class, entrada), "actualizar")
         llamar_sp(f"{self.sp}_actualizar", pk + [datos.get(c) for c in self.campos_actualizar])
@@ -213,14 +277,14 @@ class DispositivoViewSet(SPViewSet):
 
     # POST /dispositivos/<id>/activar/
     def activar(self, request, id_disp):
-        llamar_sp("sp_equiposMuni_activar", [id_disp])
+        llamar_sp("sp_equipos_activar", [id_disp])
         return Response(self.salida(self._obtener([id_disp])))
 
     # DELETE /dispositivos/<id>/eliminar-fisico/
     def eliminar_fisico(self, request, id_disp):
         self._obtener([id_disp])  # 404 si no existe
-        documentos, _ = llamar_sp("sp_red_documentos_dispositivos_listar", [id_disp, None])
-        llamar_sp("sp_equiposMuni_eliminar_fisico", [id_disp])
+        documentos, _ = llamar_sp("sp_archivos_listar", [id_disp, None])
+        llamar_sp("sp_equipos_eliminar_fisico", [id_disp])
         for d in documentos:
             archivos.borrar(d.get("path_docs"))
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -229,7 +293,7 @@ class DispositivoViewSet(SPViewSet):
     def historial(self, request, id_disp):
         f = self._validar(s.HistorialSerializer, request.query_params)
         limite = f["limite"]
-        filas, _ = llamar_sp("sp_equiposMuni_historial", [
+        filas, _ = llamar_sp("sp_equipos_historial", [
             id_disp, limite + 1, f["desplazamiento"],  # uno de más para saber si hay otra página
         ])
         return Response({
@@ -254,13 +318,13 @@ def _bools(filas):
 
 
 def _puertos_de(id_switch=None):
-    filas, _ = llamar_sp("sp_red_puertos_switch_listar", [id_switch])
+    filas, _ = llamar_sp("sp_puertos_switch_listar", [id_switch])
     return _bools(filas)
 
 
 class PuertoSwitchViewSet(SPViewSet):
     """Puertos de los switches y demás equipos de red con puertos
-    (sp_red_puertos_switch_*). Solo se guardan los puertos con algún dato;
+    (sp_puertos_switch_*). Solo se guardan los puertos con algún dato;
     los demás están libres. Consultar: cualquier usuario con sesión;
     asignar y liberar: solo administradores.
 
@@ -277,7 +341,7 @@ class PuertoSwitchViewSet(SPViewSet):
     MAC, persona asignada, edificio...) y "fuera_de_rango" si el switch ya
     no tiene ese puerto (se le bajó la cantidad).
     """
-    sp = "sp_equiposMuni"
+    sp = "sp_equipos"
     campos_pk = ("id_disp",)
     campos_bool = ("activo", "a_color", "lleva_agente", "tiene_microclaudia", "sfp_combo")
 
@@ -300,7 +364,7 @@ class PuertoSwitchViewSet(SPViewSet):
     # GET /dispositivos/switches/
     def equipos(self, request):
         f = self._validar(s.SwitchesFiltrosSerializer, request.query_params)
-        equipos, _ = llamar_sp("sp_red_puertos_switch_equipos", [f.get("activo")])
+        equipos, _ = llamar_sp("sp_puertos_switch_equipos", [f.get("activo")])
         _bools(equipos)
         por_switch = {}
         for p in _puertos_de(None):
@@ -318,7 +382,7 @@ class PuertoSwitchViewSet(SPViewSet):
         tipo = self._tipo(tipo_puerto)
         self._obtener([id_disp])   # 404 si el switch no existe
         datos = self._validar(s.PuertoSerializer, request.data)
-        llamar_sp("sp_red_puertos_switch_guardar", [
+        llamar_sp("sp_puertos_switch_guardar", [
             id_disp, tipo, num_puerto, datos.get("id_disp"), datos.get("estado"), datos.get("vlan"), datos.get("nota"),
         ])
         return self._respuesta(id_disp)
@@ -327,13 +391,13 @@ class PuertoSwitchViewSet(SPViewSet):
     def liberar(self, request, id_disp, tipo_puerto, num_puerto):
         tipo = self._tipo(tipo_puerto)
         self._obtener([id_disp])
-        llamar_sp("sp_red_puertos_switch_eliminar", [id_disp, tipo, num_puerto])
+        llamar_sp("sp_puertos_switch_eliminar", [id_disp, tipo, num_puerto])
         return self._respuesta(id_disp)
 
     # GET /dispositivos/<id>/conexiones/
     def conexiones(self, request, id_disp):
         self._obtener([id_disp])
-        filas, _ = llamar_sp("sp_red_puertos_switch_de_equipo", [id_disp])
+        filas, _ = llamar_sp("sp_puertos_switch_de_equipo", [id_disp])
         return Response(_bools(filas))
 
 
@@ -341,9 +405,9 @@ class PuertoSwitchViewSet(SPViewSet):
 # Direcciones IP y MAC de los dispositivos (puede tener varias)
 # =====================================================================
 class IpDispositivoViewSet(SPViewSet):
-    """Direcciones IP de un dispositivo: tabla equipos (sp_equipos_*).
+    """Direcciones IP de un equipo: tabla dir_ips (sp_dir_ips_*).
     IPv4 o IPv6; "interfaz" es opcional (WAN, LAN, GESTIÓN...)."""
-    sp = "sp_equipos"
+    sp = "sp_dir_ips"
     campos_padre = ("id_disp",)
     campos_pk = ("id_disp", "num_linea")
     campos_insertar = ("direccion_ip", "interfaz")
@@ -353,16 +417,39 @@ class IpDispositivoViewSet(SPViewSet):
 
 
 class MacDispositivoViewSet(SPViewSet):
-    """Direcciones MAC de un dispositivo (sp_red_macs_dispositivos_*).
+    """Direcciones MAC de un equipo: tabla dir_macs (sp_dir_macs_*).
     Se reciben con o sin separadores y se guardan enteras (AABBCCDDEEFF);
     la página las muestra con guiones. Una MAC no se repite en el inventario."""
-    sp = "sp_red_macs_dispositivos"
+    sp = "sp_dir_macs"
     campos_padre = ("id_disp",)
     campos_pk = ("id_disp", "num_linea")
     campos_insertar = ("direccion_mac", "interfaz")
     campos_actualizar = ("direccion_mac", "interfaz")
     insertar_devuelve_codigo = True
     serializer_class = s.MacSerializer
+
+
+class MovilDispositivoViewSet(SPViewSet):
+    """Líneas telefónicas de un equipo: tabla num_moviles (sp_num_moviles_*)."""
+    sp = "sp_num_moviles"
+    campos_padre = ("id_disp",)
+    campos_pk = ("id_disp", "num_linea")
+    campos_insertar = ("num_movil", "operador")
+    campos_actualizar = ("num_movil", "operador")
+    insertar_devuelve_codigo = True
+    serializer_class = s.MovilSerializer
+
+
+class ImeiDispositivoViewSet(SPViewSet):
+    """IMEI de un equipo, uno por SIM: tabla dir_imeis (sp_dir_imeis_*).
+    No se repiten en el inventario."""
+    sp = "sp_dir_imeis"
+    campos_padre = ("id_disp",)
+    campos_pk = ("id_disp", "num_linea")
+    campos_insertar = ("dir_imei",)
+    campos_actualizar = ("dir_imei",)
+    insertar_devuelve_codigo = True
+    serializer_class = s.ImeiSerializer
 
 
 # =====================================================================
@@ -420,7 +507,7 @@ def _guardar(id_disp, archivo, extension):
 
 
 class DocumentoDispositivoViewSet(SPViewSet):
-    """Documentos de un dispositivo (sp_red_documentos_dispositivos_*).
+    """Documentos de un equipo: tabla archivos (sp_archivos_*).
 
     - POST (multipart/form-data): "archivo" + "id_doc" (tipo de documento).
     - PUT/PATCH: cambia el tipo; si trae "archivo", reemplaza el archivo.
@@ -430,7 +517,7 @@ class DocumentoDispositivoViewSet(SPViewSet):
       (Word, Excel y PowerPoint se convierten a PDF con LibreOffice).
     Las imágenes traen "imagen_url", un enlace firmado que sirve en un <img>.
     """
-    sp = "sp_red_documentos_dispositivos"
+    sp = "sp_archivos"
     campos_padre = ("id_disp",)
     campos_pk = ("id_disp", "num_linea")
     # path_docs no viene en el cuerpo: lo pone esta vista al guardar el archivo
@@ -477,7 +564,7 @@ class DocumentoDispositivoViewSet(SPViewSet):
         datos = self._validar(s.DocumentoSerializer, request.data)
         archivo = request.FILES.get("archivo")
         extension = _validar_documento(archivo)
-        filas, _ = llamar_sp("sp_equiposMuni_obtener", [id_disp])
+        filas, _ = llamar_sp("sp_equipos_obtener", [id_disp])
         if not filas:
             raise NotFound("El dispositivo no existe.")
 

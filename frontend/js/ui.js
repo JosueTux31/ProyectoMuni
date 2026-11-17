@@ -196,6 +196,19 @@ export function campoHTML(c, valor, { soloLectura = false } = {}) {
   const clase = `campo${c.completo ? " campo--completo" : ""}`;
   const error = `<p class="error-campo" hidden></p>`;
 
+  // Varias casillas: el valor es una lista de códigos ([2, 3] o "2,3")
+  if (c.tipo === "casillas") {
+    const elegidos = new Set((Array.isArray(valor) ? valor : String(valor ?? "").split(","))
+      .map((x) => String(x).trim()).filter(Boolean));
+    const cajas = (c.opciones || []).map((o) => `<label class="casilla">
+        <input type="checkbox" name="${esc(c.nombre)}" value="${esc(o.valor)}"${elegidos.has(String(o.valor)) ? " checked" : ""} ${deshabilitado}>
+        <span>${esc(o.texto)}</span></label>`).join("");
+    return `<div class="${clase} campo--completo" data-campo="${esc(c.nombre)}" role="group" aria-label="${esc(c.etiqueta)}">
+      <span class="etiqueta-grupo">${esc(c.etiqueta)}</span>
+      <div class="casillas">${cajas || `<span class="secundario">${esc(c.vacioTexto || "No hay opciones.")}</span>`}</div>
+      ${ayuda}${error}</div>`;
+  }
+
   if (c.tipo === "checkbox") {
     return `<div class="${clase}" data-campo="${esc(c.nombre)}">
       <label class="interruptor"><input type="checkbox" id="${id}" name="${esc(c.nombre)}" ${valor ? "checked" : ""} ${deshabilitado}><span>${esc(c.etiqueta)}</span></label>
@@ -233,6 +246,11 @@ export const camposHTML = (campos, valores = {}, opciones = {}) =>
 export function leerCampos(form, campos) {
   const datos = {};
   for (const c of campos) {
+    if (c.tipo === "casillas") {
+      const cajas = [...form.querySelectorAll(`input[type=checkbox][name="${CSS.escape(c.nombre)}"]`)];
+      if (cajas.length) datos[c.nombre] = cajas.filter((x) => x.checked).map((x) => Number.parseInt(x.value, 10));
+      continue;
+    }
     const el = form.elements.namedItem(c.nombre);
     if (!el) continue;
     if (c.tipo === "checkbox") { datos[c.nombre] = el.checked; continue; }

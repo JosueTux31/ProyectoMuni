@@ -160,6 +160,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .interruptor { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 700; font-size: 14px; min-height: 42px; }
 .interruptor input { width: 18px; height: 18px; accent-color: var(--verde-700); margin: 0; }
+/* Varias casillas (roles y herramientas de un equipo) */
+.etiqueta-grupo { display: block; font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+.casillas { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.casilla { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 12px 4px 10px; border: 1px solid var(--linea);
+  border-radius: 999px; cursor: pointer; font-size: 14px; background: var(--superficie); }
+.casilla input { width: 16px; height: 16px; accent-color: var(--verde-700); margin: 0; }
+.casilla:has(input:checked) { border-color: var(--verde-700); background: var(--verde-50); font-weight: 700; }
+.casilla:has(input:disabled) { cursor: default; opacity: .75; }
+.casilla:focus-within { outline: 2px solid var(--verde-700); outline-offset: 2px; }
 
 .rejilla { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
 .rejilla--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }

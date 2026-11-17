@@ -8,7 +8,7 @@ from django.db import connection
 
 from .auditoria import contexto_actual
 
-# Letras, números y guion bajo (sp_equiposMuni_* lleva una mayúscula)
+# Letras, números y guion bajo (por si algún nombre lleva mayúscula)
 _NOMBRE_SP_VALIDO = re.compile(r"^sp_[A-Za-z0-9_]+$")
 
 

@@ -1,6 +1,3 @@
-from django.db import models
-
-# Create your models here.
 """Usuarios y sus tablas de detalle. managed = False: el esquema vive en MariaDB.
 
 Las tablas de detalle tienen llave compuesta (id_usuario, num_linea),
@@ -11,13 +8,32 @@ from django.db import models
 from apps.geografia.models import Distrito
 
 
-class Usuario(models.Model):
-    id = models.AutoField(primary_key=True)
+class SoloUsuariosManager(models.Manager):
+    """Usuario.objects devuelve solo usuarios del sistema (no proveedores)."""
 
+    def get_queryset(self):
+        return super().get_queryset().filter(es_proveedor=False)
+
+
+class Usuario(models.Model):
+    """Tabla personas (antes usr_usuarios). Guarda usuarios del sistema y proveedores
+    (es_proveedor = True). Para proveedores use apps.proveedores.models.Proveedor."""
+
+    id = models.AutoField(primary_key=True)
+    es_proveedor = models.BooleanField(default=False)
+
+    # Solo usuarios del sistema (NULL en proveedores)
     rol = models.ForeignKey("catalogos.RolUsuario", on_delete=models.DO_NOTHING,
-                            db_column="cod_rol", related_name="usuarios")
+                            db_column="cod_rol", null=True, blank=True, related_name="usuarios")
     tipo_auth = models.ForeignKey("catalogos.TipoAutenticacion", on_delete=models.DO_NOTHING,
-                                  db_column="cod_tipo_auth", related_name="usuarios")
+                                  db_column="cod_tipo_auth", null=True, blank=True, related_name="usuarios")
+
+    # Solo proveedores (NULL en usuarios del sistema)
+    categoria = models.ForeignKey("catalogos.CategoriaProveedor", on_delete=models.DO_NOTHING,
+                                  db_column="cod_categoria", null=True, blank=True, related_name="proveedores")
+    mapa = models.CharField(max_length=100, null=True, blank=True)
+    archivo_path = models.CharField(max_length=255, null=True, blank=True)
+
     tipo_identificacion = models.ForeignKey("catalogos.TipoIdentificacion", on_delete=models.DO_NOTHING,
                                             db_column="cod_tipo_identificacion", related_name="usuarios")
     dni = models.CharField(max_length=30)
@@ -45,14 +61,19 @@ class Usuario(models.Model):
     creado_en = models.DateTimeField(editable=False)
     actualizado_en = models.DateTimeField(editable=False)
 
+    objects = SoloUsuariosManager()
+    todos = models.Manager()  # usuarios y proveedores
+
     class Meta:
         managed = False
-        db_table = "usr_usuarios"
+        db_table = "personas"
         verbose_name = "usuario"
         verbose_name_plural = "usuarios"
         ordering = ["nombre", "apellido1", "apellido2"]
+        base_manager_name = "todos"
         constraints = [
-            models.UniqueConstraint(fields=["tipo_identificacion", "dni"], name="uk_usr_documento"),
+            models.UniqueConstraint(fields=["tipo_identificacion", "dni", "es_proveedor"],
+                                    name="uk_usr_documento"),
         ]
 
     def __str__(self):

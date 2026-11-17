@@ -89,12 +89,28 @@ class ModeloFiltrosSerializer(serializers.Serializer):
 class EdificioSerializer(serializers.Serializer):
     descripcion = serializers.CharField(max_length=150)
     otras_senas = serializers.CharField(**TEXTO_OPCIONAL)
-    # Coordenadas del edificio para el mapa. Se acepta un enlace de Google
-    # Maps; se guarda solo "latitud,longitud".
+    # Coordenadas del edificio para el mapa (columna ubicacion). Se acepta
+    # un enlace de Google Maps; se guarda solo "latitud,longitud".
     gps = serializers.CharField(max_length=2000, **TEXTO_OPCIONAL)
+    # Dirección del edificio en la división territorial: los cuatro o ninguno
+    id_pais = serializers.CharField(max_length=10, **TEXTO_OPCIONAL)
+    id_provincia = serializers.CharField(max_length=10, **TEXTO_OPCIONAL)
+    id_canton = serializers.CharField(max_length=10, **TEXTO_OPCIONAL)
+    id_distrito = serializers.CharField(max_length=10, **TEXTO_OPCIONAL)
 
     def validate_otras_senas(self, valor):
         return _texto_o_nulo(valor)
+
+    def validate(self, datos):
+        geo = ("id_pais", "id_provincia", "id_canton", "id_distrito")
+        for campo in geo:
+            if campo in datos:
+                datos[campo] = _texto_o_nulo(datos[campo])
+        llenos = [c for c in geo if datos.get(c)]
+        if llenos and len(llenos) < 4:
+            raise serializers.ValidationError(
+                {c: ["Indique país, provincia, cantón y distrito, o deje los cuatro vacíos."] for c in geo if c not in llenos})
+        return datos
 
     def validate_gps(self, valor):
         return normalizar_mapa(valor)
@@ -106,15 +122,17 @@ MAX_DIRECCIONES = 50   # IP o MAC por dispositivo
 # Campos que mandaba la página de versiones anteriores. Si llegan, el
 # navegador tiene guardada una página vieja: se rechaza en vez de perder
 # en silencio las IP, MAC o coordenadas que el usuario escribió.
-CAMPOS_VIEJOS = ("direccion_ip", "direccion_mac", "gps", "id_edificio")
+CAMPOS_VIEJOS = ("direccion_ip", "direccion_mac", "gps", "id_edificio", "imei", "imei2", "numero_linea",
+                 "version_os", "procesador")
 MENSAJE_PAGINA_VIEJA = (
     "Esta página es de una versión anterior del sistema y sus datos no se guardaron. "
     "Recargue la página con Ctrl+Shift+R (o Ctrl+F5) y vuelva a guardar. Las IP y MAC "
-    "van en la sección Direcciones de red y las coordenadas se ponen en el edificio."
+    "van en la sección Direcciones de red, las coordenadas se ponen en el edificio, y los IMEI y "
+    "las líneas en la sección Línea telefónica."
 )
 
 
-def _validar_direcciones(filas, clase, campo, nombre, mostrar=str):
+def _validar_direcciones(filas, clase, campo, nombre, mostrar=str, sujeto=None):
     """Valida la lista de IP o MAC que llega con el dispositivo:
     [{"num_linea": 1, "direccion_ip": "...", "interfaz": "LAN"}, {...}].
     num_linea va en las que ya existían (se modifican); las que no lo
@@ -123,7 +141,7 @@ def _validar_direcciones(filas, clase, campo, nombre, mostrar=str):
     if filas is None:
         return None
     if len(filas) > MAX_DIRECCIONES:
-        raise serializers.ValidationError(f"Máximo {MAX_DIRECCIONES} direcciones {nombre} por dispositivo.")
+        raise serializers.ValidationError(f"Máximo {MAX_DIRECCIONES} {sujeto or 'direcciones ' + nombre} por dispositivo.")
     limpias, errores, vistas = [], [], set()
     for fila in filas:
         error = {}
@@ -145,7 +163,7 @@ def _validar_direcciones(filas, clase, campo, nombre, mostrar=str):
         valor = dato.get(campo)
         if valor is not None:
             if valor in vistas:
-                error[campo] = [f"La {nombre} {mostrar(valor)} está repetida."]
+                error[campo] = [f"{(sujeto and nombre) or 'La ' + nombre} {mostrar(valor)} está repetid{'o' if nombre.startswith('El') else 'a'}."]
             vistas.add(valor)
         errores.append(error)
         limpias.append({"num_linea": num_linea, **dato})
@@ -198,22 +216,23 @@ class DispositivoSerializer(serializers.Serializer):
     # Microclaudia) y placa (número de activo)
     nombre_equipo = serializers.CharField(max_length=100, **TEXTO_OPCIONAL)
     placa = serializers.CharField(max_length=50, **TEXTO_OPCIONAL)
-    # Equipos de red y servidores
+    # Cantidad de puertos (tabla equipos: cant_ptos_*)
+    cant_ptos_serie = serializers.IntegerField(**PUERTOS)
+    cant_ptos_usb = serializers.IntegerField(**PUERTOS)
     cant_ptos_ethernet = serializers.IntegerField(**PUERTOS)
     cant_ptos_sfp = serializers.IntegerField(**PUERTOS)
-    # Sistema operativo (vacío = N/D) y su versión o la del firmware
+    cant_ptos_wireless = serializers.IntegerField(**PUERTOS)
+    cant_ptos_bluetooth = serializers.IntegerField(**PUERTOS)
+    cant_ptos_celular = serializers.IntegerField(**PUERTOS)
+    # Sistema operativo y firmware (tablas catálogo; vacío = N/D)
     id_os = serializers.IntegerField(**OPCIONAL)
-    version_os = serializers.CharField(max_length=100, **TEXTO_OPCIONAL)
-    # Computadoras, servidores y móviles
-    procesador = serializers.CharField(max_length=150, **TEXTO_OPCIONAL)
+    id_firmw = serializers.IntegerField(**OPCIONAL)
+    # Computadoras, servidores y móviles: procesador (tabla catálogo), memoria y disco
+    id_proces = serializers.IntegerField(**OPCIONAL)
     memoria_gb = serializers.IntegerField(**_entero(4096))
     almacenamiento_gb = serializers.IntegerField(**_entero(1_000_000))
     tipo_almacenamiento = serializers.ChoiceField(TIPOS_ALMACENAMIENTO, **TEXTO_OPCIONAL)
-    # Móviles y telefonía
-    imei = serializers.CharField(max_length=30, **TEXTO_OPCIONAL)
-    imei2 = serializers.CharField(max_length=30, **TEXTO_OPCIONAL)
-    numero_linea = serializers.CharField(max_length=20, **TEXTO_OPCIONAL)
-    operador = serializers.CharField(max_length=50, **TEXTO_OPCIONAL)
+    # Telefonía IP
     extension = serializers.CharField(max_length=10, **TEXTO_OPCIONAL)
     # Impresión
     tecnologia_impresion = serializers.ChoiceField(TECNOLOGIAS_IMPRESION, **TEXTO_OPCIONAL)
@@ -228,20 +247,31 @@ class DispositivoSerializer(serializers.Serializer):
     # Ubicación, asignación y soporte
     id_predio = serializers.IntegerField(**OPCIONAL)        # edificio (su mapa es el del edificio)
     ubicacion = serializers.CharField(max_length=255, **TEXTO_OPCIONAL)
+    # Estado (tabla estado_equipos): 1 N/D, 2 ACTIVO, 3 INACTIVO. Sin mandar = no cambia
+    id_estado = serializers.IntegerField(**OPCIONAL)
     cod_departamento = serializers.IntegerField(**OPCIONAL)
     id_asignado = serializers.IntegerField(**OPCIONAL)      # funcionario responsable
     id_proveedor = serializers.IntegerField(**OPCIONAL)
     fecha_compra = serializers.DateField(**OPCIONAL)
     garantia_hasta = serializers.DateField(**OPCIONAL)
     observaciones = serializers.CharField(max_length=500, **TEXTO_OPCIONAL)
-    # Licencia de Microclaudia (la marca el administrador). Sin mandar = no cambia
-    tiene_microclaudia = serializers.BooleanField(**OPCIONAL)
     # Switches: los SFP comparten número con los últimos de cobre (45F = 45T). Sin mandar = no cambia
     sfp_combo = serializers.BooleanField(**OPCIONAL)
-    # Todas las IP y MAC del dispositivo; se guardan junto con él. Si no
-    # vienen (o vienen en null) no se tocan las que ya tiene.
+    # Listas que se guardan junto con el equipo. Si no vienen (o vienen en
+    # null) no se tocan las que ya tiene:
+    #   ips, macs, moviles e imeis: filas como [{"num_linea": 1, "direccion_ip": ...}]
+    #   roles y herramientas: códigos de sus tablas catálogo, [2, 3]
     ips = serializers.ListField(child=serializers.DictField(), required=False, allow_null=True)
     macs = serializers.ListField(child=serializers.DictField(), required=False, allow_null=True)
+    moviles = serializers.ListField(child=serializers.DictField(), required=False, allow_null=True)
+    imeis = serializers.ListField(child=serializers.DictField(), required=False, allow_null=True)
+    roles = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, allow_null=True,
+                                  max_length=50)
+    herramientas = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, allow_null=True,
+                                         max_length=50)
+    # Check de Microclaudia (herramienta 3) para las páginas que solo cambian
+    # eso. Sin mandar = no cambia; si vienen las herramientas, mandan ellas.
+    tiene_microclaudia = serializers.BooleanField(**OPCIONAL)
 
     def validate_serie(self, valor):
         valor = valor.strip()
@@ -257,20 +287,6 @@ class DispositivoSerializer(serializers.Serializer):
         if valor and not _NOMBRE_RED.fullmatch(valor):
             raise serializers.ValidationError(
                 "El nombre en la red lleva letras, números, espacios, guion, punto o guion bajo (por ejemplo PC-FIN-01).")
-        return valor
-
-    def validate_imei(self, valor):
-        try:
-            return imei_valido(valor)
-        except ValueError as e:
-            raise serializers.ValidationError(str(e))
-
-    validate_imei2 = validate_imei
-
-    def validate_numero_linea(self, valor):
-        valor = _texto_o_nulo(valor)
-        if valor and not _TELEFONO.fullmatch(valor):
-            raise serializers.ValidationError("Escriba el número de la línea con sus dígitos (por ejemplo 8888-8888).")
         return valor
 
     def validate_extension(self, valor):
@@ -295,20 +311,35 @@ class DispositivoSerializer(serializers.Serializer):
     def validate_macs(self, filas):
         return _validar_direcciones(filas, MacSerializer, "direccion_mac", "MAC", mac_con_guiones)
 
+    def validate_moviles(self, filas):
+        return _validar_direcciones(filas, MovilSerializer, "num_movil", "La línea", sujeto="líneas")
+
+    def validate_imeis(self, filas):
+        return _validar_direcciones(filas, ImeiSerializer, "dir_imei", "El IMEI", sujeto="IMEI")
+
+    def _codigos(self, lista, nombre):
+        if lista is not None and len(set(lista)) != len(lista):
+            raise serializers.ValidationError(f"Un {nombre} viene repetido.")
+        return lista
+
+    def validate_roles(self, lista):
+        return self._codigos(lista, "rol")
+
+    def validate_herramientas(self, lista):
+        return self._codigos(lista, "código de herramienta")
+
     def validate(self, datos):
         viejos = [c for c in CAMPOS_VIEJOS if c in (self.initial_data or {})]
         if viejos:
             raise serializers.ValidationError(MENSAJE_PAGINA_VIEJA)
         # Textos vacíos = NULL; las listas en mayúscula (la base las guarda así)
-        for campo in ("placa", "version_os", "procesador", "operador", "consumible", "observaciones"):
+        for campo in ("placa", "consumible", "observaciones"):
             if campo in datos:
                 datos[campo] = _texto_o_nulo(datos[campo])
         for campo in ("tipo_almacenamiento", "tecnologia_impresion"):
             if campo in datos:
                 datos[campo] = datos[campo] or None
         errores = {}
-        if datos.get("imei") and datos.get("imei") == datos.get("imei2"):
-            errores["imei2"] = ["El segundo IMEI es igual al primero."]
         compra, garantia = datos.get("fecha_compra"), datos.get("garantia_hasta")
         if compra and garantia and garantia < compra:
             errores["garantia_hasta"] = ["La garantía no puede terminar antes de la fecha de compra."]
@@ -368,6 +399,35 @@ class MacSerializer(serializers.Serializer):
 
     def validate_interfaz(self, valor):
         return _texto_o_nulo(valor)
+
+
+class MovilSerializer(serializers.Serializer):
+    """Una línea telefónica del equipo (tabla num_moviles)."""
+    num_movil = serializers.CharField(max_length=20)
+    operador = serializers.CharField(max_length=50, **TEXTO_OPCIONAL)   # KÖLBI, CLARO, LIBERTY...
+
+    def validate_num_movil(self, valor):
+        valor = re.sub(r"\s+", " ", (valor or "").strip())
+        if not _TELEFONO.fullmatch(valor):
+            raise serializers.ValidationError("Escriba el número de la línea con sus dígitos (por ejemplo 8888-8888).")
+        return valor
+
+    def validate_operador(self, valor):
+        return _texto_o_nulo(valor)
+
+
+class ImeiSerializer(serializers.Serializer):
+    """Un IMEI del equipo (tabla dir_imeis): uno por SIM."""
+    dir_imei = serializers.CharField(max_length=30)
+
+    def validate_dir_imei(self, valor):
+        try:
+            imei = imei_valido(valor)
+        except ValueError as e:
+            raise serializers.ValidationError(str(e))
+        if imei is None:
+            raise serializers.ValidationError("Escriba el IMEI.")
+        return imei
 
 
 # ------------------------------------------------------------ documentos

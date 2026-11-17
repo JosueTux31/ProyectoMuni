@@ -1,4 +1,4 @@
-"""Los proveedores viven en la misma tabla usr_usuarios (es_proveedor = True).
+"""Los proveedores viven en la misma tabla personas, antes usr_usuarios (es_proveedor = True).
 Proveedor es un modelo proxy: misma tabla, pero Proveedor.objects solo
 devuelve proveedores. Las escrituras de la API pasan por los procedimientos
 sp_prv_proveedores_*."""

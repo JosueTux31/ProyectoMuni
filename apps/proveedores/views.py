@@ -19,7 +19,7 @@ CAMPOS_PROVEEDOR = (
 class ProveedorViewSet(archivos.ArchivosMixin, SPViewSet):
     """CRUD de proveedores (sp_prv_proveedores_*).
 
-    Los proveedores se guardan en usr_usuarios con es_proveedor = TRUE y
+    Los proveedores se guardan en personas con es_proveedor = TRUE y
     no pueden iniciar sesión. Consultar: cualquier usuario con sesión.
     Modificar: solo administradores. El código postal lo asigna la base
     de datos según el distrito.

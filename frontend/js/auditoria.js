@@ -8,7 +8,7 @@ import { CATALOGOS, filasCatalogo } from "./datos.js";
 
 /* ------------------------------------------------------------ Vocabulario */
 const TABLAS = {
-  usr_usuarios: { art: "el", nom: "usuario", grupo: "Personas", filtro: "Usuarios y proveedores" },
+  personas: { art: "el", nom: "usuario", grupo: "Personas", filtro: "Usuarios y proveedores" },
   usr_telefonos: { art: "el", nom: "teléfono", grupo: "Personas", filtro: "Teléfonos", detalle: true },
   usr_correos: { art: "el", nom: "correo", grupo: "Personas", filtro: "Correos", detalle: true },
   usr_paginas_webs: { art: "la", nom: "página web", grupo: "Personas", filtro: "Páginas web", detalle: true },
@@ -24,21 +24,27 @@ const TABLAS = {
   geo_provincias: { art: "la", nom: "provincia", grupo: "Territorio", filtro: "Provincias" },
   geo_cantones: { art: "el", nom: "cantón", grupo: "Territorio", filtro: "Cantones" },
   geo_distritos: { art: "el", nom: "distrito", grupo: "Territorio", filtro: "Distritos" },
-  equiposMuni: { art: "el", nom: "equipo", grupo: "Equipos municipales", filtro: "Equipos" },
-  // Nombre anterior de la tabla equiposMuni: solo para mostrar la auditoría vieja
-  red_dispositivos: { art: "el", nom: "equipo", grupo: "Equipos municipales", filtro: "Equipos", anterior: true },
-  equipos: { art: "la", nom: "dirección IP", grupo: "Equipos municipales", filtro: "Direcciones IP" },
-  // Nombre anterior de la tabla equipos: solo para mostrar la auditoría vieja
-  red_ips_dispositivos: { art: "la", nom: "dirección IP", grupo: "Equipos municipales", filtro: "Direcciones IP", anterior: true },
-  red_macs_dispositivos: { art: "la", nom: "dirección MAC", grupo: "Equipos municipales", filtro: "Direcciones MAC" },
-  red_documentos_dispositivos: { art: "el", nom: "documento", grupo: "Equipos municipales", filtro: "Documentos de dispositivos" },
-  red_puertos_switch: { art: "el", nom: "puerto de switch", grupo: "Equipos municipales", filtro: "Puertos de switches" },
-  cat_edificios: { art: "el", nom: "edificio", grupo: "Equipos municipales", filtro: "Edificios" },
-  cat_marcas: { art: "la", nom: "marca", grupo: "Equipos municipales", filtro: "Marcas" },
-  cat_modelos: { art: "el", nom: "modelo", grupo: "Equipos municipales", filtro: "Modelos" },
-  cat_tipos_dispositivos: { art: "el", nom: "tipo de equipo", grupo: "Equipos municipales", filtro: "Tipos de equipo" },
-  cat_sistemas_operativos: { art: "el", nom: "sistema operativo", grupo: "Equipos municipales", filtro: "Sistemas operativos" },
-  cat_tipos_documentos: { art: "el", nom: "tipo de documento", grupo: "Equipos municipales", filtro: "Tipos de documento" },
+  // Equipos municipales (tablas del modelo de la especificación)
+  equipos: { art: "el", nom: "equipo", grupo: "Equipos municipales", filtro: "Equipos" },
+  dir_ips: { art: "la", nom: "dirección IP", grupo: "Equipos municipales", filtro: "Direcciones IP" },
+  dir_macs: { art: "la", nom: "dirección MAC", grupo: "Equipos municipales", filtro: "Direcciones MAC" },
+  num_moviles: { art: "la", nom: "línea móvil", grupo: "Equipos municipales", filtro: "Líneas móviles" },
+  dir_imeis: { art: "el", nom: "IMEI", grupo: "Equipos municipales", filtro: "IMEI" },
+  roles: { art: "el", nom: "rol del equipo", grupo: "Equipos municipales", filtro: "Roles de los equipos" },
+  herramientas: { art: "la", nom: "herramienta del equipo", grupo: "Equipos municipales", filtro: "Herramientas de los equipos" },
+  archivos: { art: "el", nom: "documento", grupo: "Equipos municipales", filtro: "Archivos de los equipos" },
+  puertos_switch: { art: "el", nom: "puerto de switch", grupo: "Equipos municipales", filtro: "Puertos de switches" },
+  edificios: { art: "el", nom: "edificio", grupo: "Equipos municipales", filtro: "Edificios" },
+  marcas: { art: "la", nom: "marca", grupo: "Equipos municipales", filtro: "Marcas" },
+  modelos: { art: "el", nom: "modelo", grupo: "Equipos municipales", filtro: "Modelos" },
+  tipo_equipos: { art: "el", nom: "tipo de equipo", grupo: "Equipos municipales", filtro: "Tipos de equipo" },
+  sis_operativos: { art: "el", nom: "sistema operativo", grupo: "Equipos municipales", filtro: "Sistemas operativos" },
+  tipo_archivos: { art: "el", nom: "tipo de archivo", grupo: "Equipos municipales", filtro: "Tipos de archivo" },
+  procesadores: { art: "el", nom: "procesador", grupo: "Equipos municipales", filtro: "Procesadores" },
+  firmwares: { art: "el", nom: "firmware", grupo: "Equipos municipales", filtro: "Firmwares" },
+  estado_equipos: { art: "el", nom: "estado de equipo", grupo: "Equipos municipales", filtro: "Estados de equipo" },
+  tipo_roles: { art: "el", nom: "rol de servidor", grupo: "Equipos municipales", filtro: "Roles de servidor" },
+  tipo_herramientas: { art: "la", nom: "herramienta de seguridad", grupo: "Equipos municipales", filtro: "Herramientas de seguridad" },
   log_importaciones: { art: "la", nom: "importación de logs", grupo: "Análisis de logs", filtro: "Importaciones de logs" },
   log_mapeo_campos: { art: "el", nom: "alias de campo", grupo: "Análisis de logs", filtro: "Alias de campos de logs" },
   cor_configuracion: { art: "la", nom: "cuenta de correo institucional", grupo: "Correo institucional", filtro: "Cuenta de correo" },
@@ -75,6 +81,10 @@ const ETIQUETAS = {
   canales: "Canales de video", id_asignado: "Funcionario responsable", fecha_compra: "Fecha de compra",
   garantia_hasta: "Garantía hasta", observaciones: "Observaciones", tiene_microclaudia: "Tiene Microclaudia",
   cant_ptos_ethernet: "Puertos Ethernet", cant_ptos_sfp: "Puertos SFP", sfp_combo: "SFP combinados", id_os: "Sistema operativo",
+  cant_ptos_serie: "Puertos serie", cant_ptos_usb: "Puertos USB", cant_ptos_wireless: "Puertos inalámbricos",
+  cant_ptos_bluetooth: "Puertos Bluetooth", cant_ptos_celular: "Puertos celular (SIM)", id_proces: "Procesador",
+  id_firmw: "Firmware o versión", id_estado: "Estado del equipo", num_movil: "Línea", dir_imei: "IMEI", id_rol: "Rol",
+  id_herram: "Herramienta", id_pais: "País", id_provincia: "Provincia", id_canton: "Cantón", id_distrito: "Distrito",
   id_switch: "Switch (N.º)", tipo_puerto: "Tipo de puerto", num_puerto: "Puerto", id_disp: "Equipo conectado (N.º)", vlan: "VLAN", nota: "Nota",
   gps: "Coordenadas", id_predio: "Edificio", id_edificio: "Edificio", ubicacion: "Ubicación en el edificio",
   id_proveedor: "Proveedor", direccion_ip: "Dirección IP", direccion_mac: "Dirección MAC", interfaz: "Interfaz",
@@ -93,6 +103,7 @@ const CAMPO_CATALOGO = {
   cod_tipo_auth: "tipos-autenticaciones", cod_categoria: "categorias-proveedores",
   cod_telefono: "tipos-telefonos", cod_correo: "tipos-correos",
   tipo_disp: "tipos-dispositivos", id_marca: "marcas", id_os: "sistemas-operativos", id_doc: "tipos-documentos",
+  id_proces: "procesadores", id_firmw: "firmwares", id_estado: "estados-equipos", id_rol: "roles-equipos", id_herram: "herramientas",
   id_categoria: "categorias-dispositivos",
   id_predio: "edificios", id_edificio: "edificios",
 };
@@ -152,6 +163,11 @@ function valorLegible(campo, valor) {
 }
 
 /* --------------------------------------------------------------- Frases */
+// Tablas de detalle de un equipo: «agregó la dirección IP 10.1.1.5 al dispositivo N.º 7»
+const DETALLE_EQUIPO = {
+  dir_ips: "la dirección IP", dir_macs: "la dirección MAC", num_moviles: "la línea", dir_imeis: "el IMEI",
+  roles: "el rol", herramientas: "la herramienta",
+};
 const enlacePersona = (p) => {
   if (!p?.id) return "";
   const nombre = esc(p.nombre || `#${p.id}`);
@@ -187,7 +203,7 @@ function frase(e) {
     return `${e.accion === "ELIMINAR" ? "eliminó" : "modificó"} un registro del historial de claves de ${persona}`;
   }
 
-  if (e.tabla === "usr_usuarios") {
+  if (e.tabla === "personas") {
     const esProveedor = Number((e.despues || e.antes)?.es_proveedor) === 1;
     const quien = esProveedor ? "el proveedor" : "el usuario";
     const destino = e.accion === "ELIMINAR" ? desc : (persona || desc);
@@ -209,14 +225,18 @@ function frase(e) {
     return propio ? "modificó sus datos" : `modificó ${quien} ${destino}`;
   }
 
-  // equiposMuni se llamaba red_dispositivos: los cambios viejos se muestran igual
-  if (e.tabla === "equiposMuni" || e.tabla === "red_dispositivos") {
+  if (e.tabla === "equipos") {
     const disp = e.accion === "ELIMINAR" ? desc
       : `<a href="#/red/dispositivos/${esc(e.llave)}">${esc(e.descripcion || `N.º ${e.llave}`)}</a>`;
     if (e.accion === "INSERTAR") return `registró el equipo ${disp}`;
     if (e.accion === "ELIMINAR") return `eliminó definitivamente el equipo ${disp}`;
     const cambios = camposCambiados(e);
     if (cambios.length === 1 && cambios[0] === "activo") return `${Number(e.despues.activo) ? "activó" : "desactivó"} el equipo ${disp}`;
+    if (cambios.length === 1 && cambios[0] === "id_estado") {
+      const estado = Number(e.despues.id_estado);
+      return estado === 3 ? `dio de baja el equipo ${disp}` : Number(e.antes.id_estado) === 3 && estado === 2
+        ? `activó el equipo ${disp}` : `cambió el estado del equipo ${disp}`;
+    }
     if (cambios.length === 1 && cambios[0] === "id_asignado") {
       if (!e.despues.id_asignado) return `quitó la persona asignada al equipo ${disp}`;
       const quien = catalogos?.id_asignado?.get(String(e.despues.id_asignado));
@@ -225,7 +245,7 @@ function frase(e) {
     return `modificó el equipo ${disp}`;
   }
 
-  if (e.tabla === "red_documentos_dispositivos") {
+  if (e.tabla === "archivos") {
     const idDisp = String(e.llave || "").split("/")[0];
     const doc = `<strong>${esc(nombreDocumento(e.descripcion))}</strong>`;
     const del = idDisp ? ` del <a href="#/red/dispositivos/${esc(idDisp)}/documentos">dispositivo N.º ${esc(idDisp)}</a>` : "";
@@ -235,7 +255,7 @@ function frase(e) {
       ? `reemplazó el archivo ${doc}${del}` : `cambió el tipo del documento ${doc}${del}`;
   }
 
-  if (e.tabla === "red_puertos_switch") {
+  if (e.tabla === "puertos_switch") {
     const [idSw, cual] = String(e.llave || "").split("/");
     const a = e.antes || {};
     const d = e.despues || {};
@@ -321,12 +341,12 @@ function frase(e) {
     return `cambió el alias ${origen} ${de} (ahora se lee como ${campo})`;
   }
 
-  if (e.tabla === "equipos" || e.tabla === "red_ips_dispositivos" || e.tabla === "red_macs_dispositivos") {
+  if (DETALLE_EQUIPO[e.tabla]) {
     const idDisp = String(e.llave || "").split("/")[0];
-    const esMac = e.tabla === "red_macs_dispositivos";
-    const valor = `<strong class="dato-mono">${esc(esMac ? macConGuiones(e.descripcion) : e.descripcion)}</strong>`;
+    const esMac = e.tabla === "dir_macs";
+    const valor = `<strong class="${esMac || e.tabla === "dir_ips" || e.tabla === "dir_imeis" ? "dato-mono" : ""}">${esc(esMac ? macConGuiones(e.descripcion) : e.descripcion)}</strong>`;
     const enlace = idDisp ? `<a href="#/red/dispositivos/${esc(idDisp)}">dispositivo N.º ${esc(idDisp)}</a>` : "dispositivo";
-    const que = `la dirección ${esMac ? "MAC" : "IP"} ${valor}`;
+    const que = `${DETALLE_EQUIPO[e.tabla]} ${valor}`;
     if (e.accion === "INSERTAR") return `agregó ${que} al ${enlace}`;
     if (e.accion === "ELIMINAR") return `eliminó ${que} del ${enlace}`;
     return `modificó ${que} del ${enlace}`;

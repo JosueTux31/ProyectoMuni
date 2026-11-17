@@ -93,7 +93,7 @@ WSGI_APPLICATION = 'muni_backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'gestion_municipal_dev',
+        'NAME': 'gestion_redes',
         'USER': 'admin_db',
         'PASSWORD': 'informatica2026',
         'HOST': '127.0.0.1',

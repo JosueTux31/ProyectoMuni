@@ -432,7 +432,7 @@ def nombre_corto(nombre):
 
 
 def cobertura(id_agentes):
-    """Equipos registrados en el sistema (equiposMuni activos) comparados por
+    """Equipos registrados en el sistema (tabla equipos, los activos) comparados por
     MAC, IP y nombre en la red con el listado de equipos que tienen el agente.
 
     Estado de cada equipo:
@@ -557,15 +557,16 @@ ESTADOS_INTRUSOS = {
 
 
 # Qué parece ser el equipo, por su nombre (solo para ayudar a revisar).
-# El segundo valor es el tipo de equipo que se propone al registrarlo.
+# El segundo valor es el tipo de equipo que se propone al registrarlo (el
+# nombre de la tabla tipo_equipos: PRINTER, IP PHONE, MOBILE PHONE, SERVER...).
 PARECE = [
-    ("impresora", "IMPRESORA",
+    ("impresora", "PRINTER",
      re.compile(r"^(EPSON|NPI[0-9A-F]|HP[0-9A-F]{6}|BRN|BRW|KM[0-9A-F]|KONICA|RICOH|XEROX|CANON|LEXMARK|IMP[-_ ])", re.I)),
-    ("teléfono IP", "TELÉFONO IP", re.compile(r"^(SEP[0-9A-F]{12}$|YEALINK|GRANDSTREAM|GXP|POLYCOM|AVAYA)", re.I)),
+    ("teléfono IP", "IP PHONE", re.compile(r"^(SEP[0-9A-F]{12}$|YEALINK|GRANDSTREAM|GXP|POLYCOM|AVAYA)", re.I)),
     ("tablet", "TABLET", re.compile(r"^(IPAD|GALAXY-?TAB|TAB[-_ ]|TABLET)|TABLET", re.I)),
-    ("celular", "CELULAR",
+    ("celular", "MOBILE PHONE",
      re.compile(r"^(ANDROID|IPHONE|GALAXY|REDMI|XIAOMI|HUAWEI|HONOR|MOTO|OPPO|VIVO|SM-|POCO)|PHONE|CELULAR", re.I)),
-    ("servidor", "SERVIDOR", re.compile(r"^(IDRAC|ILO|SRV|SERVER|ESXI|NAS)|-SRV|SERVER", re.I)),
+    ("servidor", "SERVER", re.compile(r"^(IDRAC|ILO|SRV|SERVER|ESXI|NAS)|-SRV|SERVER", re.I)),
     ("cámara", "CÁMARA IP", re.compile(r"^(IPCAM|HIKVISION|DAHUA|CAM[-_ ]|AXIS)", re.I)),
     ("access point", "ACCESS POINT", re.compile(r"^(AP[-_]|UAP|U6-|UNIFI|ARUBA-?AP|EAP[0-9])", re.I)),
     ("laptop", "LAPTOP", re.compile(r"^(LAPTOP|NOTEBOOK|MACBOOK|LT[-_])|[-_]LT[-_]?[0-9]*$|LAPTOP", re.I)),
@@ -766,7 +767,7 @@ def visto_en_red(id_disp):
                MAC, por nombre o solo por la IP (puede ser otro equipo)
       sophos   su tráfico en los logs de Sophos (por sus IP y MAC)
     Devuelve None si el equipo no existe."""
-    filas, _ = llamar_sp("sp_equiposMuni_obtener", [id_disp])
+    filas, _ = llamar_sp("sp_equipos_obtener", [id_disp])
     if not filas:
         return None
     d = filas[0]

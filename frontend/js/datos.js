@@ -60,10 +60,40 @@ export const CATALOGOS = {
     enUso: "Si algún dispositivo lo usa, no se podrá eliminar.",
   },
   "tipos-documentos": {
-    titulo: "Tipos de documento", singular: "tipo de documento", llave: "id_doc", max: 100, icono: "documento",
-    descripcion: "Clasificación de los archivos de cada equipo: manuales, imágenes, firmware, respaldos, configuración, facturas y actas de entrega.",
+    titulo: "Tipos de archivo", singular: "tipo de archivo", llave: "id_doc", max: 100, icono: "documento",
+    descripcion: "Tabla tipo_archivos: clasificación de los archivos de cada equipo (manual, garantía, soporte, configuración, backup, nota…).",
     api: "dispositivos/tipos-documentos", modulo: "red", grupo: "Catálogos de equipos",
     enUso: "Si algún dispositivo tiene documentos de este tipo, no se podrá eliminar.",
+  },
+  procesadores: {
+    titulo: "Procesadores", singular: "procesador", llave: "id_proc", max: 150, icono: "equipo",
+    descripcion: "Tabla procesadores: el procesador de cada computadora o servidor (AMD Ryzen R1606G, Intel Atom C2718…).",
+    api: "dispositivos/procesadores", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si algún equipo lo usa, no se podrá eliminar.",
+  },
+  firmwares: {
+    titulo: "Firmwares", singular: "firmware", llave: "id_firmw", max: 100, icono: "sistema",
+    descripcion: "Tabla firmwares: versión del sistema o del firmware de cada equipo (SFOS 22.0.2, 11 PRO 23H2…). N/D lo usa el sistema.",
+    api: "dispositivos/firmwares", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si algún equipo lo usa, no se podrá eliminar.",
+  },
+  "estados-equipos": {
+    titulo: "Estados de equipo", singular: "estado", llave: "id_estado", max: 50, icono: "check",
+    descripcion: "Tabla estado_equipos: N/D, ACTIVO e INACTIVO (dado de baja). Esos tres los usa el sistema y no se pueden cambiar.",
+    api: "dispositivos/estados", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si algún equipo lo usa, no se podrá eliminar.",
+  },
+  "roles-equipos": {
+    titulo: "Roles de servidor", singular: "rol", llave: "id_rol", max: 100, icono: "escudo",
+    descripcion: "Tabla tipo_roles: qué hace un servidor (de dominio, DHCP, DNS, NTP…). Un equipo puede tener varios.",
+    api: "dispositivos/roles", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si algún equipo tiene este rol, no se podrá eliminar.",
+  },
+  herramientas: {
+    titulo: "Herramientas de seguridad", singular: "herramienta", llave: "id_herram", max: 100, icono: "escudo",
+    descripcion: "Tabla tipo_herramientas: lo instalado en cada equipo (Bitdefender, Microclaudia, Cisco Umbrella…). MICROCLAUDIA se compara con su listado y no se puede cambiar.",
+    api: "dispositivos/herramientas", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si algún equipo la tiene, no se podrá eliminar.",
   },
   // Solo para mostrar nombres (tienen su propia pantalla)
   marcas: { titulo: "Marcas", llave: "id_marca", api: "dispositivos/marcas", modulo: "red", soloDatos: true },

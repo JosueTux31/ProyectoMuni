@@ -1,4 +1,4 @@
-"""Inicio de sesión con los usuarios de usr_usuarios.
+"""Inicio de sesión con los usuarios de la tabla personas (antes usr_usuarios).
 
 Al hacer login, la API entrega un token firmado con SECRET_KEY (no se
 guarda en ninguna tabla). Cada petición lo envía en el encabezado
@@ -72,7 +72,7 @@ class TokenMuniAutenticacion(authentication.BaseAuthentication):
         except signing.BadSignature:
             raise exceptions.AuthenticationFailed("Sesión inválida. Inicie sesión de nuevo.")
 
-        filas, _ = llamar_sp("sp_usr_usuarios_obtener", [datos.get("uid")])
+        filas, _ = llamar_sp("sp_personas_obtener", [datos.get("uid")])
         if not filas or not filas[0]["activo"]:
             raise exceptions.AuthenticationFailed("El usuario no existe o está inactivo.")
 
