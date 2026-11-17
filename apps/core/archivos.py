@@ -1,5 +1,4 @@
-"""Archivos subidos (fotos de usuarios, imágenes y catálogos de proveedores,
-documentos de los dispositivos de red).
+"""Archivos subidos (fotos de usuarios, imágenes y catálogos de proveedores).
 
 - Se guardan en MEDIA_ROOT con un nombre que genera el servidor; en la base
   solo queda la ruta relativa.

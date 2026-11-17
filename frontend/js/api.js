@@ -126,8 +126,8 @@ export async function api(ruta, { metodo = "GET", datos, query, formulario, como
 
 /**
  * Sube un archivo (FormData) mostrando el avance, para archivos grandes
- * como el firmware de un dispositivo.
- *   apiSubir("dispositivos/5/documentos/", datos, { alProgreso: (0..1) => ... })
+ * como el catálogo de servicios de un proveedor.
+ *   apiSubir("proveedores/5/catalogo/", datos, { alProgreso: (0..1) => ... })
  */
 export function apiSubir(ruta, formulario, { metodo = "POST", alProgreso } = {}) {
   return new Promise((resolve, reject) => {

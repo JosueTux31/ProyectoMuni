@@ -387,7 +387,6 @@ const PESTANAS = [
   { clave: "correos", titulo: "Correos", icono: "correo" },
   { clave: "paginas-webs", titulo: "Páginas web", icono: "web" },
   { clave: "documentos", titulo: "Documentos", icono: "documento" },
-  { clave: "equipos", titulo: "Equipos", icono: "red" },
   { clave: "historial", titulo: "Historial", icono: "historial", soloAdmin: true },
 ];
 
@@ -445,11 +444,7 @@ export async function vistaProveedor(cont, [id, pestanaInicial], ctx) {
       if (clave === "datos") await pestanaDatos(caja, p, ctx, recargar);
       else if (clave === "documentos") await pestanaDocumentos(caja, p, ctx, recargar);
       else if (clave === "historial") await pestanaHistorialProveedor(caja, p);
-      else if (clave === "equipos") {
-        // Equipos municipales a los que da soporte (se carga al abrir la pestaña)
-        const { pestanaEquiposPersona } = await import("./dispositivos.js");
-        await pestanaEquiposPersona(caja, p, ctx, { proveedor: true });
-      } else await pestanaContactos(caja, p, clave, ctx, RECURSO);
+      else await pestanaContactos(caja, p, clave, ctx, RECURSO);
     } catch (e) {
       if (!ctx.vigente()) return;
       caja.innerHTML = errorHTML(e instanceof ErrorApi ? e.message : "No se pudo mostrar esta sección.");

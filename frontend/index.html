@@ -20,6 +20,7 @@
       <symbol id="i-usuarios" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"/><path d="M18 14.3c2.1.7 3.5 2.8 3.5 5.7"/></symbol>
       <symbol id="i-usuario" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></symbol>
       <symbol id="i-usuario-mas" viewBox="0 0 24 24"><circle cx="10" cy="8" r="4"/><path d="M2.5 21c0-4.4 3.4-7 7.5-7 1.6 0 3 .4 4.2 1"/><path d="M19 14v6M16 17h6"/></symbol>
+      <symbol id="i-cedula" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2"/><circle cx="8.5" cy="11" r="2.2"/><path d="M5 16.5c.6-1.6 2-2.4 3.5-2.4s2.9.8 3.5 2.4"/><path d="M14.5 10h4.5M14.5 13.5h3.5"/></symbol>
       <symbol id="i-etiqueta" viewBox="0 0 24 24"><path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9Z"/><circle cx="7.5" cy="7.5" r="1.5"/></symbol>
       <symbol id="i-edificio" viewBox="0 0 24 24"><path d="M4 21V5l8-2v18"/><path d="M12 8h7a1 1 0 0 1 1 1v12"/><path d="M2 21h20"/><path d="M7.5 8h1M7.5 12h1M7.5 16h1M15.5 12h1M15.5 16h1"/></symbol>
       <symbol id="ia-cedula" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2"/><circle cx="8.5" cy="11" r="2.2"/><path d="M5.5 16c.6-1.5 1.7-2.2 3-2.2s2.4.7 3 2.2"/><path d="M14 10h4.5M14 13.5h3"/></symbol>
@@ -109,7 +110,7 @@
       </div>
       <div class="login__titular">
         <h1>Gestión interna</h1>
-        <p>Usuarios, proveedores, equipos municipales, análisis de logs y correo del municipio, en un solo lugar.</p>
+        <p>Usuarios y proveedores del municipio, con sus contactos, catálogos y división territorial.</p>
       </div>
       <p class="login__nota">Acceso exclusivo para personal municipal.</p>
     </div>
@@ -147,26 +148,14 @@
         </div>
       </div>
 
-      <a class="modulo-actual" id="modulo-actual" href="#/modulos" title="Cambiar de módulo">
-        <svg class="ic"><use id="modulo-icono" href="#i-modulos"/></svg>
-        <span class="modulo-actual__texto"><small>Módulo</small><strong id="modulo-nombre">Elija un módulo</strong></span>
-        <svg class="ic ic--sm"><use href="#i-cambiar"/></svg>
+      <a class="modulo-actual" id="modulo-actual" href="#/inicio" title="Inicio del módulo">
+        <svg class="ic"><use id="modulo-icono" href="#i-usuarios"/></svg>
+        <span class="modulo-actual__texto"><small>Módulo</small><strong id="modulo-nombre">Usuarios y proveedores</strong></span>
       </a>
 
       <nav class="nav" id="nav" aria-label="Menú principal">
-        <!-- Menú de módulos (primera pantalla) -->
-        <div class="nav__modulo" data-modulo="modulos">
-          <a href="#/modulos" data-ruta="modulos"><svg class="ic"><use href="#i-modulos"/></svg>Módulos</a>
-          <p class="nav__grupo">Ir al módulo</p>
-          <a href="#/inicio"><svg class="ic"><use href="#i-usuarios"/></svg>Usuarios y proveedores</a>
-          <a href="#/red"><svg class="ic"><use href="#i-red"/></svg>Equipos municipales</a>
-          <a href="#/logs" data-solo-admin><svg class="ic"><use href="#i-logs"/></svg>Análisis de logs</a>
-          <a href="#/correo" data-solo-admin><svg class="ic"><use href="#i-correo"/></svg>Correo institucional</a>
-          <a href="#/licencias" data-solo-admin><svg class="ic"><use href="#i-licencia"/></svg>Licencias y reportes</a>
-        </div>
-
         <!-- Módulo de usuarios y proveedores -->
-        <div class="nav__modulo" data-modulo="usuarios" hidden>
+        <div class="nav__modulo" data-modulo="usuarios">
         <a href="#/inicio" data-ruta="inicio"><svg class="ic"><use href="#i-inicio"/></svg>Inicio</a>
 
         <p class="nav__grupo">Personas</p>
@@ -196,85 +185,6 @@
         <a href="#/geografia/distritos" data-ruta="geografia/distritos"><svg class="ic"><use href="#i-punto"/></svg>Distritos</a>
         </div>
 
-        <!-- Módulo de equipos municipales (antes dispositivos de red) -->
-        <div class="nav__modulo" data-modulo="red" hidden>
-          <a href="#/red" data-ruta="red"><svg class="ic"><use href="#i-inicio"/></svg>Inicio</a>
-
-          <p class="nav__grupo">Equipos</p>
-          <a href="#/red/dispositivos" data-ruta="red/dispositivos"><svg class="ic"><use href="#i-red"/></svg>Equipos</a>
-          <a href="#/red/dispositivos/nuevo" data-ruta="red/dispositivos/nuevo" data-solo-admin><svg class="ic"><use href="#i-mas"/></svg>Nuevo equipo</a>
-          <a href="#/red/switches" data-ruta="red/switches"><svg class="ic"><use href="#i-switch"/></svg>Switches y puertos</a>
-
-          <p class="nav__grupo">Inventario</p>
-          <a href="#/red/edificios" data-ruta="red/edificios"><svg class="ic"><use href="#i-edificio"/></svg>Edificios</a>
-          <a href="#/red/marcas" data-ruta="red/marcas"><svg class="ic"><use href="#i-etiqueta"/></svg>Marcas y modelos</a>
-
-          <p class="nav__grupo">Catálogos</p>
-          <a href="#/red/catalogos/tipos-dispositivos" data-ruta="red/catalogos/tipos-dispositivos"><svg class="ic"><use href="#i-equipo"/></svg>Tipos de equipo</a>
-          <a href="#/red/catalogos/sistemas-operativos" data-ruta="red/catalogos/sistemas-operativos"><svg class="ic"><use href="#i-sistema"/></svg>Sistemas operativos</a>
-          <a href="#/red/catalogos/procesadores" data-ruta="red/catalogos/procesadores"><svg class="ic"><use href="#i-equipo"/></svg>Procesadores</a>
-          <a href="#/red/catalogos/firmwares" data-ruta="red/catalogos/firmwares"><svg class="ic"><use href="#i-sistema"/></svg>Firmwares</a>
-          <a href="#/red/catalogos/herramientas" data-ruta="red/catalogos/herramientas"><svg class="ic"><use href="#i-escudo"/></svg>Herramientas de seguridad</a>
-          <a href="#/red/catalogos/roles-equipos" data-ruta="red/catalogos/roles-equipos"><svg class="ic"><use href="#i-servidor"/></svg>Roles de servidor</a>
-          <a href="#/red/catalogos/estados-equipos" data-ruta="red/catalogos/estados-equipos"><svg class="ic"><use href="#i-check"/></svg>Estados de equipo</a>
-          <a href="#/red/catalogos/tipos-documentos" data-ruta="red/catalogos/tipos-documentos"><svg class="ic"><use href="#i-documento"/></svg>Tipos de archivo</a>
-
-          <p class="nav__grupo" data-solo-admin>Control</p>
-          <a href="#/red/auditoria" data-ruta="red/auditoria" data-solo-admin><svg class="ic"><use href="#i-historial"/></svg>Auditoría</a>
-        </div>
-
-        <!-- Módulo de análisis de logs (solo administradores) -->
-        <div class="nav__modulo" data-modulo="logs" hidden>
-          <a href="#/logs" data-ruta="logs"><svg class="ic"><use href="#i-inicio"/></svg>Inicio</a>
-
-          <p class="nav__grupo">Importar</p>
-          <a href="#/logs/importar/sophos" data-ruta="logs/importar/sophos"><svg class="ic"><use href="#i-firewall"/></svg>Logs de Sophos</a>
-          <a href="#/logs/importar/microclaudia" data-ruta="logs/importar/microclaudia"><svg class="ic"><use href="#i-agente"/></svg>Equipos de Microclaudia</a>
-          <a href="#/logs/importar/dhcp" data-ruta="logs/importar/dhcp"><svg class="ic"><use href="#i-dhcp"/></svg>Concesiones del DHCP</a>
-
-          <p class="nav__grupo">Análisis</p>
-          <a href="#/logs/eventos" data-ruta="logs/eventos"><svg class="ic"><use href="#i-filtro"/></svg>Eventos</a>
-          <a href="#/logs/tablero" data-ruta="logs/tablero"><svg class="ic"><use href="#i-grafico"/></svg>Tablero</a>
-          <a href="#/logs/comparar" data-ruta="logs/comparar"><svg class="ic"><use href="#i-comparar"/></svg>Comparar logs</a>
-          <a href="#/logs/intrusos" data-ruta="logs/intrusos"><svg class="ic"><use href="#i-intruso"/></svg>Intrusos en la red</a>
-          <a href="#/logs/cobertura" data-ruta="logs/cobertura"><svg class="ic"><use href="#i-agente"/></svg>Equipos sin agente</a>
-          <a href="#/logs/inventario" data-ruta="logs/inventario"><svg class="ic"><use href="#i-red"/></svg>Cruce con el inventario</a>
-
-          <p class="nav__grupo">Datos</p>
-          <a href="#/logs/importaciones" data-ruta="logs/importaciones"><svg class="ic"><use href="#i-capas"/></svg>Importaciones</a>
-          <a href="#/logs/campos" data-ruta="logs/campos"><svg class="ic"><use href="#i-campos"/></svg>Campos y alias</a>
-
-          <p class="nav__grupo">Control</p>
-          <a href="#/logs/auditoria" data-ruta="logs/auditoria"><svg class="ic"><use href="#i-historial"/></svg>Auditoría</a>
-        </div>
-
-        <!-- Módulo de correo institucional (solo administradores) -->
-        <div class="nav__modulo" data-modulo="correo" hidden>
-          <a href="#/correo" data-ruta="correo"><svg class="ic"><use href="#i-inicio"/></svg>Inicio</a>
-
-          <p class="nav__grupo">Avisos al personal</p>
-          <a href="#/correo/enviar" data-ruta="correo/enviar"><svg class="ic"><use href="#i-enviar"/></svg>Escribir aviso</a>
-          <a href="#/correo/avisos" data-ruta="correo/avisos"><svg class="ic"><use href="#i-documento"/></svg>Avisos enviados</a>
-
-          <p class="nav__grupo">Correos del personal</p>
-          <a href="#/correo/comparar" data-ruta="correo/comparar"><svg class="ic"><use href="#i-comparar"/></svg>Comparar correos</a>
-
-          <p class="nav__grupo">Cuenta</p>
-          <a href="#/correo/configuracion" data-ruta="correo/configuracion"><svg class="ic"><use href="#i-llave"/></svg>Configuración</a>
-          <a href="#/correo/auditoria" data-ruta="correo/auditoria"><svg class="ic"><use href="#i-historial"/></svg>Auditoría</a>
-        </div>
-
-        <!-- Licencias y reportes -->
-        <div class="nav__modulo" data-modulo="licencias" hidden>
-          <a href="#/licencias" data-ruta="licencias"><svg class="ic"><use href="#i-inicio"/></svg>Resumen</a>
-
-          <p class="nav__grupo">Equipos</p>
-          <a href="#/licencias/microclaudia" data-ruta="licencias/microclaudia"><svg class="ic"><use href="#i-agente"/></svg>Microclaudia</a>
-
-          <p class="nav__grupo">Correo</p>
-          <a href="#/licencias/google" data-ruta="licencias/google"><svg class="ic"><use href="#i-correo"/></svg>Google Workspace</a>
-          <a href="#/licencias/sophos" data-ruta="licencias/sophos"><svg class="ic"><use href="#i-escudo"/></svg>Sophos Email</a>
-        </div>
       </nav>
 
       <div class="lateral__pie">

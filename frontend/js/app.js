@@ -1,4 +1,5 @@
-// Arranque: inicio de sesión, menú de módulos, estructura, menú lateral y rutas.
+// Arranque: inicio de sesión, estructura, menú lateral y rutas del módulo de
+// usuarios y proveedores.
 import { CONFIG } from "./config.js";
 import { api, cuandoExpireSesion, ErrorApi, sesion } from "./api.js";
 import {
@@ -11,18 +12,6 @@ import { vistaPerfil, vistaUsuario, vistaUsuarioNuevo, vistaUsuarios } from "./u
 import { vistaCatalogo, vistaGeografia } from "./recursos.js";
 import { vistaProveedor, vistaProveedores, vistaProveedorNuevo } from "./proveedores.js";
 import { feedAuditoria, vistaAuditoria } from "./auditoria.js";
-import {
-  vistaDispositivo, vistaDispositivoNuevo, vistaDispositivos, vistaEdificios, vistaInicioRed, vistaMarcas,
-} from "./dispositivos.js";
-import { vistaSwitches } from "./switch.js";
-import {
-  vistaCamposLogs, vistaCobertura, vistaComparar, vistaEventos, vistaImportacion, vistaImportaciones, vistaImportarDhcp,
-  vistaImportarMicroclaudia, vistaImportarSophos, vistaInicioLogs, vistaIntrusos, vistaInventarioLogs, vistaTablero,
-} from "./logs.js";
-import {
-  vistaAviso, vistaAvisos, vistaCompararCorreos, vistaConfigCorreo, vistaEnviarAviso, vistaInicioCorreo, vistaListaCorreos,
-} from "./correo.js";
-import { vistaInicioLicencias, vistaLicCorreo, vistaLicMicroclaudia } from "./licencias.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -56,7 +45,7 @@ function entrar(perfil) {
   pantallaLogin.hidden = true;
   pantallaApp.hidden = false;
   pintarSesion();
-  if (!location.hash || location.hash === "#" || location.hash === "#/") location.hash = "#/modulos";
+  if (!location.hash || location.hash === "#" || location.hash === "#/" || location.hash === "#/modulos") location.hash = "#/inicio";
   else navegar();
 }
 
@@ -141,25 +130,14 @@ velo.addEventListener("click", () => menuMovil(false));
 document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") menuMovil(false); });
 
 /* =====================================================================
-   Módulos: al entrar se elige con cuál trabajar. Cada uno tiene su menú.
+   Módulo: este sistema tiene solo el de usuarios y proveedores.
    ===================================================================== */
 const MODULOS = {
   usuarios: { nombre: "Usuarios y proveedores", inicio: "#/inicio", icono: "usuarios" },
-  red: { nombre: "Equipos municipales", inicio: "#/red", icono: "red" },
-  logs: { nombre: "Análisis de logs", inicio: "#/logs", icono: "logs", soloAdmin: true },
-  correo: { nombre: "Correo institucional", inicio: "#/correo", icono: "correo", soloAdmin: true },
-  licencias: { nombre: "Licencias y reportes", inicio: "#/licencias", icono: "licencia", soloAdmin: true },
 };
 let moduloActual = null;
 
-function moduloDeRuta(r) {
-  if (r === "modulos") return null;
-  if (r === "red" || r.startsWith("red/")) return "red";
-  if (r === "logs" || r.startsWith("logs/")) return "logs";
-  if (r === "correo" || r.startsWith("correo/")) return "correo";
-  if (r === "licencias" || r.startsWith("licencias/")) return "licencias";
-  // Mi perfil se queda en el módulo donde estaba la persona
-  if (r === "perfil" || r.startsWith("perfil/")) return moduloActual || "usuarios";
+function moduloDeRuta() {
   return "usuarios";
 }
 
@@ -176,7 +154,7 @@ function pintarModulo(modulo) {
    Rutas
    ===================================================================== */
 const RUTAS = [
-  { patron: /^modulos$/, vista: vistaModulos },
+  { patron: /^modulos$/, vista: () => { location.replace("#/inicio"); } },
   { patron: /^inicio$/, vista: vistaInicio },
   { patron: /^usuarios$/, vista: vistaUsuarios },
   { patron: /^usuarios\/nuevo$/, vista: vistaUsuarioNuevo, soloAdmin: true },
@@ -188,45 +166,6 @@ const RUTAS = [
   { patron: /^auditoria$/, vista: vistaAuditoria, soloAdmin: true },
   { patron: /^catalogos\/([\w-]+)$/, vista: vistaCatalogo },
   { patron: /^geografia\/([\w-]+)$/, vista: vistaGeografia },
-  // Módulo de equipos municipales (rutas #/red/...)
-  { patron: /^red$/, vista: vistaInicioRed },
-  { patron: /^red\/dispositivos$/, vista: vistaDispositivos },
-  { patron: /^red\/dispositivos\/nuevo$/, vista: vistaDispositivoNuevo, soloAdmin: true },
-  { patron: /^red\/dispositivos\/(\d+)(?:\/([\w-]+))?$/, vista: vistaDispositivo },
-  { patron: /^red\/switches$/, vista: vistaSwitches },
-  { patron: /^red\/marcas$/, vista: vistaMarcas },
-  { patron: /^red\/edificios$/, vista: vistaEdificios },
-  { patron: /^red\/catalogos\/([\w-]+)$/, vista: (cont, params, ctx) => vistaCatalogo(cont, params, ctx, "red") },
-  { patron: /^red\/auditoria$/, vista: vistaAuditoria, soloAdmin: true },
-  // Módulo de análisis de logs (solo administradores: muestra la navegación del personal)
-  { patron: /^logs$/, vista: vistaInicioLogs, soloAdmin: true },
-  { patron: /^logs\/importar\/sophos$/, vista: vistaImportarSophos, soloAdmin: true },
-  { patron: /^logs\/importar\/microclaudia$/, vista: vistaImportarMicroclaudia, soloAdmin: true },
-  { patron: /^logs\/importar\/dhcp$/, vista: vistaImportarDhcp, soloAdmin: true },
-  { patron: /^logs\/cobertura$/, vista: vistaCobertura, soloAdmin: true },
-  { patron: /^logs\/intrusos$/, vista: vistaIntrusos, soloAdmin: true },
-  { patron: /^logs\/importaciones$/, vista: vistaImportaciones, soloAdmin: true },
-  { patron: /^logs\/importaciones\/(\d+)$/, vista: vistaImportacion, soloAdmin: true },
-  { patron: /^logs\/tablero$/, vista: vistaTablero, soloAdmin: true },
-  { patron: /^logs\/eventos$/, vista: vistaEventos, soloAdmin: true },
-  { patron: /^logs\/comparar$/, vista: vistaComparar, soloAdmin: true },
-  { patron: /^logs\/inventario$/, vista: vistaInventarioLogs, soloAdmin: true },
-  { patron: /^logs\/campos$/, vista: vistaCamposLogs, soloAdmin: true },
-  { patron: /^logs\/auditoria$/, vista: vistaAuditoria, soloAdmin: true },
-  // Módulo de correo institucional (solo administradores)
-  { patron: /^correo$/, vista: vistaInicioCorreo, soloAdmin: true },
-  { patron: /^correo\/enviar$/, vista: vistaEnviarAviso, soloAdmin: true },
-  { patron: /^correo\/avisos$/, vista: vistaAvisos, soloAdmin: true },
-  { patron: /^correo\/avisos\/(\d+)$/, vista: vistaAviso, soloAdmin: true },
-  { patron: /^correo\/comparar$/, vista: vistaCompararCorreos, soloAdmin: true },
-  { patron: /^correo\/comparar\/(\d+)$/, vista: vistaListaCorreos, soloAdmin: true },
-  { patron: /^correo\/configuracion$/, vista: vistaConfigCorreo, soloAdmin: true },
-  { patron: /^correo\/auditoria$/, vista: vistaAuditoria, soloAdmin: true },
-  // Licencias y reportes (solo administradores)
-  { patron: /^licencias$/, vista: vistaInicioLicencias, soloAdmin: true },
-  { patron: /^licencias\/microclaudia$/, vista: vistaLicMicroclaudia, soloAdmin: true },
-  { patron: /^licencias\/google$/, vista: (cont, params, ctx) => vistaLicCorreo(cont, params, ctx, "GOOGLE"), soloAdmin: true },
-  { patron: /^licencias\/sophos$/, vista: (cont, params, ctx) => vistaLicCorreo(cont, params, ctx, "SOPHOS"), soloAdmin: true },
 ];
 
 let navegacion = 0;
@@ -264,8 +203,8 @@ async function navegar() {
   const actual = ++navegacion;
   menuMovil(false);
 
-  // #/red/dispositivos?tipo_disp=2 -> ruta "red/dispositivos" y filtros en ctx.query
-  const [rutaActual, consulta = ""] = (location.hash.replace(/^#\/?/, "") || "modulos").split("?");
+  // #/usuarios?departamento=2 -> ruta "usuarios" y filtros en ctx.query
+  const [rutaActual, consulta = ""] = (location.hash.replace(/^#\/?/, "") || "inicio").split("?");
   pintarModulo(moduloDeRuta(rutaActual));
   marcarMenu(rutaActual);
 
@@ -310,83 +249,13 @@ async function navegar() {
 
 function paginaMensaje(contenedor, ctx, titulo, texto, ic) {
   ctx.migas([{ texto: titulo }]);
-  const inicio = MODULOS[moduloActual]?.inicio || "#/modulos";
+  const inicio = MODULOS[moduloActual]?.inicio || "#/inicio";
   contenedor.innerHTML = `<section class="panel">${vacioHTML({
     icono: ic, titulo, texto, boton: `<a class="btn btn--secundario" href="${inicio}">Ir al inicio</a>`,
   })}</section>`;
 }
 
 window.addEventListener("hashchange", navegar);
-
-/* =====================================================================
-   Menú de módulos (primera pantalla después de iniciar sesión)
-   ===================================================================== */
-async function vistaModulos(cont, _params, ctx) {
-  ctx.migas([{ texto: "Módulos" }]);
-  const hora = new Date().getHours();
-  const saludo = hora < 12 ? "Buenos días" : hora < 19 ? "Buenas tardes" : "Buenas noches";
-
-  const tarjeta = (clave, texto, datos) => {
-    const m = MODULOS[clave];
-    return `
-      <a class="modulo modulo--${clave}" href="${m.inicio}">
-        <span class="modulo__icono">${icono(m.icono)}</span>
-        <span class="modulo__cuerpo">
-          <strong class="modulo__titulo">${esc(m.nombre)}</strong>
-          <span class="modulo__texto">${esc(texto)}</span>
-          <span class="modulo__datos" data-datos="${clave}">${datos.map((d) => `<span><b>…</b>${esc(d)}</span>`).join("")}</span>
-        </span>
-        <span class="modulo__entrar">Entrar${icono("derecha")}</span>
-      </a>`;
-  };
-
-  cont.innerHTML = `
-    <div class="saludo">
-      <h1>${saludo}, ${esc(ctx.usuario.nombre)}</h1>
-      <p>¿Con cuál módulo va a trabajar? Puede cambiar de módulo cuando quiera desde el menú.</p>
-    </div>
-    <div class="modulos">
-      ${tarjeta("usuarios", "Personal municipal, proveedores con sus contactos y catálogos de servicios, catálogos del sistema y división territorial.",
-        ["usuarios activos", "proveedores activos"])}
-      ${tarjeta("red", "Equipos de red, computadoras, servidores, celulares, impresoras, UPS y más: a quién están asignados, dónde están, quién les da soporte y sus documentos.",
-        ["equipos activos", "edificios"])}
-      ${ctx.esAdmin ? tarjeta("logs", "Logs de Sophos Firewall, equipos con el agente de Microclaudia y concesiones del DHCP en gráficos: filtro estilo Wireshark, comparación, equipos sin agente, intrusos en la red y cruce con el inventario.",
-        ["importaciones", "registros"]) : ""}
-      ${ctx.esAdmin ? tarjeta("correo", "Avisos al personal desde la cuenta de correo institucional, y comparación de los correos registrados con la lista de cuentas de la municipalidad.",
-        ["avisos enviados", "personas sin correo"]) : ""}
-      ${ctx.esAdmin ? tarjeta("licencias", "Control de licencias: equipos sin Microclaudia, equipos dados de baja que la conservan, y las cuentas de Google y de Sophos Email contra el personal: quién no tiene correo, cuentas de personal retirado y cuentas sin uso.",
-        ["licencias de Microclaudia", "cuentas de Google"]) : ""}
-    </div>
-    ${ctx.esAdmin ? "" : `<div class="aviso aviso--ocre" style="margin-top:20px">${icono("candado")}<span>Su rol permite consultar la información de estos módulos. Los cambios los hace un administrador.</span></div>`}`;
-
-  // Cantidades de cada módulo (si una falla, se deja el guion)
-  const pintar = (clave, valores) => {
-    cont.querySelectorAll(`[data-datos="${clave}"] b`).forEach((b, i) => { b.textContent = valores[i] ?? "—"; });
-  };
-  const [usuarios, proveedores, dispositivos, edificios, importaciones, envios, personal, listasGoogle] = await Promise.allSettled([
-    api("usuarios/", { query: { activo: true } }),
-    api("proveedores/", { query: { activo: true } }),
-    api("dispositivos/", { query: { activo: true } }),
-    api("dispositivos/edificios/"),
-    ctx.esAdmin ? api("logs/importaciones/") : Promise.resolve([]),
-    ctx.esAdmin ? api("correo/envios/") : Promise.resolve([]),
-    ctx.esAdmin ? api("correo/personal/") : Promise.resolve([]),
-    ctx.esAdmin ? api("correo/listas/", { query: { origen: "GOOGLE" } }) : Promise.resolve([]),
-  ]);
-  if (!ctx.vigente()) return;
-  const n = (r) => (r.status === "fulfilled" ? r.value.length : null);
-  pintar("usuarios", [n(usuarios), n(proveedores)]);
-  pintar("red", [n(dispositivos), n(edificios)]);
-  if (ctx.esAdmin) {
-    const eventos = importaciones.status === "fulfilled"
-      ? importaciones.value.reduce((s, x) => s + (Number(x.total_eventos) || 0), 0).toLocaleString("es-CR") : null;
-    pintar("logs", [n(importaciones), eventos]);
-    pintar("correo", [n(envios), personal.status === "fulfilled" ? personal.value.filter((p) => !p.correo).length : null]);
-    const ultimo = (r) => (r.status === "fulfilled" && r.value.length ? r.value[0] : null);
-    const listado = importaciones.status === "fulfilled" ? importaciones.value.find((x) => x.fuente === "MICROCLAUDIA") : null;
-    pintar("licencias", [listado ? listado.total_eventos : null, ultimo(listasGoogle)?.total ?? null]);
-  }
-}
 
 /* =====================================================================
    Inicio del módulo de usuarios y proveedores

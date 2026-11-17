@@ -30,7 +30,7 @@ function noExiste(cont, ctx) {
 /* =====================================================================
    Catálogos
    ===================================================================== */
-/** modulo: "usuarios" (#/catalogos/...) o "red" (#/red/catalogos/...). */
+/** Catálogos del módulo de usuarios y proveedores (#/catalogos/...). */
 export async function vistaCatalogo(cont, [slug], ctx, modulo = "usuarios") {
   const def = CATALOGOS[slug];
   if (!def || def.soloDatos || (def.modulo || "usuarios") !== modulo) return noExiste(cont, ctx);
@@ -54,7 +54,7 @@ export async function vistaCatalogo(cont, [slug], ctx, modulo = "usuarios") {
   let filas = [];
   let visibles = [];
 
-  // Datos de más de algunos catálogos (la categoría de los tipos de equipo)
+  // Datos de más de algunos catálogos (si el catálogo los define)
   let extra = { campos: [], columnas: [] };
   if (def.extra) {
     try {

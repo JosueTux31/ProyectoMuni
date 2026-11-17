@@ -1,3 +1,8 @@
 asgiref==3.12.1
 Django==5.2.17
 sqlparse==0.6.0
+# El sistema también usa estos (en el servidor ya están instalados en el
+# entorno del sistema completo; en uno nuevo se instalan con pip):
+djangorestframework>=3.15
+drf-spectacular>=0.27
+mysqlclient>=2.2
