@@ -9,6 +9,8 @@
 --     1. 01_estructura.sql        (este archivo)
 --     2. 02_procedimientos.sql    funciones, procedimientos y disparadores
 --     3. 03_datos.sql             catálogos y territorio de Costa Rica
+--  Después, el módulo de equipos municipales (carpeta sql/dispositivos):
+--  creacionDispositivo, procedimientosDispositivos e insercionDispositivos.
 --
 --  Cada tabla sigue el estilo de la especificación: si ya existe se
 --  avisa y no se toca; si no, se crea y después se le agregan su llave

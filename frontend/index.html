@@ -110,7 +110,7 @@
       </div>
       <div class="login__titular">
         <h1>Gestión interna</h1>
-        <p>Usuarios y proveedores del municipio, con sus contactos, catálogos y división territorial.</p>
+        <p>Usuarios, proveedores y equipos municipales del municipio, en un solo lugar.</p>
       </div>
       <p class="login__nota">Acceso exclusivo para personal municipal.</p>
     </div>
@@ -148,14 +148,23 @@
         </div>
       </div>
 
-      <a class="modulo-actual" id="modulo-actual" href="#/inicio" title="Inicio del módulo">
-        <svg class="ic"><use id="modulo-icono" href="#i-usuarios"/></svg>
-        <span class="modulo-actual__texto"><small>Módulo</small><strong id="modulo-nombre">Usuarios y proveedores</strong></span>
+      <a class="modulo-actual" id="modulo-actual" href="#/modulos" title="Cambiar de módulo">
+        <svg class="ic"><use id="modulo-icono" href="#i-modulos"/></svg>
+        <span class="modulo-actual__texto"><small>Módulo</small><strong id="modulo-nombre">Elija un módulo</strong></span>
+        <svg class="ic ic--sm"><use href="#i-cambiar"/></svg>
       </a>
 
       <nav class="nav" id="nav" aria-label="Menú principal">
+        <!-- Menú de módulos (primera pantalla) -->
+        <div class="nav__modulo" data-modulo="modulos">
+          <a href="#/modulos" data-ruta="modulos"><svg class="ic"><use href="#i-modulos"/></svg>Módulos</a>
+          <p class="nav__grupo">Ir al módulo</p>
+          <a href="#/inicio"><svg class="ic"><use href="#i-usuarios"/></svg>Usuarios y proveedores</a>
+          <a href="#/red"><svg class="ic"><use href="#i-red"/></svg>Equipos municipales</a>
+        </div>
+
         <!-- Módulo de usuarios y proveedores -->
-        <div class="nav__modulo" data-modulo="usuarios">
+        <div class="nav__modulo" data-modulo="usuarios" hidden>
         <a href="#/inicio" data-ruta="inicio"><svg class="ic"><use href="#i-inicio"/></svg>Inicio</a>
 
         <p class="nav__grupo">Personas</p>
@@ -185,6 +194,32 @@
         <a href="#/geografia/distritos" data-ruta="geografia/distritos"><svg class="ic"><use href="#i-punto"/></svg>Distritos</a>
         </div>
 
+        <!-- Módulo de equipos municipales (antes dispositivos de red) -->
+        <div class="nav__modulo" data-modulo="red" hidden>
+          <a href="#/red" data-ruta="red"><svg class="ic"><use href="#i-inicio"/></svg>Inicio</a>
+
+          <p class="nav__grupo">Equipos</p>
+          <a href="#/red/dispositivos" data-ruta="red/dispositivos"><svg class="ic"><use href="#i-red"/></svg>Equipos</a>
+          <a href="#/red/dispositivos/nuevo" data-ruta="red/dispositivos/nuevo" data-solo-admin><svg class="ic"><use href="#i-mas"/></svg>Nuevo equipo</a>
+          <a href="#/red/switches" data-ruta="red/switches"><svg class="ic"><use href="#i-switch"/></svg>Switches y puertos</a>
+
+          <p class="nav__grupo">Inventario</p>
+          <a href="#/red/edificios" data-ruta="red/edificios"><svg class="ic"><use href="#i-edificio"/></svg>Edificios</a>
+          <a href="#/red/marcas" data-ruta="red/marcas"><svg class="ic"><use href="#i-etiqueta"/></svg>Marcas y modelos</a>
+
+          <p class="nav__grupo">Catálogos</p>
+          <a href="#/red/catalogos/tipos-dispositivos" data-ruta="red/catalogos/tipos-dispositivos"><svg class="ic"><use href="#i-equipo"/></svg>Tipos de equipo</a>
+          <a href="#/red/catalogos/sistemas-operativos" data-ruta="red/catalogos/sistemas-operativos"><svg class="ic"><use href="#i-sistema"/></svg>Sistemas operativos</a>
+          <a href="#/red/catalogos/procesadores" data-ruta="red/catalogos/procesadores"><svg class="ic"><use href="#i-equipo"/></svg>Procesadores</a>
+          <a href="#/red/catalogos/firmwares" data-ruta="red/catalogos/firmwares"><svg class="ic"><use href="#i-sistema"/></svg>Firmwares</a>
+          <a href="#/red/catalogos/herramientas" data-ruta="red/catalogos/herramientas"><svg class="ic"><use href="#i-escudo"/></svg>Herramientas de seguridad</a>
+          <a href="#/red/catalogos/roles-equipos" data-ruta="red/catalogos/roles-equipos"><svg class="ic"><use href="#i-servidor"/></svg>Roles de servidor</a>
+          <a href="#/red/catalogos/estados-equipos" data-ruta="red/catalogos/estados-equipos"><svg class="ic"><use href="#i-check"/></svg>Estados de equipo</a>
+          <a href="#/red/catalogos/tipos-documentos" data-ruta="red/catalogos/tipos-documentos"><svg class="ic"><use href="#i-documento"/></svg>Tipos de archivo</a>
+
+          <p class="nav__grupo" data-solo-admin>Control</p>
+          <a href="#/red/auditoria" data-ruta="red/auditoria" data-solo-admin><svg class="ic"><use href="#i-historial"/></svg>Auditoría</a>
+        </div>
       </nav>
 
       <div class="lateral__pie">

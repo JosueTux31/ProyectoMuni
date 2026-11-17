@@ -508,6 +508,7 @@ const PESTANAS = [
   { clave: "telefonos", titulo: "Teléfonos", icono: "telefono" },
   { clave: "correos", titulo: "Correos", icono: "correo" },
   { clave: "paginas-webs", titulo: "Páginas web", icono: "web" },
+  { clave: "equipos", titulo: "Equipos", icono: "red" },
   { clave: "seguridad", titulo: "Seguridad", icono: "candado" },
   { clave: "actividad", titulo: "Actividad", icono: "historial" },
 ];
@@ -609,7 +610,11 @@ async function ficha(cont, id, pestanaInicial, ctx, perfil) {
       if (clave === "datos") await pestanaDatos(caja, u, ctx, propio, recargar);
       else if (clave === "seguridad") await pestanaSeguridad(caja, u, ctx, propio, recargar);
       else if (clave === "actividad") await pestanaActividadUsuario(caja, u, ctx, propio);
-      else await pestanaContactos(caja, u, clave, ctx);
+      else if (clave === "equipos") {
+        // Equipos municipales asignados a la persona (módulo de equipos; se carga al abrir la pestaña)
+        const { pestanaEquiposPersona } = await import("./dispositivos.js");
+        await pestanaEquiposPersona(caja, u, ctx);
+      } else await pestanaContactos(caja, u, clave, ctx);
     } catch (e) {
       if (!ctx.vigente()) return;
       caja.innerHTML = errorHTML(e instanceof ErrorApi ? e.message : "No se pudo mostrar esta sección.");

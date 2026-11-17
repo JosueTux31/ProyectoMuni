@@ -37,6 +37,36 @@ def _nombre(*partes):
     return " ".join(p for p in partes if p) or None
 
 
+# Tablas de equipos: sus columnas se muestran con los nombres que usa la
+# página (los mismos de la API), así la auditoría se lee igual que antes del
+# cambio al modelo de datos de la especificación.
+_NOMBRES_PAGINA = {
+    "equipos": {"id": "id_disp", "tipo_equipo": "tipo_disp", "placa_equipo": "placa", "cant_mem": "memoria_gb",
+                "cant_almac": "almacenamiento_gb", "cant_ptos_eth": "cant_ptos_ethernet", "id_so": "id_os",
+                "id_usuario": "id_asignado"},
+    "dir_ips": {"id": "id_disp", "dir_ip": "direccion_ip"},
+    "dir_macs": {"id": "id_disp", "dir_mac": "direccion_mac"},
+    "num_moviles": {"id": "id_disp"},
+    "dir_imeis": {"id": "id_disp"},
+    "roles": {"id": "id_disp"},
+    "herramientas": {"id": "id_disp"},
+    "archivos": {"id": "id_disp", "tipo_arch": "id_doc", "path_arch": "path_docs"},
+    "puertos_switch": {"id_equipo": "id_disp"},
+    "tipo_equipos": {"tipo_equipo": "tipo_disp"},
+    "marcas": {"tipo_equipo": "tipo_disp"},
+    "sis_operativos": {"id_so": "id_os"},
+    "tipo_archivos": {"tipo_arch": "id_doc"},
+    "edificios": {"ubicacion": "gps"},
+}
+
+
+def _a_pagina(tabla, datos):
+    cambios = _NOMBRES_PAGINA.get(tabla)
+    if not cambios or not isinstance(datos, dict):
+        return datos
+    return {cambios.get(k, k): v for k, v in datos.items()}
+
+
 def formatear(fila):
     actor = None
     if fila["id_usuario"] is not None or fila["nombre_usuario"]:
@@ -63,8 +93,8 @@ def formatear(fila):
         "ip": fila["ip"],
         "actor": actor,
         "persona": persona,
-        "antes": _json(fila["datos_antes"]),
-        "despues": _json(fila["datos_despues"]),
+        "antes": _a_pagina(fila["tabla"], _json(fila["datos_antes"])),
+        "despues": _a_pagina(fila["tabla"], _json(fila["datos_despues"])),
     }
 
 

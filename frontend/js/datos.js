@@ -33,6 +33,72 @@ export const CATALOGOS = {
     descripcion: "Tipo de bien o servicio que ofrece cada proveedor. Cada proveedor tiene una categoría.",
   },
 
+  // Módulo de equipos municipales (api = ruta propia; modulo = dónde se administra)
+  "tipos-dispositivos": {
+    titulo: "Tipos de equipo", singular: "tipo de equipo", llave: "tipo_disp", max: 100, icono: "equipo",
+    descripcion: "Laptop, impresora, celular, switch… Cada tipo es de una categoría, que decide qué datos se piden al registrar sus equipos. Cada marca y cada equipo pertenecen a un tipo.",
+    api: "dispositivos/tipos", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si tiene marcas o equipos, no se podrá eliminar.",
+    // Además de la descripción: la categoría (lista fija)
+    extra: async () => {
+      const categorias = [...await filasCatalogo("categorias-dispositivos")].sort((a, b) => a.id_categoria - b.id_categoria);
+      const nombre = (t) => String(t || "").charAt(0) + String(t || "").slice(1).toLowerCase();
+      return {
+        campos: [{
+          nombre: "id_categoria", etiqueta: "Categoría", tipo: "select", requerido: true, entero: true,
+          opciones: categorias.map((c) => ({ valor: c.id_categoria, texto: nombre(c.descripcion) })),
+          ayuda: "Decide qué datos se piden al registrar sus equipos: puertos, procesador y memoria, IMEI y línea, impresión…",
+        }],
+        columnas: [{ titulo: "Categoría", html: (f) => `${esc(nombre(f.categoria))}<span class="secundario">${f.cantidad_dispositivos || 0} ${f.cantidad_dispositivos === 1 ? "equipo" : "equipos"}</span>` }],
+      };
+    },
+  },
+  "sistemas-operativos": {
+    titulo: "Sistemas operativos", singular: "sistema operativo", llave: "id_os", max: 100, icono: "sistema",
+    descripcion: "Sistema operativo de cada equipo (Windows, Linux, Android, iOS, firmware…). N/D es para los que no aplica o no se conoce.",
+    api: "dispositivos/sistemas-operativos", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si algún dispositivo lo usa, no se podrá eliminar.",
+  },
+  "tipos-documentos": {
+    titulo: "Tipos de archivo", singular: "tipo de archivo", llave: "id_doc", max: 100, icono: "documento",
+    descripcion: "Tabla tipo_archivos: clasificación de los archivos de cada equipo (manual, garantía, soporte, configuración, backup, nota…).",
+    api: "dispositivos/tipos-documentos", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si algún dispositivo tiene documentos de este tipo, no se podrá eliminar.",
+  },
+  procesadores: {
+    titulo: "Procesadores", singular: "procesador", llave: "id_proc", max: 150, icono: "equipo",
+    descripcion: "Tabla procesadores: el procesador de cada computadora o servidor (AMD Ryzen R1606G, Intel Atom C2718…).",
+    api: "dispositivos/procesadores", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si algún equipo lo usa, no se podrá eliminar.",
+  },
+  firmwares: {
+    titulo: "Firmwares", singular: "firmware", llave: "id_firmw", max: 100, icono: "sistema",
+    descripcion: "Tabla firmwares: versión del sistema o del firmware de cada equipo (SFOS 22.0.2, 11 PRO 23H2…). N/D lo usa el sistema.",
+    api: "dispositivos/firmwares", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si algún equipo lo usa, no se podrá eliminar.",
+  },
+  "estados-equipos": {
+    titulo: "Estados de equipo", singular: "estado", llave: "id_estado", max: 50, icono: "check",
+    descripcion: "Tabla estado_equipos: N/D, ACTIVO e INACTIVO (dado de baja). Esos tres los usa el sistema y no se pueden cambiar.",
+    api: "dispositivos/estados", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si algún equipo lo usa, no se podrá eliminar.",
+  },
+  "roles-equipos": {
+    titulo: "Roles de servidor", singular: "rol", llave: "id_rol", max: 100, icono: "escudo",
+    descripcion: "Tabla tipo_roles: qué hace un servidor (de dominio, DHCP, DNS, NTP…). Un equipo puede tener varios.",
+    api: "dispositivos/roles", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si algún equipo tiene este rol, no se podrá eliminar.",
+  },
+  herramientas: {
+    titulo: "Herramientas de seguridad", singular: "herramienta", llave: "id_herram", max: 100, icono: "escudo",
+    descripcion: "Tabla tipo_herramientas: lo instalado en cada equipo (Bitdefender, Microclaudia, Cisco Umbrella…). MICROCLAUDIA se compara con su listado y no se puede cambiar.",
+    api: "dispositivos/herramientas", modulo: "red", grupo: "Catálogos de equipos",
+    enUso: "Si algún equipo la tiene, no se podrá eliminar.",
+  },
+  // Solo para mostrar nombres (tienen su propia pantalla)
+  marcas: { titulo: "Marcas", llave: "id_marca", api: "dispositivos/marcas", modulo: "red", soloDatos: true },
+  "categorias-dispositivos": { titulo: "Categorías de equipo", llave: "id_categoria", api: "dispositivos/categorias", modulo: "red", soloDatos: true },
+  edificios: { titulo: "Edificios", llave: "id_predio", api: "dispositivos/edificios", modulo: "red", soloDatos: true },
 };
 
 /** Ruta de la API de un catálogo: catalogos/<slug> o la propia del módulo. */
