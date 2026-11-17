@@ -6,11 +6,13 @@
 --  ESTÃNDAR en vez de ESTÁNDAR, CÃ‰DULA FÃSICA en vez de CÉDULA FÍSICA.
 --  Este script las devuelve a como deben ser.
 --
---  Solo toca las tablas de catálogos (cat_...) y de territorio (geo_...),
+--  Solo toca las tablas de catálogos (cat_... y las tablas catálogo de
+--  equipos: tipo_equipos, marcas, modelos, procesadores...) y de
+--  territorio (geo_...),
 --  y en ellas solo las filas que tienen ese daño (Ã o Â), que en esos
 --  textos nunca son letras de verdad. Si no hay nada dañado no cambia nada.
---  Los datos de las personas no se tocan (revisar_base.sql los señala
---  para corregirlos en la página).
+--  Los datos de personas y equipos no se tocan (revisar_base.sql los
+--  señala para corregirlos en la página).
 --
 --  Lo ejecuta reinstalar_base.sh después de los scripts. A mano:
 --     mariadb -u admin_db -p < reparar_letras.sql
@@ -32,7 +34,10 @@ BEGIN NOT ATOMIC
         SELECT c.TABLE_NAME, c.COLUMN_NAME
           FROM information_schema.COLUMNS c
          WHERE c.TABLE_SCHEMA = DATABASE()
-           AND (c.TABLE_NAME LIKE 'cat\_%' OR c.TABLE_NAME LIKE 'geo\_%')
+           AND (c.TABLE_NAME LIKE 'cat\_%' OR c.TABLE_NAME LIKE 'geo\_%'
+                OR c.TABLE_NAME IN ('categoria_equipos', 'tipo_equipos', 'marcas', 'modelos', 'procesadores',
+                                    'sis_operativos', 'firmwares', 'edificios', 'estado_equipos', 'tipo_roles',
+                                    'tipo_herramientas', 'tipo_archivos'))
            AND c.DATA_TYPE IN ('char', 'varchar', 'text')
          ORDER BY c.TABLE_NAME, c.COLUMN_NAME;
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = 1;

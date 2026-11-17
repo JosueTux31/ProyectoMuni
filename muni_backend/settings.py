@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'apps.usuarios',
     'apps.proveedores',
     'apps.auditoria',
+    'apps.dispositivos',
 ]
 
 MIDDLEWARE = [
@@ -150,6 +151,9 @@ MEDIA_ROOT = BASE_DIR / 'archivos'
 MUNI_MAX_MB_CATALOGO = 20
 MUNI_MAX_MB_IMAGEN = 5
 MUNI_MAX_MB_FOTO = 5
+# Documentos de los equipos municipales (manuales, firmware, respaldos...).
+# Los firmware pueden pesar varios cientos de MB.
+MUNI_MAX_MB_DOCUMENTO_RED = 1024
 
 # Auditoría: True solo si Django está detrás de un proxy (Nginx, Apache) que
 # envía la IP real del cliente en X-Forwarded-For.

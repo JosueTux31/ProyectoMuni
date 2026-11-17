@@ -1,5 +1,5 @@
-// Arranque: inicio de sesión, estructura, menú lateral y rutas del módulo de
-// usuarios y proveedores.
+// Arranque: inicio de sesión, menú de módulos, estructura, menú lateral y rutas.
+// Módulos de este sistema: usuarios y proveedores, y equipos municipales.
 import { CONFIG } from "./config.js";
 import { api, cuandoExpireSesion, ErrorApi, sesion } from "./api.js";
 import {
@@ -12,6 +12,10 @@ import { vistaPerfil, vistaUsuario, vistaUsuarioNuevo, vistaUsuarios } from "./u
 import { vistaCatalogo, vistaGeografia } from "./recursos.js";
 import { vistaProveedor, vistaProveedores, vistaProveedorNuevo } from "./proveedores.js";
 import { feedAuditoria, vistaAuditoria } from "./auditoria.js";
+import {
+  vistaDispositivo, vistaDispositivoNuevo, vistaDispositivos, vistaEdificios, vistaInicioRed, vistaMarcas,
+} from "./dispositivos.js";
+import { vistaSwitches } from "./switch.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -45,7 +49,7 @@ function entrar(perfil) {
   pantallaLogin.hidden = true;
   pantallaApp.hidden = false;
   pintarSesion();
-  if (!location.hash || location.hash === "#" || location.hash === "#/" || location.hash === "#/modulos") location.hash = "#/inicio";
+  if (!location.hash || location.hash === "#" || location.hash === "#/") location.hash = "#/modulos";
   else navegar();
 }
 
@@ -130,14 +134,19 @@ velo.addEventListener("click", () => menuMovil(false));
 document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") menuMovil(false); });
 
 /* =====================================================================
-   Módulo: este sistema tiene solo el de usuarios y proveedores.
+   Módulos: al entrar se elige con cuál trabajar. Cada uno tiene su menú.
    ===================================================================== */
 const MODULOS = {
   usuarios: { nombre: "Usuarios y proveedores", inicio: "#/inicio", icono: "usuarios" },
+  red: { nombre: "Equipos municipales", inicio: "#/red", icono: "red" },
 };
 let moduloActual = null;
 
-function moduloDeRuta() {
+function moduloDeRuta(r) {
+  if (r === "modulos") return null;
+  if (r === "red" || r.startsWith("red/")) return "red";
+  // Mi perfil se queda en el módulo donde estaba la persona
+  if (r === "perfil" || r.startsWith("perfil/")) return moduloActual || "usuarios";
   return "usuarios";
 }
 
@@ -154,7 +163,7 @@ function pintarModulo(modulo) {
    Rutas
    ===================================================================== */
 const RUTAS = [
-  { patron: /^modulos$/, vista: () => { location.replace("#/inicio"); } },
+  { patron: /^modulos$/, vista: vistaModulos },
   { patron: /^inicio$/, vista: vistaInicio },
   { patron: /^usuarios$/, vista: vistaUsuarios },
   { patron: /^usuarios\/nuevo$/, vista: vistaUsuarioNuevo, soloAdmin: true },
@@ -166,6 +175,16 @@ const RUTAS = [
   { patron: /^auditoria$/, vista: vistaAuditoria, soloAdmin: true },
   { patron: /^catalogos\/([\w-]+)$/, vista: vistaCatalogo },
   { patron: /^geografia\/([\w-]+)$/, vista: vistaGeografia },
+  // Módulo de equipos municipales (rutas #/red/...)
+  { patron: /^red$/, vista: vistaInicioRed },
+  { patron: /^red\/dispositivos$/, vista: vistaDispositivos },
+  { patron: /^red\/dispositivos\/nuevo$/, vista: vistaDispositivoNuevo, soloAdmin: true },
+  { patron: /^red\/dispositivos\/(\d+)(?:\/([\w-]+))?$/, vista: vistaDispositivo },
+  { patron: /^red\/switches$/, vista: vistaSwitches },
+  { patron: /^red\/marcas$/, vista: vistaMarcas },
+  { patron: /^red\/edificios$/, vista: vistaEdificios },
+  { patron: /^red\/catalogos\/([\w-]+)$/, vista: (cont, params, ctx) => vistaCatalogo(cont, params, ctx, "red") },
+  { patron: /^red\/auditoria$/, vista: vistaAuditoria, soloAdmin: true },
 ];
 
 let navegacion = 0;
@@ -203,8 +222,8 @@ async function navegar() {
   const actual = ++navegacion;
   menuMovil(false);
 
-  // #/usuarios?departamento=2 -> ruta "usuarios" y filtros en ctx.query
-  const [rutaActual, consulta = ""] = (location.hash.replace(/^#\/?/, "") || "inicio").split("?");
+  // #/red/dispositivos?tipo_disp=2 -> ruta "red/dispositivos" y filtros en ctx.query
+  const [rutaActual, consulta = ""] = (location.hash.replace(/^#\/?/, "") || "modulos").split("?");
   pintarModulo(moduloDeRuta(rutaActual));
   marcarMenu(rutaActual);
 
@@ -249,13 +268,64 @@ async function navegar() {
 
 function paginaMensaje(contenedor, ctx, titulo, texto, ic) {
   ctx.migas([{ texto: titulo }]);
-  const inicio = MODULOS[moduloActual]?.inicio || "#/inicio";
+  const inicio = MODULOS[moduloActual]?.inicio || "#/modulos";
   contenedor.innerHTML = `<section class="panel">${vacioHTML({
     icono: ic, titulo, texto, boton: `<a class="btn btn--secundario" href="${inicio}">Ir al inicio</a>`,
   })}</section>`;
 }
 
 window.addEventListener("hashchange", navegar);
+
+/* =====================================================================
+   Menú de módulos (primera pantalla después de iniciar sesión)
+   ===================================================================== */
+async function vistaModulos(cont, _params, ctx) {
+  ctx.migas([{ texto: "Módulos" }]);
+  const hora = new Date().getHours();
+  const saludo = hora < 12 ? "Buenos días" : hora < 19 ? "Buenas tardes" : "Buenas noches";
+
+  const tarjeta = (clave, texto, datos) => {
+    const m = MODULOS[clave];
+    return `
+      <a class="modulo modulo--${clave}" href="${m.inicio}">
+        <span class="modulo__icono">${icono(m.icono)}</span>
+        <span class="modulo__cuerpo">
+          <strong class="modulo__titulo">${esc(m.nombre)}</strong>
+          <span class="modulo__texto">${esc(texto)}</span>
+          <span class="modulo__datos" data-datos="${clave}">${datos.map((d) => `<span><b>…</b>${esc(d)}</span>`).join("")}</span>
+        </span>
+        <span class="modulo__entrar">Entrar${icono("derecha")}</span>
+      </a>`;
+  };
+
+  cont.innerHTML = `
+    <div class="saludo">
+      <h1>${saludo}, ${esc(ctx.usuario.nombre)}</h1>
+      <p>¿Con cuál módulo va a trabajar? Puede cambiar de módulo cuando quiera desde el menú.</p>
+    </div>
+    <div class="modulos">
+      ${tarjeta("usuarios", "Personal municipal, proveedores con sus contactos y catálogos de servicios, catálogos del sistema y división territorial.",
+        ["usuarios activos", "proveedores activos"])}
+      ${tarjeta("red", "Equipos de red, computadoras, servidores, celulares, impresoras, UPS y más: a quién están asignados, dónde están, quién les da soporte y sus documentos.",
+        ["equipos activos", "edificios"])}
+    </div>
+    ${ctx.esAdmin ? "" : `<div class="aviso aviso--ocre" style="margin-top:20px">${icono("candado")}<span>Su rol permite consultar la información de estos módulos. Los cambios los hace un administrador.</span></div>`}`;
+
+  // Cantidades de cada módulo (si una falla, se deja el guion)
+  const pintar = (clave, valores) => {
+    cont.querySelectorAll(`[data-datos="${clave}"] b`).forEach((b, i) => { b.textContent = valores[i] ?? "—"; });
+  };
+  const [usuarios, proveedores, dispositivos, edificios] = await Promise.allSettled([
+    api("usuarios/", { query: { activo: true } }),
+    api("proveedores/", { query: { activo: true } }),
+    api("dispositivos/", { query: { activo: true } }),
+    api("dispositivos/edificios/"),
+  ]);
+  if (!ctx.vigente()) return;
+  const n = (r) => (r.status === "fulfilled" ? r.value.length : null);
+  pintar("usuarios", [n(usuarios), n(proveedores)]);
+  pintar("red", [n(dispositivos), n(edificios)]);
+}
 
 /* =====================================================================
    Inicio del módulo de usuarios y proveedores

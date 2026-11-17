@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 backend/archivos/
 backend/sql/respaldos/
+archivos/
+respaldos/
+verificar_archivos.sh
+subir_*.sh
+recibir.py

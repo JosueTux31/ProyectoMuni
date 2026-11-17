@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # =====================================================================
-#  reinstalar_base.sh - vuelve a correr la base gestion_redes del
-#  módulo de usuarios y proveedores
+#  reinstalar_base.sh - vuelve a correr la base gestion_redes de los
+#  módulos de usuarios y proveedores y de equipos municipales
 # ---------------------------------------------------------------------
 #  Ejecute en el servidor, desde la carpeta sql del backend:
-#     cd ~/proyecto_muni/backend/sql
+#     cd ~/repo_muni/backend/sql
 #     bash reinstalar_base.sh               conserva los datos (recomendado)
 #     bash reinstalar_base.sh --desde-cero  BORRA la base y la crea vacía
 #     bash reinstalar_base.sh --revisar     solo revisa, no cambia nada
@@ -18,6 +18,9 @@
 #         instalacion/01_estructura.sql
 #         instalacion/02_procedimientos.sql
 #         instalacion/03_datos.sql
+#         dispositivos/creacionDispositivo.sql
+#         dispositivos/procedimientosDispositivos.sql
+#         dispositivos/insercionDispositivos.sql
 #       Todos se pueden ejecutar más de una vez: no duplican ni borran datos.
 #    4. Corrige tildes dañadas en catálogos y territorio (reparar_letras.sql).
 #    5. Ejecuta revisar_base.sql y muestra si la base quedó como debe.
@@ -37,6 +40,9 @@ SCRIPTS=(
   instalacion/01_estructura.sql
   instalacion/02_procedimientos.sql
   instalacion/03_datos.sql
+  dispositivos/creacionDispositivo.sql
+  dispositivos/procedimientosDispositivos.sql
+  dispositivos/insercionDispositivos.sql
 )
 
 MODO="normal"
@@ -143,7 +149,7 @@ fi
 if [ "$MODO" = "cero" ] && [ "$EXISTE" = "1" ]; then
   echo
   echo "!! Se va a BORRAR por completo la base $BASE con todo lo que tenga:"
-  echo "   usuarios, proveedores, auditoría y el padrón. El respaldo quedó en $RESPALDO."
+  echo "   usuarios, proveedores, equipos, auditoría y el padrón. El respaldo quedó en $RESPALDO."
   read -r -p "   Escriba BORRAR para seguir: " RESPUESTA
   if [ "$RESPUESTA" != "BORRAR" ]; then
     echo "No se borró nada."
@@ -200,7 +206,7 @@ fi
 revisar
 echo
 if [ "$MODO" = "cero" ]; then
-  echo "Base nueva. Falta, en ~/proyecto_muni/backend con el entorno activado:"
+  echo "Base nueva. Falta, en la carpeta backend (cd ..) con el entorno activado:"
   echo "   python manage.py inicializar --usuario admin"
 fi
 if [ -f ../muni_backend/settings.py ] && ! grep -qE "['\"]NAME['\"]: *['\"]$BASE['\"]" ../muni_backend/settings.py; then
