@@ -1,5 +1,5 @@
 // Arranque: inicio de sesión, menú de módulos, estructura, menú lateral y rutas.
-// Módulos de este sistema: usuarios y proveedores, equipos municipales y análisis de logs.
+// Módulos de este sistema: usuarios y proveedores, equipos municipales, análisis de logs y correo institucional.
 import { CONFIG } from "./config.js";
 import { api, cuandoExpireSesion, ErrorApi, sesion } from "./api.js";
 import {
@@ -20,6 +20,9 @@ import {
   vistaCamposLogs, vistaCobertura, vistaComparar, vistaEventos, vistaImportacion, vistaImportaciones, vistaImportarDhcp,
   vistaImportarMicroclaudia, vistaImportarSophos, vistaInicioLogs, vistaIntrusos, vistaInventarioLogs, vistaTablero,
 } from "./logs.js";
+import {
+  vistaAviso, vistaAvisos, vistaCompararCorreos, vistaConfigCorreo, vistaEnviarAviso, vistaInicioCorreo, vistaListaCorreos,
+} from "./correo.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -144,6 +147,7 @@ const MODULOS = {
   usuarios: { nombre: "Usuarios y proveedores", inicio: "#/inicio", icono: "usuarios" },
   red: { nombre: "Equipos municipales", inicio: "#/red", icono: "red" },
   logs: { nombre: "Análisis de logs", inicio: "#/logs", icono: "logs", soloAdmin: true },
+  correo: { nombre: "Correo institucional", inicio: "#/correo", icono: "correo", soloAdmin: true },
 };
 let moduloActual = null;
 
@@ -151,6 +155,7 @@ function moduloDeRuta(r) {
   if (r === "modulos") return null;
   if (r === "red" || r.startsWith("red/")) return "red";
   if (r === "logs" || r.startsWith("logs/")) return "logs";
+  if (r === "correo" || r.startsWith("correo/")) return "correo";
   // Mi perfil se queda en el módulo donde estaba la persona
   if (r === "perfil" || r.startsWith("perfil/")) return moduloActual || "usuarios";
   return "usuarios";
@@ -206,6 +211,15 @@ const RUTAS = [
   { patron: /^logs\/inventario$/, vista: vistaInventarioLogs, soloAdmin: true },
   { patron: /^logs\/campos$/, vista: vistaCamposLogs, soloAdmin: true },
   { patron: /^logs\/auditoria$/, vista: vistaAuditoria, soloAdmin: true },
+  // Módulo de correo institucional (solo administradores)
+  { patron: /^correo$/, vista: vistaInicioCorreo, soloAdmin: true },
+  { patron: /^correo\/enviar$/, vista: vistaEnviarAviso, soloAdmin: true },
+  { patron: /^correo\/avisos$/, vista: vistaAvisos, soloAdmin: true },
+  { patron: /^correo\/avisos\/(\d+)$/, vista: vistaAviso, soloAdmin: true },
+  { patron: /^correo\/comparar$/, vista: vistaCompararCorreos, soloAdmin: true },
+  { patron: /^correo\/comparar\/(\d+)$/, vista: vistaListaCorreos, soloAdmin: true },
+  { patron: /^correo\/configuracion$/, vista: vistaConfigCorreo, soloAdmin: true },
+  { patron: /^correo\/auditoria$/, vista: vistaAuditoria, soloAdmin: true },
 ];
 
 let navegacion = 0;
@@ -331,6 +345,8 @@ async function vistaModulos(cont, _params, ctx) {
         ["equipos activos", "edificios"])}
       ${ctx.esAdmin ? tarjeta("logs", "Logs de Sophos Firewall, equipos con el agente de Microclaudia y concesiones del DHCP en gráficos: filtro estilo Wireshark, comparación, equipos sin agente, intrusos en la red y cruce con el inventario.",
         ["importaciones", "registros"]) : ""}
+      ${ctx.esAdmin ? tarjeta("correo", "Avisos al personal desde la cuenta de correo institucional, y comparación de los correos registrados con la lista de cuentas de la municipalidad.",
+        ["avisos enviados", "personas sin correo"]) : ""}
     </div>
     ${ctx.esAdmin ? "" : `<div class="aviso aviso--ocre" style="margin-top:20px">${icono("candado")}<span>Su rol permite consultar la información de estos módulos. Los cambios los hace un administrador.</span></div>`}`;
 
@@ -338,12 +354,14 @@ async function vistaModulos(cont, _params, ctx) {
   const pintar = (clave, valores) => {
     cont.querySelectorAll(`[data-datos="${clave}"] b`).forEach((b, i) => { b.textContent = valores[i] ?? "—"; });
   };
-  const [usuarios, proveedores, dispositivos, edificios, importaciones] = await Promise.allSettled([
+  const [usuarios, proveedores, dispositivos, edificios, importaciones, envios, personal] = await Promise.allSettled([
     api("usuarios/", { query: { activo: true } }),
     api("proveedores/", { query: { activo: true } }),
     api("dispositivos/", { query: { activo: true } }),
     api("dispositivos/edificios/"),
     ctx.esAdmin ? api("logs/importaciones/") : Promise.resolve([]),
+    ctx.esAdmin ? api("correo/envios/") : Promise.resolve([]),
+    ctx.esAdmin ? api("correo/personal/") : Promise.resolve([]),
   ]);
   if (!ctx.vigente()) return;
   const n = (r) => (r.status === "fulfilled" ? r.value.length : null);
@@ -353,6 +371,7 @@ async function vistaModulos(cont, _params, ctx) {
     const eventos = importaciones.status === "fulfilled"
       ? importaciones.value.reduce((s, x) => s + (Number(x.total_eventos) || 0), 0).toLocaleString("es-CR") : null;
     pintar("logs", [n(importaciones), eventos]);
+    pintar("correo", [n(envios), personal.status === "fulfilled" ? personal.value.filter((p) => !p.correo).length : null]);
   }
 }
 

@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'apps.auditoria',
     'apps.dispositivos',
     'apps.logs',
+    'apps.correo',
 ]
 
 MIDDLEWARE = [
@@ -159,6 +160,8 @@ MUNI_MAX_MB_DOCUMENTO_RED = 1024
 MUNI_MAX_MB_LOG = 100
 # Máximo de eventos que se exportan de una vez a CSV
 MUNI_MAX_EXPORTAR_LOGS = 100000
+# Total de los adjuntos de un aviso por correo
+MUNI_MAX_MB_CORREO = 15
 
 # Auditoría: True solo si Django está detrás de un proxy (Nginx, Apache) que
 # envía la IP real del cliente en X-Forwarded-For.

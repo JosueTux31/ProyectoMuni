@@ -11,8 +11,9 @@
 --     3. 03_datos.sql             catálogos y territorio de Costa Rica
 --  Después, el módulo de equipos municipales (carpeta sql/dispositivos):
 --  creacionDispositivo, procedimientosDispositivos e insercionDispositivos;
---  y el de análisis de logs (carpeta sql/logs): creacionLogs,
---  procedimientosLogs e insercionLogs.
+--  el de análisis de logs (carpeta sql/logs): creacionLogs,
+--  procedimientosLogs e insercionLogs; y el de correo institucional
+--  (carpeta sql/correo): creacionCorreo y procedimientosCorreo.
 --
 --  Cada tabla sigue el estilo de la especificación: si ya existe se
 --  avisa y no se toca; si no, se crea y después se le agregan su llave

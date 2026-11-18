@@ -1,9 +1,9 @@
-# Gestión municipal: usuarios y proveedores + equipos municipales + análisis de logs
+# Gestión municipal: usuarios y proveedores + equipos municipales + análisis de logs + correo institucional
 
-Este proyecto es el sistema separado por módulos. Por ahora trae tres:
+Este proyecto es el sistema separado por módulos. Por ahora trae cuatro:
 **usuarios y proveedores**, **equipos municipales** (con los switches y sus
-puertos) y **análisis de logs**. Los que faltan (correo institucional y
-licencias) se van a ir uniendo después, uno por uno.
+puertos), **análisis de logs** y **correo institucional**. El que falta,
+licencias y reportes, se une después.
 
 | Parte        | Contenido |
 |--------------|-----------|
@@ -15,8 +15,9 @@ licencias) se van a ir uniendo después, uno por uno.
 | `apps/auditoria`    | Historial de cambios e inicios de sesión |
 | `apps/dispositivos` | Equipos municipales: equipos con IP, MAC, líneas, IMEI y documentos; switches y puertos; edificios, marcas, modelos y catálogos de equipos |
 | `apps/logs`         | Análisis de logs: importación de Sophos Firewall, del listado de Microclaudia y de las concesiones del DHCP; filtro estilo Wireshark, tablero, comparación, intrusos en la red, equipos sin agente y cruce con el inventario |
+| `apps/correo`       | Correo institucional: la cuenta con que se envían los avisos, avisos al personal con adjuntos, y listas de correos de Google Workspace y Sophos Email comparadas con el personal |
 | `frontend`          | La página web (se abre en `/app/`) |
-| `sql`               | Scripts de la base de datos de los tres módulos |
+| `sql`               | Scripts de la base de datos de los cuatro módulos |
 
 ## Módulos
 
@@ -25,33 +26,44 @@ licencias) se van a ir uniendo después, uno por uno.
 | 1. Usuarios y proveedores | incluido | `modular` |
 | 2. Equipos municipales y switches | incluido | `modulo-equipos`, unida a `modular` |
 | 3. Análisis de logs | incluido | `modulo-logs`, unida a `modular` |
-| 4. Correo institucional | pendiente | |
+| 4. Correo institucional | incluido | `modulo-correo`, unida a `modular` |
 | 5. Licencias y reportes | pendiente | |
 
-Al entrar, la página muestra el menú de módulos. El de análisis de logs
-es solo para administradores: los demás usuarios no lo ven en el menú y la
-API les responde que no tienen permiso.
+Al entrar, la página muestra el menú de módulos. Los de análisis de logs y
+correo institucional son solo para administradores: los demás usuarios no
+los ven en el menú y la API les responde que no tienen permiso.
 
-Con este módulo vuelve la pestaña «En la red» de cada equipo, que ven los
-administradores y muestra lo que el equipo tiene en el DHCP, en
-Microclaudia y en los logs de Sophos.
-Las funciones para exportar a CSV vuelven a estar en `logs_ui.js`, así que
+Con el módulo de análisis de logs vuelve la pestaña «En la red» de cada
+equipo, que ven los administradores y muestra lo que el equipo tiene en el
+DHCP, en Microclaudia y en los logs de Sophos. Las funciones para exportar a CSV vuelven a estar en `logs_ui.js`, así que
 `frontend/js/csv.js` ya no se usa y se quita.
+
+El correo institucional envía los avisos con la cuenta que se configura en
+Correo institucional → Configuración: servidor de correo, puerto, usuario y
+clave. La clave se guarda cifrada con `SECRET_KEY` de `settings.py` y nunca
+sale por la API. Si se cambia `SECRET_KEY`, la clave guardada ya no se puede
+leer y hay que volver a escribirla. Como el sistema completo usa la misma
+base, también usa la misma cuenta: para que la clave sirva en los dos, los
+dos `settings.py` deben tener la misma `SECRET_KEY`. Los avisos se envían de
+a lotes de 20 correos, uno por persona, y queda el resultado de cada envío.
 
 Lo que todavía queda afuera hasta que se una su módulo:
 
-- La ruta `/api/logs/licencias/` ya está, pero la pantalla que la usa es la
-  de licencias, que viene con ese módulo.
+- Las rutas `/api/logs/licencias/` y `/api/correo/licencias/` ya están, pero
+  la pantalla que las usa es la de licencias y reportes, que viene con ese
+  módulo.
 - La migración desde el modelo de datos anterior
   (`00_cambio_de_modelo.sql` y `migrarDispositivos.sql`) se queda en la
   rama `main`: se usa una sola vez y la base del servidor ya la tiene.
 
 ## Base de datos
 
-Usa la misma base `gestion_redes` que el sistema completo y crea solo lo de
-estos tres módulos: 43 tablas, 227 procedimientos, 4 funciones y 203
-disparadores. Si la base ya tiene el módulo de correo no lo toca, así que el
-sistema completo y este pueden usar la misma base al mismo tiempo.
+Usa la misma base `gestion_redes` que el sistema completo y crea lo de
+estos cuatro módulos: 49 tablas, 250 procedimientos, 4 funciones y 213
+disparadores. Es todo lo que usa el sistema completo: el módulo de
+licencias no agrega nada a la base. Por eso el sistema completo y este
+pueden usar la misma base al mismo tiempo, y lo que se hace en uno se ve en
+el otro, también la cuenta de correo y los avisos enviados.
 
 ```bash
 cd sql
@@ -65,6 +77,7 @@ Orden de los scripts (lo sigue `reinstalar_base.sh`):
 1. `instalacion/01_estructura.sql`, `02_procedimientos.sql` y `03_datos.sql`: usuarios y proveedores
 2. `dispositivos/creacionDispositivo.sql`, `procedimientosDispositivos.sql` e `insercionDispositivos.sql`: equipos municipales
 3. `logs/creacionLogs.sql`, `procedimientosLogs.sql` e `insercionLogs.sql`: análisis de logs
+4. `correo/creacionCorreo.sql` y `procedimientosCorreo.sql`: correo institucional
 
 Datos de ejemplo, opcionales: `mariadb -u admin_db -p < sql/pruebas/poblarDatosEjemplo.sql`.
 Trae 17 departamentos, 17 funcionarios, 7 proveedores, 53 equipos y 38
@@ -75,8 +88,9 @@ registra la mitad de los equipos de la lista del DHCP del 26/10/2026, para
 que en «Intrusos en la red» se vean equipos registrados y sin registrar.
 Los quita `sql/pruebas/borrarPruebaEquipos.sql`.
 
-Los logs no traen datos de ejemplo: se importan desde la página, en
-Análisis de logs → Importar.
+Los logs y el correo no traen datos de ejemplo: los logs se importan desde
+la página, en Análisis de logs → Importar, y las listas de correos en
+Correo institucional → Comparar correos.
 
 ## Instalación
 
@@ -95,10 +109,15 @@ pueda correr al mismo tiempo que el sistema completo, que usa el 8001.
 
 La conexión a la base está en `muni_backend/settings.py`, en `DATABASES`:
 el nombre de la base debe ser `gestion_redes`. Los documentos de los
-equipos se guardan en la carpeta de `MEDIA_ROOT`. Los tamaños máximos están
-en el mismo archivo: `MUNI_MAX_MB_DOCUMENTO_RED` para los documentos de los
-equipos, `MUNI_MAX_MB_LOG` para cada archivo de logs que se importa y
-`MUNI_MAX_EXPORTAR_LOGS` para los eventos que se exportan a CSV de una vez.
+equipos y los adjuntos de los avisos se guardan en la carpeta de
+`MEDIA_ROOT`. Los tamaños máximos están en el mismo archivo:
+`MUNI_MAX_MB_DOCUMENTO_RED` para los documentos de los equipos,
+`MUNI_MAX_MB_LOG` para cada archivo de logs que se importa,
+`MUNI_MAX_EXPORTAR_LOGS` para los eventos que se exportan a CSV de una vez
+y `MUNI_MAX_MB_CORREO` para el total de los adjuntos de un aviso.
+
+Para enviar avisos, el servidor debe poder conectarse al servidor de correo
+de la cuenta, por ejemplo `smtp.gmail.com` en el puerto 587.
 
 ## API
 
@@ -128,3 +147,11 @@ Análisis de logs (solo administradores):
 - `/api/logs/filtro/`, `campos/`, `comparar/` e `inventario/`
 - `/api/logs/agentes/`, `cobertura/`, `intrusos/`, `licencias/` y `equipos/<id>/`
 - `/api/logs/mapeo/` y `mapeo/<programa>/<campo>/`
+
+Correo institucional (solo administradores):
+
+- `/api/correo/configuracion/` y `configuracion/prueba/`
+- `/api/correo/personal/`
+- `/api/correo/envios/` con `prueba/`, y `<id>/` con `enviar/`, `reintentar/`, `cancelar/` y `adjuntos/<n>/`
+- `/api/correo/listas/` y `listas/<id>/`
+- `/api/correo/licencias/`
