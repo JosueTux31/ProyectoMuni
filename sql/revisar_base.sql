@@ -1,12 +1,13 @@
 -- =====================================================================
 --  revisar_base.sql - ¿La base gestion_redes está como debe?
 -- ---------------------------------------------------------------------
---  Módulos de usuarios y proveedores, de equipos municipales y de
---  análisis de logs. Compara la base con lo que crean los scripts de las
---  carpetas instalacion, dispositivos y logs:
---    - 43 tablas con sus 284 columnas
---    - 227 procedimientos (parámetros y contenido) y 4 funciones
---    - 203 disparadores
+--  Módulos de usuarios y proveedores, de equipos municipales, de
+--  análisis de logs y de correo institucional. Compara la base con lo
+--  que crean los scripts de las carpetas instalacion, dispositivos, logs
+--  y correo:
+--    - 49 tablas con sus 344 columnas
+--    - 250 procedimientos (parámetros y contenido) y 4 funciones
+--    - 213 disparadores
 --    - los datos iniciales de los catálogos y el usuario administrador
 --  No cambia nada en la base: solo lee.
 --
@@ -364,6 +365,72 @@ INSERT INTO rev_esperado (tipo, nombre, detalle, valor, archivo, huella) VALUES
     ('COLUMNA', 'log_mapeo_campos', 'campo_origen', 'varchar:64', 'creacionLogs.sql', NULL),
     ('COLUMNA', 'log_mapeo_campos', 'campo', 'varchar:64', 'creacionLogs.sql', NULL),
     ('COLUMNA', 'log_mapeo_campos', 'prioridad', NULL, 'creacionLogs.sql', NULL),
+    ('TABLA', 'cor_configuracion', NULL, NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'id_config', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'servidor', 'varchar:150', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'puerto', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'seguridad', 'varchar:10', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'usuario', 'varchar:150', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'clave_cifrada', 'varchar:1000', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'correo_remitente', 'varchar:150', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'nombre_remitente', 'varchar:150', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'responder_a', 'varchar:150', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'firma', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'limite_diario', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'activo', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'ultima_prueba', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'prueba_ok', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'resultado_prueba', 'varchar:255', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'id_usuario', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_configuracion', 'actualizado_en', NULL, 'creacionCorreo.sql', NULL),
+    ('TABLA', 'cor_envios', NULL, NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios', 'id_envio', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios', 'asunto', 'varchar:200', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios', 'mensaje', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios', 'destinatarios', 'varchar:255', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios', 'remitente', 'varchar:255', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios', 'estado', 'varchar:12', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios', 'total', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios', 'enviados', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios', 'errores', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios', 'id_usuario', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios', 'creado_en', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios', 'terminado_en', NULL, 'creacionCorreo.sql', NULL),
+    ('TABLA', 'cor_envios_destinatarios', NULL, NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_destinatarios', 'id_envio', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_destinatarios', 'num_linea', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_destinatarios', 'id_persona', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_destinatarios', 'nombre', 'varchar:255', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_destinatarios', 'correo', 'varchar:150', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_destinatarios', 'estado', 'varchar:10', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_destinatarios', 'error', 'varchar:255', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_destinatarios', 'enviado_en', NULL, 'creacionCorreo.sql', NULL),
+    ('TABLA', 'cor_envios_adjuntos', NULL, NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_adjuntos', 'id_envio', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_adjuntos', 'num_linea', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_adjuntos', 'nombre_archivo', 'varchar:255', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_adjuntos', 'ruta', 'varchar:255', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_adjuntos', 'tamano', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_envios_adjuntos', 'tipo', 'varchar:100', 'creacionCorreo.sql', NULL),
+    ('TABLA', 'cor_listas', NULL, NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas', 'id_lista', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas', 'origen', 'varchar:10', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas', 'nombre_archivo', 'varchar:255', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas', 'descripcion', 'varchar:255', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas', 'dominio', 'varchar:150', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas', 'total', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas', 'id_usuario', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas', 'creado_en', NULL, 'creacionCorreo.sql', NULL),
+    ('TABLA', 'cor_listas_correos', NULL, NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas_correos', 'id_lista', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas_correos', 'num_linea', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas_correos', 'correo', 'varchar:150', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas_correos', 'nombre', 'varchar:150', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas_correos', 'apellidos', 'varchar:150', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas_correos', 'estado', 'varchar:30', 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas_correos', 'ultimo_acceso', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas_correos', 'nunca_entro', NULL, 'creacionCorreo.sql', NULL),
+    ('COLUMNA', 'cor_listas_correos', 'uso_gb', NULL, 'creacionCorreo.sql', NULL),
     ('FUNCION', 'fn_formato_telefono', NULL, 'p_telefono', '02_procedimientos.sql', 'e81ff0d30771165129f5094de7b8edfc'),
     ('PROCEDIMIENTO', 'sp_geo_paises_insertar', NULL, 'IN p_cod_pais, IN p_nombre_pais', '02_procedimientos.sql', '3cd3eb175418d8cc224320eed5748a67'),
     ('PROCEDIMIENTO', 'sp_geo_paises_actualizar', NULL, 'IN p_cod_pais, IN p_nombre_pais', '02_procedimientos.sql', '01a79361c1a7c12aaeba9546af483cdd'),
@@ -595,6 +662,29 @@ INSERT INTO rev_esperado (tipo, nombre, detalle, valor, archivo, huella) VALUES
     ('PROCEDIMIENTO', 'sp_log_mapeo_campos_eliminar', NULL, 'IN p_fuente, IN p_campo_origen', 'procedimientosLogs.sql', '182f31c684f03d45a5d704e22605af8c'),
     ('PROCEDIMIENTO', 'sp_log_mapeo_campos_obtener', NULL, 'IN p_fuente, IN p_campo_origen', 'procedimientosLogs.sql', '94ed8e4527ae8176f13d79ee3b08e880'),
     ('PROCEDIMIENTO', 'sp_log_mapeo_campos_listar', NULL, 'IN p_fuente', 'procedimientosLogs.sql', 'e621da7ee9460b85593fa2f1b740fe75'),
+    ('PROCEDIMIENTO', 'sp_cor_configuracion_obtener', NULL, '', 'procedimientosCorreo.sql', '3e7393b4e9caccd1c9ad3e5f08714ff3'),
+    ('PROCEDIMIENTO', 'sp_cor_configuracion_guardar', NULL, 'IN p_servidor, IN p_puerto, IN p_seguridad, IN p_usuario, IN p_cambiar_clave, IN p_clave_cifrada, IN p_correo_remitente, IN p_nombre_remitente, IN p_responder_a, IN p_firma, IN p_limite_diario, IN p_activo, IN p_id_usuario', 'procedimientosCorreo.sql', '0d8bb096585b91d176aed764c7f1f88f'),
+    ('PROCEDIMIENTO', 'sp_cor_configuracion_resultado_prueba', NULL, 'IN p_ok, IN p_resultado', 'procedimientosCorreo.sql', 'de6c892ef51779280ab361b6d878666a'),
+    ('PROCEDIMIENTO', 'sp_cor_personal_listar', NULL, 'IN p_solo_activos', 'procedimientosCorreo.sql', '1bed4a30b38e0b3f5e92091ec1787413'),
+    ('PROCEDIMIENTO', 'sp_cor_envios_insertar', NULL, 'IN p_asunto, IN p_mensaje, IN p_destinatarios, IN p_remitente, IN p_id_usuario, IN p_lista, OUT p_id_envio', 'procedimientosCorreo.sql', 'cb65145e0d01f58bcee40d6a2d8cd0c3'),
+    ('PROCEDIMIENTO', 'sp_cor_envios_adjuntos_insertar', NULL, 'IN p_id_envio, IN p_nombre_archivo, IN p_ruta, IN p_tamano, IN p_tipo', 'procedimientosCorreo.sql', '59dea366bcc101db2f75e33ae0b38f8e'),
+    ('PROCEDIMIENTO', 'sp_cor_envios_adjuntos_listar', NULL, 'IN p_id_envio', 'procedimientosCorreo.sql', 'e67a3c37efd7ac418d8aab42baa8e9b0'),
+    ('PROCEDIMIENTO', 'sp_cor_envios_obtener', NULL, 'IN p_id_envio', 'procedimientosCorreo.sql', '86b0ce968b7dab57904c13fe8352842b'),
+    ('PROCEDIMIENTO', 'sp_cor_envios_listar', NULL, 'IN p_buscar', 'procedimientosCorreo.sql', '97b3af173a628d4065e6c2709d5c4074'),
+    ('PROCEDIMIENTO', 'sp_cor_envios_destinatarios_listar', NULL, 'IN p_id_envio', 'procedimientosCorreo.sql', '5cccd1275abd98005a8e8816866d1fe3'),
+    ('PROCEDIMIENTO', 'sp_cor_envios_pendientes', NULL, 'IN p_id_envio, IN p_limite', 'procedimientosCorreo.sql', 'e18d3cfe0fc6e1c3046f5cde677be436'),
+    ('PROCEDIMIENTO', 'sp_cor_envios_recalcular', NULL, 'IN p_id_envio', 'procedimientosCorreo.sql', '93f55b7ede08cd1478d64156732cfb15'),
+    ('PROCEDIMIENTO', 'sp_cor_envios_marcar', NULL, 'IN p_id_envio, IN p_num_linea, IN p_ok, IN p_error', 'procedimientosCorreo.sql', '6aa739785c13e3ce963737b0f1396a66'),
+    ('PROCEDIMIENTO', 'sp_cor_envios_reintentar', NULL, 'IN p_id_envio', 'procedimientosCorreo.sql', '44d560ce23a4f218164f5721375af6f5'),
+    ('PROCEDIMIENTO', 'sp_cor_envios_cancelar', NULL, 'IN p_id_envio', 'procedimientosCorreo.sql', '9396d9de0bf61495b606a5b2659617d8'),
+    ('PROCEDIMIENTO', 'sp_cor_envios_eliminar', NULL, 'IN p_id_envio', 'procedimientosCorreo.sql', 'd0fb59bdd0448e0d6d035760ee588c30'),
+    ('PROCEDIMIENTO', 'sp_cor_enviados_hoy', NULL, '', 'procedimientosCorreo.sql', 'fe1bb01f7228cf0e3e9bd68e0f067d2a'),
+    ('PROCEDIMIENTO', 'sp_cor_listas_insertar', NULL, 'IN p_nombre_archivo, IN p_descripcion, IN p_dominio, IN p_id_usuario, IN p_origen, IN p_correos, OUT p_id_lista', 'procedimientosCorreo.sql', '5b6603493cb1832cfc270522882828cd'),
+    ('PROCEDIMIENTO', 'sp_cor_listas_obtener', NULL, 'IN p_id_lista', 'procedimientosCorreo.sql', 'e965d8aa21e26c174b1ac2a7b6005039'),
+    ('PROCEDIMIENTO', 'sp_cor_listas_listar', NULL, 'IN p_origen', 'procedimientosCorreo.sql', '0d381bd3b6c394e9f0382bdba76d78fb'),
+    ('PROCEDIMIENTO', 'sp_cor_listas_correos_listar', NULL, 'IN p_id_lista', 'procedimientosCorreo.sql', '0958967c3dd433de1a3c4fb5cbe38669'),
+    ('PROCEDIMIENTO', 'sp_cor_listas_actualizar', NULL, 'IN p_id_lista, IN p_descripcion', 'procedimientosCorreo.sql', '16fa5be47c9ecf4dce844ed207210a87'),
+    ('PROCEDIMIENTO', 'sp_cor_listas_eliminar', NULL, 'IN p_id_lista', 'procedimientosCorreo.sql', '8e4fd023aeeb3c76374c30baedfe16a1'),
     ('DISPARADOR', 'trg_geo_distritos_cp_ins', 'geo_distritos', NULL, '02_procedimientos.sql', '7929e142782918ab014c6bd8704efa9a'),
     ('DISPARADOR', 'trg_geo_distritos_cp_upd', 'geo_distritos', NULL, '02_procedimientos.sql', 'db352b806638fa82908a1e5b689756dc'),
     ('DISPARADOR', 'trg_personas_cp_ins', 'personas', NULL, '02_procedimientos.sql', 'f70a525df46dd3e4fdd8f9ebb64fa5b4'),
@@ -798,8 +888,19 @@ INSERT INTO rev_esperado (tipo, nombre, detalle, valor, archivo, huella) VALUES
     ('DISPARADOR', 'trg_aud_log_mapeo_campos_ins', 'log_mapeo_campos', NULL, 'procedimientosLogs.sql', '1dfdeab8ebccfbeb412ac2f2344ce229'),
     ('DISPARADOR', 'trg_aud_log_mapeo_campos_upd', 'log_mapeo_campos', NULL, 'procedimientosLogs.sql', '2863896fede5263d8527b03cefcf5cc5'),
     ('DISPARADOR', 'trg_aud_log_mapeo_campos_del', 'log_mapeo_campos', NULL, 'procedimientosLogs.sql', '6a26ec92fd48a91fc3eec0ce6139df2e'),
+    ('DISPARADOR', 'trg_formato_cor_envios_destinatarios_ins', 'cor_envios_destinatarios', NULL, 'procedimientosCorreo.sql', 'bfe6a233e284cc7573f8c3592b2b6ba8'),
+    ('DISPARADOR', 'trg_formato_cor_listas_correos_ins', 'cor_listas_correos', NULL, 'procedimientosCorreo.sql', 'bfe6a233e284cc7573f8c3592b2b6ba8'),
+    ('DISPARADOR', 'trg_aud_cor_configuracion_ins', 'cor_configuracion', NULL, 'procedimientosCorreo.sql', '1cd8bd3c54f83f850295b02047f32ac7'),
+    ('DISPARADOR', 'trg_aud_cor_configuracion_upd', 'cor_configuracion', NULL, 'procedimientosCorreo.sql', '2ce31783ab4f274572b2fe3de86b9667'),
+    ('DISPARADOR', 'trg_aud_cor_envios_ins', 'cor_envios', NULL, 'procedimientosCorreo.sql', '7a7e9bf6bef8166c4aa8513ec7a191ec'),
+    ('DISPARADOR', 'trg_aud_cor_envios_upd', 'cor_envios', NULL, 'procedimientosCorreo.sql', '4c428b4ccb877f30b40548dad042dfdc'),
+    ('DISPARADOR', 'trg_aud_cor_envios_del', 'cor_envios', NULL, 'procedimientosCorreo.sql', '5d2826f14b0a811bbee649c06943e284'),
+    ('DISPARADOR', 'trg_aud_cor_listas_ins', 'cor_listas', NULL, 'procedimientosCorreo.sql', '96f1288c9029b3b806a3cefa2b8c3be6'),
+    ('DISPARADOR', 'trg_aud_cor_listas_upd', 'cor_listas', NULL, 'procedimientosCorreo.sql', 'd4b6ab5884cdaaa92d5b06334c6841ee'),
+    ('DISPARADOR', 'trg_aud_cor_listas_del', 'cor_listas', NULL, 'procedimientosCorreo.sql', 'e239112ad187153dc7f457ef132071a7'),
     ('INDICE', 'idx_aud_tabla_llave', 'aud_auditorias', NULL, 'creacionDispositivo.sql', NULL),
     ('INDICE', 'idx_logev_nombre_equipo', 'log_eventos', NULL, 'creacionLogs.sql', NULL),
+    ('INDICE', 'idx_corlis_origen', 'cor_listas', NULL, 'creacionCorreo.sql', NULL),
     ('DATOS', 'cat_categorias_proveedores', NULL, '8', '03_datos.sql', NULL),
     ('DATOS', 'cat_departamentos', NULL, '1', '03_datos.sql', NULL),
     ('DATOS', 'cat_roles_usuarios', NULL, '2', '03_datos.sql', NULL),
@@ -1001,9 +1102,9 @@ SELECT 'AVISO', CONCAT(IF(r.ROUTINE_TYPE = 'FUNCTION', 'Función ', 'Procedimien
        CONCAT('Si quiere, bórrelo: DROP ', r.ROUTINE_TYPE, ' ', r.ROUTINE_NAME, ';')
   FROM information_schema.ROUTINES r
  WHERE r.ROUTINE_SCHEMA = DATABASE()
-   -- Solo los de estos módulos: si la base también tiene otro (correo),
-   -- los procedimientos de ese no se cuentan aquí.
-   AND r.ROUTINE_NAME REGEXP '^(sp_(personas|usr|cat|geo|prv|aud|pad|equipos|archivos|categoria|dir|edificios|estado|firmwares|marcas|modelos|num|procesadores|puertos|sis|tipo|log)_|fn_(formato_telefono|formato_mac|categoria_por_nombre|rotulo_puerto)$)'
+   -- Solo los de estos módulos: si la base tiene otros, de una versión
+   -- anterior del modelo de datos, no se cuentan aquí.
+   AND r.ROUTINE_NAME REGEXP '^(sp_(personas|usr|cat|geo|prv|aud|pad|equipos|archivos|categoria|dir|edificios|estado|firmwares|marcas|modelos|num|procesadores|puertos|sis|tipo|log|cor)_|fn_(formato_telefono|formato_mac|categoria_por_nombre|rotulo_puerto)$)'
    AND NOT EXISTS (SELECT 1 FROM rev_esperado e
                     WHERE e.tipo IN ('PROCEDIMIENTO', 'FUNCION') AND e.nombre = r.ROUTINE_NAME);
 
