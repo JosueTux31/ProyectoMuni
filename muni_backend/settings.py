@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'apps.proveedores',
     'apps.auditoria',
     'apps.dispositivos',
+    'apps.logs',
 ]
 
 MIDDLEWARE = [
@@ -154,6 +155,10 @@ MUNI_MAX_MB_FOTO = 5
 # Documentos de los equipos municipales (manuales, firmware, respaldos...).
 # Los firmware pueden pesar varios cientos de MB.
 MUNI_MAX_MB_DOCUMENTO_RED = 1024
+# Cada archivo de logs que se importa (Sophos, Microclaudia, DHCP)
+MUNI_MAX_MB_LOG = 100
+# Máximo de eventos que se exportan de una vez a CSV
+MUNI_MAX_EXPORTAR_LOGS = 100000
 
 # Auditoría: True solo si Django está detrás de un proxy (Nginx, Apache) que
 # envía la IP real del cliente en X-Forwarded-For.

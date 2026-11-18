@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # =====================================================================
 #  reinstalar_base.sh - vuelve a correr la base gestion_redes de los
-#  módulos de usuarios y proveedores y de equipos municipales
+#  módulos de usuarios y proveedores, de equipos municipales y de
+#  análisis de logs
 # ---------------------------------------------------------------------
 #  Ejecute en el servidor, desde la carpeta sql del backend:
 #     cd ~/repo_muni/backend/sql
@@ -21,6 +22,9 @@
 #         dispositivos/creacionDispositivo.sql
 #         dispositivos/procedimientosDispositivos.sql
 #         dispositivos/insercionDispositivos.sql
+#         logs/creacionLogs.sql
+#         logs/procedimientosLogs.sql
+#         logs/insercionLogs.sql
 #       Todos se pueden ejecutar más de una vez: no duplican ni borran datos.
 #    4. Corrige tildes dañadas en catálogos y territorio (reparar_letras.sql).
 #    5. Ejecuta revisar_base.sql y muestra si la base quedó como debe.
@@ -43,6 +47,9 @@ SCRIPTS=(
   dispositivos/creacionDispositivo.sql
   dispositivos/procedimientosDispositivos.sql
   dispositivos/insercionDispositivos.sql
+  logs/creacionLogs.sql
+  logs/procedimientosLogs.sql
+  logs/insercionLogs.sql
 )
 
 MODO="normal"
@@ -149,7 +156,7 @@ fi
 if [ "$MODO" = "cero" ] && [ "$EXISTE" = "1" ]; then
   echo
   echo "!! Se va a BORRAR por completo la base $BASE con todo lo que tenga:"
-  echo "   usuarios, proveedores, equipos, auditoría y el padrón. El respaldo quedó en $RESPALDO."
+  echo "   usuarios, proveedores, equipos, logs importados, auditoría y el padrón. El respaldo quedó en $RESPALDO."
   read -r -p "   Escriba BORRAR para seguir: " RESPUESTA
   if [ "$RESPUESTA" != "BORRAR" ]; then
     echo "No se borró nada."
