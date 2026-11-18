@@ -1,5 +1,5 @@
 // Arranque: inicio de sesión, menú de módulos, estructura, menú lateral y rutas.
-// Módulos de este sistema: usuarios y proveedores, y equipos municipales.
+// Módulos de este sistema: usuarios y proveedores, equipos municipales y análisis de logs.
 import { CONFIG } from "./config.js";
 import { api, cuandoExpireSesion, ErrorApi, sesion } from "./api.js";
 import {
@@ -16,6 +16,10 @@ import {
   vistaDispositivo, vistaDispositivoNuevo, vistaDispositivos, vistaEdificios, vistaInicioRed, vistaMarcas,
 } from "./dispositivos.js";
 import { vistaSwitches } from "./switch.js";
+import {
+  vistaCamposLogs, vistaCobertura, vistaComparar, vistaEventos, vistaImportacion, vistaImportaciones, vistaImportarDhcp,
+  vistaImportarMicroclaudia, vistaImportarSophos, vistaInicioLogs, vistaIntrusos, vistaInventarioLogs, vistaTablero,
+} from "./logs.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -139,12 +143,14 @@ document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") menuMovi
 const MODULOS = {
   usuarios: { nombre: "Usuarios y proveedores", inicio: "#/inicio", icono: "usuarios" },
   red: { nombre: "Equipos municipales", inicio: "#/red", icono: "red" },
+  logs: { nombre: "Análisis de logs", inicio: "#/logs", icono: "logs", soloAdmin: true },
 };
 let moduloActual = null;
 
 function moduloDeRuta(r) {
   if (r === "modulos") return null;
   if (r === "red" || r.startsWith("red/")) return "red";
+  if (r === "logs" || r.startsWith("logs/")) return "logs";
   // Mi perfil se queda en el módulo donde estaba la persona
   if (r === "perfil" || r.startsWith("perfil/")) return moduloActual || "usuarios";
   return "usuarios";
@@ -185,6 +191,21 @@ const RUTAS = [
   { patron: /^red\/edificios$/, vista: vistaEdificios },
   { patron: /^red\/catalogos\/([\w-]+)$/, vista: (cont, params, ctx) => vistaCatalogo(cont, params, ctx, "red") },
   { patron: /^red\/auditoria$/, vista: vistaAuditoria, soloAdmin: true },
+  // Módulo de análisis de logs (solo administradores: muestra la navegación del personal)
+  { patron: /^logs$/, vista: vistaInicioLogs, soloAdmin: true },
+  { patron: /^logs\/importar\/sophos$/, vista: vistaImportarSophos, soloAdmin: true },
+  { patron: /^logs\/importar\/microclaudia$/, vista: vistaImportarMicroclaudia, soloAdmin: true },
+  { patron: /^logs\/importar\/dhcp$/, vista: vistaImportarDhcp, soloAdmin: true },
+  { patron: /^logs\/cobertura$/, vista: vistaCobertura, soloAdmin: true },
+  { patron: /^logs\/intrusos$/, vista: vistaIntrusos, soloAdmin: true },
+  { patron: /^logs\/importaciones$/, vista: vistaImportaciones, soloAdmin: true },
+  { patron: /^logs\/importaciones\/(\d+)$/, vista: vistaImportacion, soloAdmin: true },
+  { patron: /^logs\/tablero$/, vista: vistaTablero, soloAdmin: true },
+  { patron: /^logs\/eventos$/, vista: vistaEventos, soloAdmin: true },
+  { patron: /^logs\/comparar$/, vista: vistaComparar, soloAdmin: true },
+  { patron: /^logs\/inventario$/, vista: vistaInventarioLogs, soloAdmin: true },
+  { patron: /^logs\/campos$/, vista: vistaCamposLogs, soloAdmin: true },
+  { patron: /^logs\/auditoria$/, vista: vistaAuditoria, soloAdmin: true },
 ];
 
 let navegacion = 0;
@@ -308,6 +329,8 @@ async function vistaModulos(cont, _params, ctx) {
         ["usuarios activos", "proveedores activos"])}
       ${tarjeta("red", "Equipos de red, computadoras, servidores, celulares, impresoras, UPS y más: a quién están asignados, dónde están, quién les da soporte y sus documentos.",
         ["equipos activos", "edificios"])}
+      ${ctx.esAdmin ? tarjeta("logs", "Logs de Sophos Firewall, equipos con el agente de Microclaudia y concesiones del DHCP en gráficos: filtro estilo Wireshark, comparación, equipos sin agente, intrusos en la red y cruce con el inventario.",
+        ["importaciones", "registros"]) : ""}
     </div>
     ${ctx.esAdmin ? "" : `<div class="aviso aviso--ocre" style="margin-top:20px">${icono("candado")}<span>Su rol permite consultar la información de estos módulos. Los cambios los hace un administrador.</span></div>`}`;
 
@@ -315,16 +338,22 @@ async function vistaModulos(cont, _params, ctx) {
   const pintar = (clave, valores) => {
     cont.querySelectorAll(`[data-datos="${clave}"] b`).forEach((b, i) => { b.textContent = valores[i] ?? "—"; });
   };
-  const [usuarios, proveedores, dispositivos, edificios] = await Promise.allSettled([
+  const [usuarios, proveedores, dispositivos, edificios, importaciones] = await Promise.allSettled([
     api("usuarios/", { query: { activo: true } }),
     api("proveedores/", { query: { activo: true } }),
     api("dispositivos/", { query: { activo: true } }),
     api("dispositivos/edificios/"),
+    ctx.esAdmin ? api("logs/importaciones/") : Promise.resolve([]),
   ]);
   if (!ctx.vigente()) return;
   const n = (r) => (r.status === "fulfilled" ? r.value.length : null);
   pintar("usuarios", [n(usuarios), n(proveedores)]);
   pintar("red", [n(dispositivos), n(edificios)]);
+  if (ctx.esAdmin) {
+    const eventos = importaciones.status === "fulfilled"
+      ? importaciones.value.reduce((s, x) => s + (Number(x.total_eventos) || 0), 0).toLocaleString("es-CR") : null;
+    pintar("logs", [n(importaciones), eventos]);
+  }
 }
 
 /* =====================================================================

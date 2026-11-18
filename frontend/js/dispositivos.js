@@ -15,7 +15,7 @@ import { pastillaEstado, todosLosCampos } from "./usuarios.js";
 import { coordenadas, embebidoMaps, enlaceMaps, enlazarCampoMapa, validarMapaLocal } from "./proveedores.js";
 import { feedAuditoria } from "./auditoria.js";
 import { abrirVisor, abrirVistaPrevia } from "./zoom.js";
-import { descargarTexto, marcaArchivo, textoCsv } from "./csv.js";
+import { abrirEvento, descargarTexto, fechaLog, marcaArchivo, num, rangoFechas, rutaLogs, textoCsv } from "./logs_ui.js";
 import { conexionesHTML, enlazarDisenoSwitch, pestanaPuertos, tienePuertos } from "./switch.js";
 
 const RECURSO = "dispositivos";
@@ -1423,6 +1423,8 @@ const PESTANAS = [
   { clave: "documentos", titulo: "Documentos", icono: "documento" },
   // Switches y demás equipos de red con puertos: qué está conectado a cada uno
   { clave: "puertos", titulo: "Puertos", icono: "switch", si: tienePuertos },
+  // Lo importado en el módulo de logs (solo administradores, como ese módulo)
+  { clave: "en-la-red", titulo: "En la red", icono: "web", soloAdmin: true },
   { clave: "historial", titulo: "Historial", icono: "historial", soloAdmin: true },
 ];
 
@@ -1505,6 +1507,7 @@ export async function vistaDispositivo(cont, [id, pestanaInicial], ctx) {
       if (clave === "datos") await pestanaDatos(caja, d, ctx, recargar);
       else if (clave === "documentos") await pestanaDocumentos(caja, d, ctx, recargar);
       else if (clave === "puertos") await pestanaPuertos(caja, d, ctx);
+      else if (clave === "en-la-red") await pestanaEnLaRed(caja, d, ctx, recargar);
       else if (clave === "historial") await pestanaHistorial(caja, d);
     } catch (e) {
       if (!ctx.vigente()) return;
@@ -1852,6 +1855,187 @@ async function pestanaDocumentos(panel, d, ctx, recargar) {
     }
     if (fallos.length) toast(`No se pudieron subir: ${fallos.join(" ")}`, "error");
     recargar("documentos");
+  });
+}
+
+/* --------------------------------------------------------------- En la red
+   Dónde aparece el equipo en lo último que se importó en el módulo de logs
+   (GET logs/equipos/<id>/): la lista del DHCP, el listado de Microclaudia y
+   su tráfico en los logs de Sophos, por sus IP, sus MAC y su nombre en la red. */
+const POR_RED = {
+  MAC: { texto: "Por su MAC", clase: "activo" },
+  nombre: { texto: "Por el nombre", clase: "aviso" },
+  IP: { texto: "Solo por la IP", clase: "aviso" },
+};
+const porRedHTML = (por) => `<span class="pastilla pastilla--${POR_RED[por]?.clase || "neutra"}">${esc(POR_RED[por]?.texto || por)}</span>`;
+const tipoConcesion = (c) => (c.tipo === "Reserva DHCP activa" ? "Reserva activa" : c.tipo === "Reserva DHCP inactiva" ? "Reserva inactiva"
+  : c.expira ? `Concesión hasta ${fechaLog(c.expira)}` : c.tipo || "—");
+
+/** Cabeza de cada fuente: insignia, título, de qué importación sale y su estado. */
+const cabezaRed = (clase, ic, titulo, texto, estado) => `
+  <div class="panel__cabeza">
+    <div class="en-red__titulo"><span class="insignia-log insignia-log--sm${clase ? ` insignia-log--${clase}` : ""}">${icono(ic)}</span>
+      <div><h2>${esc(titulo)}</h2><p>${texto}</p></div></div>
+    ${estado}
+  </div>`;
+const estadoRed = (clase, texto) => `<span class="pastilla pastilla--${clase}">${esc(texto)}</span>`;
+const notaRed = (html) => `<div class="panel__cuerpo"><p class="en-red__nota">${html}</p></div>`;
+
+function redDhcpHTML(r) {
+  const imp = r.dhcp.importacion;
+  const lista = r.dhcp.concesiones;
+  const eq = r.equipo;
+  const texto = imp
+    ? `Última lista: <a href="${rutaLogs("intrusos", { dhcp: imp.id_importacion })}">${esc(imp.nombre_archivo)}</a> (importada el ${esc(fecha(imp.creado_en))})`
+    : "Las direcciones que entrega el servidor DHCP.";
+  if (!imp) {
+    return `<section class="panel en-red__fuente">${cabezaRed("dhcp", "dhcp", "Servidor DHCP", texto, estadoRed("inactivo", "Sin lista"))}
+      ${notaRed(`Todavía no se ha importado una lista del DHCP. <a href="#/logs/importar/dhcp">Importar las concesiones</a>`)}</section>`;
+  }
+  if (!lista.length) {
+    return `<section class="panel en-red__fuente">${cabezaRed("dhcp", "dhcp", "Servidor DHCP", texto, estadoRed("inactivo", "No aparece"))}
+      ${notaRed(eq.macs.length || eq.nombre_equipo
+        ? "Ni su MAC ni su nombre aparecen en la última lista: tiene IP fija, estaba apagado, está en otra red o la MAC registrada no es la de la tarjeta que usa."
+        : "Sin MAC ni nombre en la red registrados no se puede buscar en el DHCP.")}</section>`;
+  }
+  const conectado = lista.some((c) => c.presente);
+  // «Agregar MAC» solo si la MAC no es de otro equipo del inventario
+  const agregable = (c) => c.por === "nombre" && c.mac && !c.mac_de;
+  const estado = conectado ? estadoRed("activo", lista.some((c) => c.presente && c.por === "MAC") ? "Con IP del DHCP" : "Con IP, por el nombre")
+    : estadoRed("inactivo", "Solo reserva o vencida");
+  const filas = lista.map((c) => `
+    <tr class="clicable${c.presente ? "" : " fila-ausente"}" data-evento="${c.id_evento}" tabindex="0">
+      <td class="en-red__dir"><span class="dato-mono">${esc(c.ip || "—")}</span><span class="secundario dato-mono">${c.mac ? esc(formatearMac(c.mac)) : "Sin MAC"}</span>
+        ${c.ip && !c.ip_registrada && eq.ips.length ? `<span class="secundario" title="IP registradas: ${esc(eq.ips.join(", "))}">No es la IP registrada</span>` : ""}</td>
+      <td><strong>${esc(c.nombre || "Sin nombre")}</strong>${c.descripcion ? `<span class="secundario">${esc(c.descripcion)}</span>` : ""}</td>
+      <td class="col-opcional"><span class="${c.presente ? "" : "sin-dato"}">${esc(tipoConcesion(c))}</span></td>
+      <td>${porRedHTML(c.por)}${c.por !== "nombre" ? "" : c.mac_de
+        ? `<span class="secundario">Esa MAC es de <a href="#/red/dispositivos/${c.mac_de.id_disp}">${esc(c.mac_de.equipo || `Dispositivo N.º ${c.mac_de.id_disp}`)}</a></span>`
+        : `<span class="secundario">Esa MAC no está registrada</span>`}</td>
+      <td class="col-acciones">${agregable(c)
+        ? `<button type="button" class="btn btn--secundario btn--sm" data-agregar-mac="${esc(c.mac)}" title="Agregar la MAC ${esc(formatearMac(c.mac))} a este equipo">${icono("mas")}Agregar MAC</button>` : ""}</td>
+    </tr>`).join("");
+  return `<section class="panel en-red__fuente">${cabezaRed("dhcp", "dhcp", "Servidor DHCP", texto, estado)}
+    <div class="tabla-envoltura"><table class="tabla tabla--compacta">
+      <thead><tr><th>IP y MAC</th><th>Nombre en el DHCP</th><th class="col-opcional">Concesión</th><th>Coincide</th><th class="col-acciones"><span class="visualmente-oculto">Acciones</span></th></tr></thead>
+      <tbody>${filas}</tbody></table></div>
+    ${lista.some(agregable) ? `<p class="en-red__pie">Una concesión que se llama como este equipo pero con otra MAC suele ser otra tarjeta de red del mismo equipo (por ejemplo la Wi-Fi): <strong>Agregar MAC</strong> la suma a sus direcciones.</p>` : ""}
+  </section>`;
+}
+
+/** Direcciones del agente sin partirlas; en negrita las que tiene registradas el equipo. */
+const dirsAgente = (lista_, registradas, formato) => lista_.map((x) => (registradas.includes(x)
+  ? `<strong class="sin-corte" title="Registrada en el equipo">${esc(formato(x))}</strong>` : `<span class="sin-corte">${esc(formato(x))}</span>`)).join(", ");
+
+function redAgenteHTML(r) {
+  const imp = r.agentes.importacion;
+  const lista = r.agentes.equipos;
+  const eq = r.equipo;
+  const texto = imp
+    ? `Último listado: <a href="${rutaLogs("cobertura", { agentes: imp.id_importacion })}">${esc(imp.nombre_archivo)}</a> (importado el ${esc(fecha(imp.creado_en))})`
+    : "Los equipos que tienen el agente instalado.";
+  if (!imp) {
+    return `<section class="panel en-red__fuente">${cabezaRed("agente", "agente", "Agente de Microclaudia", texto, estadoRed("inactivo", "Sin listado"))}
+      ${notaRed(`Todavía no se ha importado un listado de Microclaudia. <a href="#/logs/importar/microclaudia">Importar el listado</a>`)}</section>`;
+  }
+  if (!lista.length) {
+    return `<section class="panel en-red__fuente">${cabezaRed("agente", "agente", "Agente de Microclaudia", texto,
+      eq.lleva_agente ? estadoRed("aviso", "Sin el agente") : estadoRed("inactivo", "No lleva agente"))}
+      ${notaRed(eq.lleva_agente
+        ? "No aparece en el último listado de Microclaudia (por MAC, nombre ni IP): puede que no tenga el agente instalado o que no se haya conectado."
+        : `Los equipos de la categoría ${esc(nombreCategoria(eq.categoria))} no llevan el agente de Microclaudia.`)}</section>`;
+  }
+  const seguro = lista.some((a) => a.por !== "IP");
+  const filas = lista.map((a) => `
+    <tr class="clicable" data-evento="${a.id_evento}" tabindex="0">
+      <td><strong>${esc(a.nombre || "Sin nombre")}</strong><span class="secundario">${esc(a.sistema || "Sistema sin dato")}</span></td>
+      <td class="col-opcional">${esc(a.version || "—")}</td>
+      <td>${esc(fechaLog(a.ultima_conexion))}</td>
+      <td class="dato-mono col-opcional en-red__dirs">${dirsAgente(a.ips, eq.ips, (x) => x) || "—"}<span class="secundario">${dirsAgente(a.macs, eq.macs, formatearMac)}</span></td>
+      <td>${porRedHTML(a.por)}${a.por === "IP" ? `<span class="secundario">Puede ser otro equipo que usó esa IP</span>` : ""}</td>
+    </tr>`).join("");
+  return `<section class="panel en-red__fuente">${cabezaRed("agente", "agente", "Agente de Microclaudia", texto,
+    seguro ? `<span class="pastilla pastilla--agente">${icono("check", "ic--sm")}Con el agente</span>` : estadoRed("aviso", "Solo coincide la IP"))}
+    <div class="tabla-envoltura"><table class="tabla tabla--compacta">
+      <thead><tr><th>Equipo en Microclaudia</th><th class="col-opcional">Versión del agente</th><th>Última conexión</th><th class="col-opcional">IP y MAC</th><th>Coincide</th></tr></thead>
+      <tbody>${filas}</tbody></table></div>
+  </section>`;
+}
+
+function redSophosHTML(r) {
+  const s = r.sophos;
+  const texto = "El tráfico de sus IP y MAC en los logs del firewall que se importaron.";
+  if (!r.hay_logs) {
+    return `<section class="panel en-red__fuente">${cabezaRed("", "firewall", "Firewall Sophos", texto, estadoRed("inactivo", "Sin logs"))}
+      ${notaRed(`Todavía no se han importado logs de Sophos. <a href="#/logs/importar/sophos">Importar logs</a>`)}</section>`;
+  }
+  if (!s) {
+    return `<section class="panel en-red__fuente">${cabezaRed("", "firewall", "Firewall Sophos", texto, estadoRed("inactivo", "Sin IP ni MAC"))}
+      ${notaRed("Para buscar su tráfico el equipo necesita una IPv4 o una MAC registrada.")}</section>`;
+  }
+  if (!s.total) {
+    return `<section class="panel en-red__fuente">${cabezaRed("", "firewall", "Firewall Sophos", texto, estadoRed("inactivo", "Sin tráfico"))}
+      ${notaRed("Ningún log importado tiene tráfico de sus IP o MAC.")}</section>`;
+  }
+  const cifra = (valor, etiqueta, clase = "") => `<div class="cifra${clase ? ` ${clase}` : ""}"><b>${esc(num(valor))}</b><span>${esc(etiqueta)}</span></div>`;
+  return `<section class="panel en-red__fuente">${cabezaRed("", "firewall", "Firewall Sophos", texto, estadoRed("activo", "Con tráfico"))}
+    <div class="panel__cuerpo">
+      <div class="en-red__cifras">
+        ${cifra(s.total, s.total === 1 ? "Evento" : "Eventos")}
+        ${cifra(s.permitidos, "Permitidos", "cifra--ok")}
+        ${cifra(s.denegados, "Denegados", s.denegados ? "cifra--sin" : "")}
+        ${cifra(s.dominios, "Sitios distintos")}
+      </div>
+      <p class="en-red__nota">${esc(rangoFechas(s.desde, s.hasta))}, en ${esc(num(s.importaciones))} ${s.importaciones === 1 ? "importación" : "importaciones"}.
+        Filtro: <code>${esc(s.filtro)}</code></p>
+      <div class="en-red__acciones">
+        <a class="btn btn--secundario btn--sm" href="${rutaLogs("eventos", { q: s.filtro })}">${icono("filtro")}Ver sus eventos</a>
+        <a class="btn btn--secundario btn--sm" href="${rutaLogs("tablero", { q: s.filtro })}">${icono("grafico")}Ver su tablero</a>
+      </div>
+    </div>
+  </section>`;
+}
+
+async function pestanaEnLaRed(panel, d, ctx, recargar) {
+  const r = await api(`logs/equipos/${d.id_disp}/`);
+  const eq = r.equipo;
+  const claves = [
+    eq.nombre_equipo && `<span class="chip-dir" title="Nombre en la red">${esc(eq.nombre_equipo)}</span>`,
+    ...eq.ips.map((ip) => `<span class="chip-dir" title="IP registrada">${esc(ip)}</span>`),
+    ...eq.macs.map((m) => `<span class="chip-dir" title="MAC registrada">${esc(formatearMac(m))}</span>`),
+  ].filter(Boolean);
+  panel.innerHTML = `
+    <div class="en-red">
+      <div class="en-red__claves"><span class="etiqueta-dir">Se busca por</span>${claves.join("")
+        || `<span class="sin-dato">nada todavía</span>`}</div>
+      ${claves.length ? "" : `<div class="aviso aviso--ocre">${icono("alerta")}<span>El equipo no tiene nombre en la red, IP ni MAC registrados.
+        Agréguelos en Datos generales para encontrarlo en el DHCP, en Microclaudia y en los logs.</span></div>`}
+      ${redDhcpHTML(r)}
+      ${redAgenteHTML(r)}
+      ${redSophosHTML(r)}
+    </div>`;
+
+  const abrir = (tr) => abrirEvento(Number(tr.dataset.evento));
+  panel.addEventListener("click", async (ev) => {
+    const boton = ev.target.closest("[data-agregar-mac]");
+    if (boton) {
+      const mac = boton.dataset.agregarMac;
+      const nombre = `${tituloDispositivo(d)} (serie ${d.serie})`;
+      const ok = await confirmar({
+        titulo: "Agregar la MAC al equipo",
+        mensaje: `Se agregará la MAC ${formatearMac(mac)} a las direcciones de ${nombre}. Hágalo si esa concesión del DHCP es de este equipo (otra tarjeta de red, por ejemplo la Wi-Fi).`,
+        textoBoton: "Agregar MAC", peligro: false,
+        accion: () => api(ruta(RECURSO, d.id_disp, "macs"), { metodo: "POST", datos: { direccion_mac: mac } }),
+      });
+      if (ok) { toast(`Se agregó la MAC ${formatearMac(mac)}.`); recargar("en-la-red"); }
+      return;
+    }
+    const tr = ev.target.closest("tr[data-evento]");
+    if (tr && !ev.target.closest("a, button")) abrir(tr);
+  });
+  panel.addEventListener("keydown", (ev) => {
+    const tr = ev.target.closest?.("tr[data-evento]");
+    if (tr && ev.target === tr && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); abrir(tr); }
   });
 }
 

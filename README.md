@@ -1,9 +1,9 @@
-# Gestión municipal: usuarios y proveedores + equipos municipales
+# Gestión municipal: usuarios y proveedores + equipos municipales + análisis de logs
 
-Este proyecto es el sistema separado por módulos. Por ahora trae dos
-módulos: **usuarios y proveedores** y **equipos municipales** (con los
-switches y sus puertos). Los demás módulos (análisis de logs, correo
-institucional y licencias) se van a ir uniendo después, uno por uno.
+Este proyecto es el sistema separado por módulos. Por ahora trae tres:
+**usuarios y proveedores**, **equipos municipales** (con los switches y sus
+puertos) y **análisis de logs**. Los que faltan (correo institucional y
+licencias) se van a ir uniendo después, uno por uno.
 
 | Parte        | Contenido |
 |--------------|-----------|
@@ -14,8 +14,9 @@ institucional y licencias) se van a ir uniendo después, uno por uno.
 | `apps/geografia`    | Países, provincias, cantones y distritos |
 | `apps/auditoria`    | Historial de cambios e inicios de sesión |
 | `apps/dispositivos` | Equipos municipales: equipos con IP, MAC, líneas, IMEI y documentos; switches y puertos; edificios, marcas, modelos y catálogos de equipos |
+| `apps/logs`         | Análisis de logs: importación de Sophos Firewall, del listado de Microclaudia y de las concesiones del DHCP; filtro estilo Wireshark, tablero, comparación, intrusos en la red, equipos sin agente y cruce con el inventario |
 | `frontend`          | La página web (se abre en `/app/`) |
-| `sql`               | Scripts de la base de datos de los dos módulos |
+| `sql`               | Scripts de la base de datos de los tres módulos |
 
 ## Módulos
 
@@ -23,20 +24,24 @@ institucional y licencias) se van a ir uniendo después, uno por uno.
 |--------|--------|-------------|
 | 1. Usuarios y proveedores | incluido | `modular` |
 | 2. Equipos municipales y switches | incluido | `modulo-equipos`, unida a `modular` |
-| 3. Análisis de logs | pendiente | |
+| 3. Análisis de logs | incluido | `modulo-logs`, unida a `modular` |
 | 4. Correo institucional | pendiente | |
 | 5. Licencias y reportes | pendiente | |
 
-Al entrar, la página muestra el menú de módulos con los dos que hay. Lo que
-depende de un módulo que todavía no está queda afuera hasta que ese módulo
-se una:
+Al entrar, la página muestra el menú de módulos. El de análisis de logs
+es solo para administradores: los demás usuarios no lo ven en el menú y la
+API les responde que no tienen permiso.
 
-- La pestaña «En la red» de cada equipo, que muestra lo importado en el
-  módulo de logs, vuelve con ese módulo.
-- `frontend/js/csv.js` tiene las funciones para exportar a CSV que en el
-  sistema completo están en `logs_ui.js`. Cuando se una el módulo de logs,
-  `dispositivos.js` y `switch.js` las vuelven a tomar de ahí y este archivo
-  se quita.
+Con este módulo vuelve la pestaña «En la red» de cada equipo, que ven los
+administradores y muestra lo que el equipo tiene en el DHCP, en
+Microclaudia y en los logs de Sophos.
+Las funciones para exportar a CSV vuelven a estar en `logs_ui.js`, así que
+`frontend/js/csv.js` ya no se usa y se quita.
+
+Lo que todavía queda afuera hasta que se una su módulo:
+
+- La ruta `/api/logs/licencias/` ya está, pero la pantalla que la usa es la
+  de licencias, que viene con ese módulo.
 - La migración desde el modelo de datos anterior
   (`00_cambio_de_modelo.sql` y `migrarDispositivos.sql`) se queda en la
   rama `main`: se usa una sola vez y la base del servidor ya la tiene.
@@ -44,8 +49,8 @@ se una:
 ## Base de datos
 
 Usa la misma base `gestion_redes` que el sistema completo y crea solo lo de
-estos dos módulos: 39 tablas, 196 procedimientos, 4 funciones y 196
-disparadores. Si la base ya tiene los demás módulos no los toca, así que el
+estos tres módulos: 43 tablas, 227 procedimientos, 4 funciones y 203
+disparadores. Si la base ya tiene el módulo de correo no lo toca, así que el
 sistema completo y este pueden usar la misma base al mismo tiempo.
 
 ```bash
@@ -59,10 +64,19 @@ Orden de los scripts (lo sigue `reinstalar_base.sh`):
 
 1. `instalacion/01_estructura.sql`, `02_procedimientos.sql` y `03_datos.sql`: usuarios y proveedores
 2. `dispositivos/creacionDispositivo.sql`, `procedimientosDispositivos.sql` e `insercionDispositivos.sql`: equipos municipales
+3. `logs/creacionLogs.sql`, `procedimientosLogs.sql` e `insercionLogs.sql`: análisis de logs
 
 Datos de ejemplo, opcionales: `mariadb -u admin_db -p < sql/pruebas/poblarDatosEjemplo.sql`.
 Trae 17 departamentos, 17 funcionarios, 7 proveedores, 53 equipos y 38
 puertos de switches. Los quita `sql/pruebas/borrarDatosEjemplo.sql`.
+
+Datos de prueba del DHCP, opcionales: `sql/pruebas/cargaPruebaEquipos.sql`
+registra la mitad de los equipos de la lista del DHCP del 26/10/2026, para
+que en «Intrusos en la red» se vean equipos registrados y sin registrar.
+Los quita `sql/pruebas/borrarPruebaEquipos.sql`.
+
+Los logs no traen datos de ejemplo: se importan desde la página, en
+Análisis de logs → Importar.
 
 ## Instalación
 
@@ -81,8 +95,10 @@ pueda correr al mismo tiempo que el sistema completo, que usa el 8001.
 
 La conexión a la base está en `muni_backend/settings.py`, en `DATABASES`:
 el nombre de la base debe ser `gestion_redes`. Los documentos de los
-equipos se guardan en la carpeta de `MEDIA_ROOT`; el tamaño máximo de cada
-uno está en `MUNI_MAX_MB_DOCUMENTO_RED`.
+equipos se guardan en la carpeta de `MEDIA_ROOT`. Los tamaños máximos están
+en el mismo archivo: `MUNI_MAX_MB_DOCUMENTO_RED` para los documentos de los
+equipos, `MUNI_MAX_MB_LOG` para cada archivo de logs que se importa y
+`MUNI_MAX_EXPORTAR_LOGS` para los eventos que se exportan a CSV de una vez.
 
 ## API
 
@@ -104,3 +120,11 @@ Equipos municipales:
 - `/api/dispositivos/switches/`, `<id>/puertos/` y `<id>/conexiones/`
 - `/api/dispositivos/tipos/`, `marcas/`, `modelos/`, `edificios/`, `sistemas-operativos/`,
   `procesadores/`, `firmwares/`, `estados/`, `roles/`, `herramientas/`, `tipos-documentos/` y `categorias/`
+
+Análisis de logs (solo administradores):
+
+- `/api/logs/importaciones/` con `sophos/`, `microclaudia/` y `dhcp/` para importar, y `<id>/`
+- `/api/logs/eventos/` con `tablero/`, `top/`, `exportar/` y `<id>/`
+- `/api/logs/filtro/`, `campos/`, `comparar/` e `inventario/`
+- `/api/logs/agentes/`, `cobertura/`, `intrusos/`, `licencias/` y `equipos/<id>/`
+- `/api/logs/mapeo/` y `mapeo/<programa>/<campo>/`

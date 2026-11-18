@@ -8,7 +8,7 @@
 import { api, ErrorApi, ruta } from "./api.js";
 import { botonCargando, cargandoHTML, confirmar, debounce, errorHTML, esc, fecha, icono, toast, vacioHTML } from "./ui.js";
 import { CAT, datosCompletos, formatearMac, iconoTipo, insigniaTipo, marcaAparte, tituloDispositivo } from "./dispositivos.js";
-import { descargarTexto, marcaArchivo, textoCsv } from "./csv.js";
+import { descargarTexto, marcaArchivo, textoCsv } from "./logs_ui.js";
 
 const ESTADOS = {
   EN_USO: { texto: "En uso", clase: "en-uso" },

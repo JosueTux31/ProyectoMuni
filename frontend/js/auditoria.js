@@ -45,6 +45,8 @@ const TABLAS = {
   estado_equipos: { art: "el", nom: "estado de equipo", grupo: "Equipos municipales", filtro: "Estados de equipo" },
   tipo_roles: { art: "el", nom: "rol de servidor", grupo: "Equipos municipales", filtro: "Roles de servidor" },
   tipo_herramientas: { art: "la", nom: "herramienta de seguridad", grupo: "Equipos municipales", filtro: "Herramientas de seguridad" },
+  log_importaciones: { art: "la", nom: "importación de logs", grupo: "Análisis de logs", filtro: "Importaciones de logs" },
+  log_mapeo_campos: { art: "el", nom: "alias de campo", grupo: "Análisis de logs", filtro: "Alias de campos de logs" },
 };
 
 const ACCIONES = {
@@ -84,7 +86,8 @@ const ETIQUETAS = {
   gps: "Coordenadas", id_predio: "Edificio", id_edificio: "Edificio", ubicacion: "Ubicación en el edificio",
   id_proveedor: "Proveedor", direccion_ip: "Dirección IP", direccion_mac: "Dirección MAC", interfaz: "Interfaz",
   id_doc: "Tipo de documento", path_docs: "Archivo",
-  estado: "Estado",
+  fuente: "Programa", nombre_archivo: "Archivo", total_eventos: "Eventos", id_importacion: "Importación",
+  campo_origen: "Nombre en el log", campo: "Campo común", prioridad: "Prioridad", estado: "Estado",
 };
 
 // Campo → catálogo para mostrar la descripción en lugar del código
@@ -264,6 +267,37 @@ function frase(e) {
     }
     if (cambios.includes("estado")) return d.estado === "LIBRE" ? `marcó como libre el ${puerto}` : segunEstado(d);
     return `modificó el ${puerto}`;
+  }
+
+  if (e.tabla === "log_importaciones") {
+    const d = e.despues || e.antes || {};
+    const archivo = `<strong>${esc(d.nombre_archivo || e.descripcion || "")}</strong>`;
+    const n = Number(d.total_eventos) || 0;
+    const enlace = `(<a href="#/logs/importaciones/${esc(e.llave)}">importación N.º ${esc(e.llave)}</a>)`;
+    if (d.fuente === "MICROCLAUDIA") {
+      if (e.accion === "INSERTAR") return `importó el listado de equipos de Microclaudia ${archivo} ${enlace}`;
+      if (e.accion === "ELIMINAR") return `eliminó el listado de equipos de Microclaudia ${archivo}${n ? ` con sus ${n.toLocaleString("es-CR")} equipos` : ""}`;
+      return `modificó el listado de equipos de Microclaudia ${archivo}`;
+    }
+    if (d.fuente === "DHCP") {
+      if (e.accion === "INSERTAR") return `importó las concesiones del DHCP ${archivo} ${enlace}`;
+      if (e.accion === "ELIMINAR") return `eliminó la lista del DHCP ${archivo}${n ? ` con sus ${n.toLocaleString("es-CR")} concesiones` : ""}`;
+      return `modificó la lista del DHCP ${archivo}`;
+    }
+    const fuente = d.fuente === "SOPHOS" ? " de Sophos" : "";
+    if (e.accion === "INSERTAR") return `importó el archivo de logs${fuente} ${archivo} ${enlace}`;
+    if (e.accion === "ELIMINAR") return `eliminó la importación de logs${fuente} ${archivo}${n ? ` con sus ${n.toLocaleString("es-CR")} eventos` : ""}`;
+    return `modificó la importación de logs ${archivo}`;
+  }
+
+  if (e.tabla === "log_mapeo_campos") {
+    const d = e.despues || e.antes || {};
+    const origen = `<strong class="dato-mono">${esc(d.campo_origen || "")}</strong>`;
+    const campo = `<strong>${esc(d.campo || "")}</strong>`;
+    const de = { MICROCLAUDIA: "del listado de Microclaudia", SOPHOS: "de los logs de Sophos", DHCP: "de la lista del DHCP" }[d.fuente] || "de los logs";
+    if (e.accion === "INSERTAR") return `hizo que el campo ${origen} ${de} se lea como ${campo}`;
+    if (e.accion === "ELIMINAR") return `quitó el alias ${origen} → ${campo} ${de}`;
+    return `cambió el alias ${origen} ${de} (ahora se lee como ${campo})`;
   }
 
   if (DETALLE_EQUIPO[e.tabla]) {
