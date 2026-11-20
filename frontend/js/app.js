@@ -1,5 +1,5 @@
 // Arranque: inicio de sesión, menú de módulos, estructura, menú lateral y rutas.
-// Módulos de este sistema: usuarios y proveedores, equipos municipales, análisis de logs y correo institucional.
+// Módulos de este sistema: usuarios y proveedores, equipos municipales, análisis de logs, correo institucional, y licencias y reportes.
 import { CONFIG } from "./config.js";
 import { api, cuandoExpireSesion, ErrorApi, sesion } from "./api.js";
 import {
@@ -23,6 +23,7 @@ import {
 import {
   vistaAviso, vistaAvisos, vistaCompararCorreos, vistaConfigCorreo, vistaEnviarAviso, vistaInicioCorreo, vistaListaCorreos,
 } from "./correo.js";
+import { vistaInicioLicencias, vistaLicCorreo, vistaLicMicroclaudia } from "./licencias.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -148,6 +149,7 @@ const MODULOS = {
   red: { nombre: "Equipos municipales", inicio: "#/red", icono: "red" },
   logs: { nombre: "Análisis de logs", inicio: "#/logs", icono: "logs", soloAdmin: true },
   correo: { nombre: "Correo institucional", inicio: "#/correo", icono: "correo", soloAdmin: true },
+  licencias: { nombre: "Licencias y reportes", inicio: "#/licencias", icono: "licencia", soloAdmin: true },
 };
 let moduloActual = null;
 
@@ -156,6 +158,7 @@ function moduloDeRuta(r) {
   if (r === "red" || r.startsWith("red/")) return "red";
   if (r === "logs" || r.startsWith("logs/")) return "logs";
   if (r === "correo" || r.startsWith("correo/")) return "correo";
+  if (r === "licencias" || r.startsWith("licencias/")) return "licencias";
   // Mi perfil se queda en el módulo donde estaba la persona
   if (r === "perfil" || r.startsWith("perfil/")) return moduloActual || "usuarios";
   return "usuarios";
@@ -220,6 +223,11 @@ const RUTAS = [
   { patron: /^correo\/comparar\/(\d+)$/, vista: vistaListaCorreos, soloAdmin: true },
   { patron: /^correo\/configuracion$/, vista: vistaConfigCorreo, soloAdmin: true },
   { patron: /^correo\/auditoria$/, vista: vistaAuditoria, soloAdmin: true },
+  // Licencias y reportes (solo administradores)
+  { patron: /^licencias$/, vista: vistaInicioLicencias, soloAdmin: true },
+  { patron: /^licencias\/microclaudia$/, vista: vistaLicMicroclaudia, soloAdmin: true },
+  { patron: /^licencias\/google$/, vista: (cont, params, ctx) => vistaLicCorreo(cont, params, ctx, "GOOGLE"), soloAdmin: true },
+  { patron: /^licencias\/sophos$/, vista: (cont, params, ctx) => vistaLicCorreo(cont, params, ctx, "SOPHOS"), soloAdmin: true },
 ];
 
 let navegacion = 0;
@@ -347,6 +355,8 @@ async function vistaModulos(cont, _params, ctx) {
         ["importaciones", "registros"]) : ""}
       ${ctx.esAdmin ? tarjeta("correo", "Avisos al personal desde la cuenta de correo institucional, y comparación de los correos registrados con la lista de cuentas de la municipalidad.",
         ["avisos enviados", "personas sin correo"]) : ""}
+      ${ctx.esAdmin ? tarjeta("licencias", "Control de licencias: equipos sin Microclaudia, equipos dados de baja que la conservan, y las cuentas de Google y de Sophos Email contra el personal: quién no tiene correo, cuentas de personal retirado y cuentas sin uso.",
+        ["licencias de Microclaudia", "cuentas de Google"]) : ""}
     </div>
     ${ctx.esAdmin ? "" : `<div class="aviso aviso--ocre" style="margin-top:20px">${icono("candado")}<span>Su rol permite consultar la información de estos módulos. Los cambios los hace un administrador.</span></div>`}`;
 
@@ -354,7 +364,7 @@ async function vistaModulos(cont, _params, ctx) {
   const pintar = (clave, valores) => {
     cont.querySelectorAll(`[data-datos="${clave}"] b`).forEach((b, i) => { b.textContent = valores[i] ?? "—"; });
   };
-  const [usuarios, proveedores, dispositivos, edificios, importaciones, envios, personal] = await Promise.allSettled([
+  const [usuarios, proveedores, dispositivos, edificios, importaciones, envios, personal, listasGoogle] = await Promise.allSettled([
     api("usuarios/", { query: { activo: true } }),
     api("proveedores/", { query: { activo: true } }),
     api("dispositivos/", { query: { activo: true } }),
@@ -362,6 +372,7 @@ async function vistaModulos(cont, _params, ctx) {
     ctx.esAdmin ? api("logs/importaciones/") : Promise.resolve([]),
     ctx.esAdmin ? api("correo/envios/") : Promise.resolve([]),
     ctx.esAdmin ? api("correo/personal/") : Promise.resolve([]),
+    ctx.esAdmin ? api("correo/listas/", { query: { origen: "GOOGLE" } }) : Promise.resolve([]),
   ]);
   if (!ctx.vigente()) return;
   const n = (r) => (r.status === "fulfilled" ? r.value.length : null);
@@ -372,6 +383,9 @@ async function vistaModulos(cont, _params, ctx) {
       ? importaciones.value.reduce((s, x) => s + (Number(x.total_eventos) || 0), 0).toLocaleString("es-CR") : null;
     pintar("logs", [n(importaciones), eventos]);
     pintar("correo", [n(envios), personal.status === "fulfilled" ? personal.value.filter((p) => !p.correo).length : null]);
+    const ultimo = (r) => (r.status === "fulfilled" && r.value.length ? r.value[0] : null);
+    const listado = importaciones.status === "fulfilled" ? importaciones.value.find((x) => x.fuente === "MICROCLAUDIA") : null;
+    pintar("licencias", [listado ? listado.total_eventos : null, ultimo(listasGoogle)?.total ?? null]);
   }
 }
 
