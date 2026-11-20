@@ -1,9 +1,9 @@
-# Gestión municipal: usuarios y proveedores + equipos municipales + análisis de logs + correo institucional
+# Gestión municipal: usuarios y proveedores + equipos municipales + análisis de logs + correo institucional + licencias y reportes
 
-Este proyecto es el sistema separado por módulos. Por ahora trae cuatro:
+Este proyecto es el sistema separado por módulos, ya con los cinco:
 **usuarios y proveedores**, **equipos municipales** (con los switches y sus
-puertos), **análisis de logs** y **correo institucional**. El que falta,
-licencias y reportes, se une después.
+puertos), **análisis de logs**, **correo institucional** y **licencias y
+reportes**.
 
 | Parte        | Contenido |
 |--------------|-----------|
@@ -16,8 +16,8 @@ licencias y reportes, se une después.
 | `apps/dispositivos` | Equipos municipales: equipos con IP, MAC, líneas, IMEI y documentos; switches y puertos; edificios, marcas, modelos y catálogos de equipos |
 | `apps/logs`         | Análisis de logs: importación de Sophos Firewall, del listado de Microclaudia y de las concesiones del DHCP; filtro estilo Wireshark, tablero, comparación, intrusos en la red, equipos sin agente y cruce con el inventario |
 | `apps/correo`       | Correo institucional: la cuenta con que se envían los avisos, avisos al personal con adjuntos, y listas de correos de Google Workspace y Sophos Email comparadas con el personal |
-| `frontend`          | La página web (se abre en `/app/`) |
-| `sql`               | Scripts de la base de datos de los cuatro módulos |
+| `frontend`          | La página web (se abre en `/app/`); licencias y reportes es solo pantallas, en `frontend/js/licencias.js` |
+| `sql`               | Scripts de la base de datos de los cinco módulos |
 
 ## Módulos
 
@@ -27,11 +27,12 @@ licencias y reportes, se une después.
 | 2. Equipos municipales y switches | incluido | `modulo-equipos`, unida a `modular` |
 | 3. Análisis de logs | incluido | `modulo-logs`, unida a `modular` |
 | 4. Correo institucional | incluido | `modulo-correo`, unida a `modular` |
-| 5. Licencias y reportes | pendiente | |
+| 5. Licencias y reportes | incluido | `modulo-licencias`, unida a `modular` |
 
-Al entrar, la página muestra el menú de módulos. Los de análisis de logs y
-correo institucional son solo para administradores: los demás usuarios no
-los ven en el menú y la API les responde que no tienen permiso.
+Al entrar, la página muestra el menú de módulos. Los de análisis de logs,
+correo institucional y licencias y reportes son solo para administradores:
+los demás usuarios no los ven en el menú y la API les responde que no
+tienen permiso.
 
 Con el módulo de análisis de logs vuelve la pestaña «En la red» de cada
 equipo, que ven los administradores y muestra lo que el equipo tiene en el
@@ -47,21 +48,36 @@ base, también usa la misma cuenta: para que la clave sirva en los dos, los
 dos `settings.py` deben tener la misma `SECRET_KEY`. Los avisos se envían de
 a lotes de 20 correos, uno por persona, y queda el resultado de cada envío.
 
-Lo que todavía queda afuera hasta que se una su módulo:
+Licencias y reportes junta lo de los otros módulos para revisar las
+licencias, con su resumen, exportar a CSV e imprimir:
 
-- Las rutas `/api/logs/licencias/` y `/api/correo/licencias/` ya están, pero
-  la pantalla que las usa es la de licencias y reportes, que viene con ese
-  módulo.
-- La migración desde el modelo de datos anterior
-  (`00_cambio_de_modelo.sql` y `migrarDispositivos.sql`) se queda en la
-  rama `main`: se usa una sola vez y la base del servidor ya la tiene.
+- Microclaudia: computadoras y servidores activos sin el agente, equipos
+  dados de baja que todavía ocupan licencia, agentes que no coinciden con
+  ningún equipo registrado y agentes que no se conectan hace tiempo. Usa el
+  último listado de Microclaudia importado en Análisis de logs.
+- Google Workspace: las cuentas de la última lista importada comparadas con
+  el personal: a quién le falta el correo, cuentas activas de personal
+  retirado y cuentas sin uso.
+- Sophos Email: las cuentas protegidas, cada una ocupa una licencia,
+  comparadas con el personal y con las cuentas de Google: correos sin
+  licencia y licencias que se pueden liberar.
+
+Las listas de correos se importan desde esa misma pantalla o desde Correo
+institucional → Comparar correos.
+
+No tiene tablas propias: usa las rutas `/api/logs/licencias/` y
+`/api/correo/licencias/`, que vienen con los módulos 3 y 4.
+
+La migración desde el modelo de datos anterior (`00_cambio_de_modelo.sql` y
+`migrarDispositivos.sql`) se queda en la rama `main`: se usa una sola vez y
+la base del servidor ya la tiene.
 
 ## Base de datos
 
 Usa la misma base `gestion_redes` que el sistema completo y crea lo de
-estos cuatro módulos: 49 tablas, 250 procedimientos, 4 funciones y 213
-disparadores. Es todo lo que usa el sistema completo: el módulo de
-licencias no agrega nada a la base. Por eso el sistema completo y este
+los cinco módulos: 49 tablas, 250 procedimientos, 4 funciones y 213
+disparadores, lo mismo que el sistema completo. El módulo de licencias no
+agrega nada a la base. Por eso el sistema completo y este
 pueden usar la misma base al mismo tiempo, y lo que se hace en uno se ve en
 el otro, también la cuenta de correo y los avisos enviados.
 
